@@ -7,6 +7,10 @@ name = "kernel"
 version = "0.1.0"
 
 [[package]]
+name = "main"
+version = "0.1.0"
+
+[[package]]
 name = "membrane"
 version = "0.1.0"
 
