@@ -1,3 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["auth","kernel", "membrane", "memory"]
+members = [
+    "crate/seal",
+    "crate/kernel",
+    "crate/membrane",
+    "crate/memory",
+]

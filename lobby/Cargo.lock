@@ -3,13 +3,17 @@
 version = 4
 
 [[package]]
-name = "auth"
-version = "0.1.0"
-
-[[package]]
 name = "kernel"
 version = "0.1.0"
 
 [[package]]
+name = "membrane"
+version = "0.1.0"
+
+[[package]]
 name = "memory"
+version = "0.1.0"
+
+[[package]]
+name = "seal"
 version = "0.1.0"
