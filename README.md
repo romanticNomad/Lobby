@@ -1,2 +1,2 @@
 # Lobby
-Personal on-chain signing service.
+Personal on-chain trasaction service.
