@@ -27,4 +27,4 @@ Personal on-chain trasaction service.
 * send the DER encoded tx to relay.
 
 5) main
-   * Wires down all the crates.
+* Wires down all the crates.
