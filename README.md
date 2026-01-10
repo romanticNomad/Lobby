@@ -3,28 +3,28 @@ Personal on-chain trasaction service.
 
 ## lobby directory structure.
 1) kernel
-   * contains signatures to all elements of lobby
+* houses generic elements that builds up lobby.
+   * local -> local traits.
+   * io -> io bound traits.
 
-2) membrane
-   * receives RLP payload
-   * validates shape
-   * forwards inward
-   * broadcasts tx
-   * returns response
+2) cortex
+> redis implimentation.
+* tracks state.
+* allocates and locks nonce.
+* hands tx to seal.
+* handles possible concurrency / nonce defaults.
 
-3) memory
-   * allocates nonce
-   * locks nonce
-   * enriches tx (nonce, gas, chain id)
-   * hands tx to signing 
-   * tracks state
-   * decides next step
+3) relay
+* serializes RLP tx payload.
+* hands tx to cortex for nonce allocation.
+* canonicalize and assemble signed tx.
+* handles broadcasting.
 
 4) seal
-   * canonicalizes / serializes tx
-   * invokes KMS (via aws adapter)
-   * assembles signed tx
-   * returns signed payload
+> AWS implimentation.
+* authorizes tx from user.
+* invokes KMS for signing.
+* send the DER encoded tx to relay.
 
-5) master
-   * Wires down all the crates
+5) main
+   * Wires down all the crates.
