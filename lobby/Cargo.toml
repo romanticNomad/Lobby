@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-    "crate/seal",
+    "crate/relay",
     "crate/kernel",
     "crate/membrane",
     "crate/cortex",

@@ -19,5 +19,5 @@ name = "membrane"
 version = "0.1.0"
 
 [[package]]
-name = "seal"
+name = "relay"
 version = "0.1.0"
