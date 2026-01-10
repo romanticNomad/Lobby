@@ -3,8 +3,8 @@ resolver = "3"
 members = [
     "crate/relay",
     "crate/kernel",
-    "crate/membrane",
     "crate/cortex",
-    "crate/seal",
+    "crate/seal",    
+    "crate/state",
     "bin/main",
 ]

@@ -1,5 +1,5 @@
 # Lobby
-Personal on-chain trasaction service.
+Personal on-chain transaction service.
 
 ## lobby directory structure.
 1) kernel
@@ -7,24 +7,33 @@ Personal on-chain trasaction service.
    * local -> local traits.
    * io -> io bound traits.
 
-2) cortex
+2) relay
+* receive tx-request payload.
+* checks on-chain nonce.
+* sends tx-signing request.
+* broadcast tx.
+* handles io error.
+
+3) cortex
 > redis implementation.
 * tracks state.
-* allocates and locks nonce.
-* hands tx to seal.
-* handles possible concurrency / nonce defaults.
-
-3) relay
-* serialises RLP tx payload.
-* hands tx to cortex for nonce allocation.
-* canonicalise and assemble signed tx.
-* handles broadcasting.
+* manages nonce and serialises tx.
+* DER-parsing and canonicalise tx.
+* updates state.
+* handles concurrency defaults.
 
 4) seal
 > AWS implementation.
-* authorises tx from user.
+* authenticate tx from user via AWS API gateway.
 * invokes KMS for signing.
-* hands the DER encoded tx to the relay.
+* hands the DER-encoded tx to the relay.
+* AWS error handling.
 
-5) main
-* wires down all the crates.
+5) state
+> sqlx and postgres.
+* stores tx states for:
+   * nonce validation.
+   * tx audits.
+
+6) main
+* execution layer that wires down all the crates.

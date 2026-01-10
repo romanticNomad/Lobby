@@ -15,13 +15,13 @@ name = "main"
 version = "0.1.0"
 
 [[package]]
-name = "membrane"
-version = "0.1.0"
-
-[[package]]
 name = "relay"
 version = "0.1.0"
 
 [[package]]
 name = "seal"
+version = "0.1.0"
+
+[[package]]
+name = "state"
 version = "0.1.0"
