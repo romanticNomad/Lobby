@@ -4,6 +4,6 @@ members = [
     "crate/seal",
     "crate/kernel",
     "crate/membrane",
-    "crate/memory",
+    "crate/cortex",
     "bin/main",
 ]
