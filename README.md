@@ -1,5 +1,5 @@
 # Lobby
-Personal on-chain transaction service.
+An open-source low-latency EIP-1193 signer
 
-## lobby
-lobby workspace is the local client of Lobby.
+## local
+local workspace is the local client of Lobby.
