@@ -6,5 +6,5 @@ members = [
     "crate/cortex",
     "crate/seal",    
     "crate/state",
-    "bin/main",
+    "bin/main", "bin/eip1193",
 ]
