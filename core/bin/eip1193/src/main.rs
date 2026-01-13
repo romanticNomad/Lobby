@@ -7,11 +7,11 @@ use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/", post(handler::rpc_handler));
+    // let app = Router::new().route("/", post(handler::rpc_handler));
 
     let listner = TcpListener::bind("0.0.0.0:8454")
         .await
         .expect("address binding failed!");
 
-    axum::serve(listner, app).await.expect("server failed");
+    // axum::serve(listner, app).await.expect("server failed");
 }
