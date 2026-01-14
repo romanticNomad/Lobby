@@ -1,2 +1,2 @@
 #[allow(dead_code)]
-mod protocol;
+pub mod types;
