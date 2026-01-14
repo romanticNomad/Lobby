@@ -1,1 +1,51 @@
+use std::sync::Arc;
+use alloy_primitives::{Address, Bytes, U256, hex};
+use serde::Deserialize;
+use serde_json::{Value,json};
 
+use kernel::adapter::{
+    Intent, SendTransactionIntent, IntentResult, IntentSink
+};
+
+use crate::rpc::JsonRpcError;
+
+#[derive(Debug, Deserialize)]
+struct TxParams {
+    from: Address,
+    to: Option<Address>,
+    value: Option<U256>,
+    data: Option<Bytes>,
+    gas: Option<U256>,
+    gas_price: Option<U256>,
+    nonce: Option<U256>,
+    chain_id: Option<U256>,
+}
+
+pub async fn eth_send_transaction(intent_sink: Arc<dyn IntentSink>, params: Option<Value>) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Missing Params"))?;
+
+    let list:Vec<TxParams> =
+    serde_json::from_value(params).map_err(|e| {
+        JsonRpcError::invalid_params(format!("invalid params: {e}"))
+    })?;
+
+    let tx = list.get(0)
+    .ok_or_else(|| JsonRpcError::invalid_params("Tx Params invalid"))?;
+
+    let intent = Intent::SendTransaction(SendTransactionIntent { 
+        from: tx.from,
+        to: tx.to,
+        value: tx.value.unwrap_or_default(),
+        data: tx.data.clone().unwrap_or_default(), // alloy Bytes does not impliment the copy trait.
+        gas: tx.gas,
+        gas_price: tx.gas_price,
+        nonce: tx.nonce,
+        chain_id: tx.chain_id 
+    });
+
+    match intent_sink.submit(intent).await {
+        Ok(IntentResult::Bytes(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
+        Ok(_) => Err(JsonRpcError::internal("Invalid result type")),
+        Err(e) => Err(JsonRpcError::internal(format!("{:?}", e))),
+    }
+}

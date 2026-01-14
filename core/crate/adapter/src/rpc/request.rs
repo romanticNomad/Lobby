@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use super::{JsonRpcError, JsonRpcResponse};
-use crate::handle::eth_chain_id;
+use crate::handle::{eth_chain_id, eth_send_transaction};
 use kernel::adapter::IntentSink;
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +28,9 @@ impl JsonRpcRequest {
 
         let result = match self.method.as_str() {
             "eth_chainId" => eth_chain_id(intent_sink).await,
+            "eth_sendTransaction" => {
+                eth_send_transaction(intent_sink, self.params).await
+            },
             _ => Err(JsonRpcError::method_not_found("method not supported.")),
         };
 
