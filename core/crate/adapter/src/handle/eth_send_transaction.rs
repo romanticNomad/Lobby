@@ -1,11 +1,9 @@
-use std::sync::Arc;
 use alloy_primitives::{Address, Bytes, U256, hex};
 use serde::Deserialize;
-use serde_json::{Value,json};
+use serde_json::{Value, json};
+use std::sync::Arc;
 
-use kernel::adapter::{
-    Intent, SendTransactionIntent, IntentResult, IntentSink
-};
+use kernel::adapter::{Intent, IntentResult, IntentSink, SendTransactionIntent};
 
 use crate::rpc::JsonRpcError;
 
@@ -21,26 +19,28 @@ struct TxParams {
     chain_id: Option<U256>,
 }
 
-pub async fn eth_send_transaction(intent_sink: Arc<dyn IntentSink>, params: Option<Value>) -> Result<Value, JsonRpcError> {
-    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Missing Params"))?;
+pub async fn eth_send_transaction(
+    intent_sink: Arc<dyn IntentSink>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("missing params"))?;
 
-    let list:Vec<TxParams> =
-    serde_json::from_value(params).map_err(|e| {
-        JsonRpcError::invalid_params(format!("invalid params: {e}"))
-    })?;
+    let list: Vec<TxParams> = serde_json::from_value(params)
+        .map_err(|e| JsonRpcError::invalid_params(format!("invalid params: {e}")))?;
 
-    let tx = list.get(0)
-    .ok_or_else(|| JsonRpcError::invalid_params("Tx Params invalid"))?;
+    let tx = list
+        .get(0)
+        .ok_or_else(|| JsonRpcError::invalid_params("invalid transaction params"))?;
 
-    let intent = Intent::SendTransaction(SendTransactionIntent { 
+    let intent = Intent::SendTransaction(SendTransactionIntent {
         from: tx.from,
         to: tx.to,
         value: tx.value.unwrap_or_default(),
-        data: tx.data.clone().unwrap_or_default(), // alloy Bytes does not impliment the copy trait.
+        data: tx.data.clone().unwrap_or_default(), // Bytes is not Copy;
         gas: tx.gas,
         gas_price: tx.gas_price,
         nonce: tx.nonce,
-        chain_id: tx.chain_id 
+        chain_id: tx.chain_id,
     });
 
     match intent_sink.submit(intent).await {
