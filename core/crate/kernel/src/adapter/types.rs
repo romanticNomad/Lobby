@@ -18,7 +18,7 @@ pub struct SendTransactionIntent {
 
 pub enum IntentResult {
     Bytes(Bytes), // Tx hash
-    U256(U256), // chain_id
+    U256(U256),   // chain_id
 }
 
 pub enum IntentError {

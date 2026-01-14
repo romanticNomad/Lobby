@@ -1,8 +1,5 @@
+use super::types::{Intent, IntentError, IntentResult};
 use async_trait::async_trait;
-use super::types::{
-    Intent,
-    IntentError, IntentResult
-};
 
 #[async_trait]
 pub trait IntentSink: Send + Sync + 'static {
