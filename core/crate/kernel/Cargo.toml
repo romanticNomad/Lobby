@@ -6,3 +6,4 @@ license = "Apache-2.0"
 
 [dependencies]
 async-trait = "0.1.89"
+alloy-primitives = "1.5.2"
