@@ -21,6 +21,7 @@ pub enum IntentResult {
     U256(U256),   // chain_id
 }
 
+#[derive(Debug)]
 pub enum IntentError {
     Rejected(String),
     Invalid(String),
