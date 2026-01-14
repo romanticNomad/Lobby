@@ -2,6 +2,5 @@ use axum::{Json, Router, extract::State, http::StatusCode, response::IntoRespons
 use std::sync::Arc;
 
 use kernel::adapter::{
-    traits::IntentSink,
-    types::{Intent, IntentError, IntentResult},
+    IntentSink, {Intent, IntentError, IntentResult},
 };
