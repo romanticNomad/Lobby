@@ -43,6 +43,7 @@ pub async fn eth_send_transaction(
         chain_id: tx.chain_id,
     });
 
+// sending normalized data: intent, into the pipeine.
     match pipeline.submit(intent).await {
         Ok(IntentResult::TxHash(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
         Ok(_) => Err(JsonRpcError::internal("Invalid result type")),
