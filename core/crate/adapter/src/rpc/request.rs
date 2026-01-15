@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::{JsonRpcError, JsonRpcResponse};
 use crate::handle::{eth_chain_id, eth_send_transaction};
-use kernel::adapter::IntentSink;
+use kernel::adapter::Pipeline;
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcRequest {
@@ -17,7 +17,7 @@ pub struct JsonRpcRequest {
 impl JsonRpcRequest {
     pub async fn filter(
         self,
-        intent_sink: Arc<dyn IntentSink>,
+        pipeline: Arc<dyn Pipeline>,
     ) -> Result<JsonRpcResponse, JsonRpcResponse> {
         if self.jsonrpc != "2.0".to_string() {
             return Err(JsonRpcResponse::error(
@@ -27,8 +27,8 @@ impl JsonRpcRequest {
         }
 
         let result = match self.method.as_str() {
-            "eth_chainId" => eth_chain_id(intent_sink).await,
-            "eth_sendTransaction" => eth_send_transaction(intent_sink, self.params).await,
+            "eth_chainId" => eth_chain_id(pipeline).await,
+            "eth_sendTransaction" => eth_send_transaction(pipeline, self.params).await,
             _ => Err(JsonRpcError::method_not_found("method not supported.")),
         };
 

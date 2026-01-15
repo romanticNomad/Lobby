@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use kernel::adapter::{Intent, IntentResult, IntentSink, SendTransactionIntent};
+use kernel::adapter::{Intent, IntentResult, Pipeline, SendTransactionIntent};
 
 use crate::rpc::JsonRpcError;
 
@@ -20,7 +20,7 @@ struct TxParams {
 }
 
 pub async fn eth_send_transaction(
-    intent_sink: Arc<dyn IntentSink>,
+    pipeline: Arc<dyn Pipeline>,
     params: Option<Value>,
 ) -> Result<Value, JsonRpcError> {
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("missing params"))?;
@@ -43,7 +43,7 @@ pub async fn eth_send_transaction(
         chain_id: tx.chain_id,
     });
 
-    match intent_sink.submit(intent).await {
+    match pipeline.submit(intent).await {
         Ok(IntentResult::Bytes(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
         Ok(_) => Err(JsonRpcError::internal("Invalid result type")),
         Err(e) => Err(JsonRpcError::internal(format!("{:?}", e))),
