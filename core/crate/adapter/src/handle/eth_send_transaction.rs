@@ -44,7 +44,7 @@ pub async fn eth_send_transaction(
     });
 
     match pipeline.submit(intent).await {
-        Ok(IntentResult::Bytes(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
+        Ok(IntentResult::TxHash(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
         Ok(_) => Err(JsonRpcError::internal("Invalid result type")),
         Err(e) => Err(JsonRpcError::internal(format!("{:?}", e))),
     }

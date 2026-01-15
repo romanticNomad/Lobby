@@ -17,8 +17,8 @@ pub struct SendTransactionIntent {
 }
 
 pub enum IntentResult {
-    Bytes(Bytes), // Tx hash
-    U256(U256),   // chain_id
+    TxHash(Bytes), // Tx hash
+    Id(U256),   // chain_id
 }
 
 #[derive(Debug)]

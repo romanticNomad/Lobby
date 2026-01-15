@@ -8,7 +8,7 @@ use kernel::adapter::{
 
 pub async fn eth_chain_id(pipeline: Arc<dyn Pipeline>) -> Result<Value, JsonRpcError> {
     match pipeline.submit(Intent::ChainId).await {
-        Ok(IntentResult::U256(v)) => Ok(json!(format!("0x{:x}", v))),
+        Ok(IntentResult::Id(v)) => Ok(json!(format!("0x{:x}", v))),
         Ok(_) => Err(JsonRpcError::internal("Invalid chain_id result.")),
         Err(e) => Err(JsonRpcError::internal(format!("{:?}", e))),
     }
