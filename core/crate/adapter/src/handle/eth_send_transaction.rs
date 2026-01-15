@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, Bytes, U256, hex};
+use alloy_primitives::{Address, Bytes, U256};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
