@@ -12,7 +12,6 @@ dependencies = [
  "kernel",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
