@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::{JsonRpcError, JsonRpcResponse};
 use crate::handle::{eth_chain_id, eth_send_transaction};
-use kernel::adapter::Pipeline;
+use kernel::traits::Pipeline;
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcRequest {

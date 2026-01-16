@@ -1,1 +1,2 @@
-pub mod adapter;
+pub mod traits;
+pub mod types;

@@ -2,8 +2,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::rpc::JsonRpcError;
-use kernel::adapter::{
-    Pipeline, {Intent, IntentResult},
+use kernel::{traits::Pipeline, types::adapter::{Intent, IntentResult},
 };
 
 pub async fn eth_chain_id(pipeline: Arc<dyn Pipeline>) -> Result<Value, JsonRpcError> {

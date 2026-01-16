@@ -1,4 +1,4 @@
-use super::types::{Intent, IntentError, IntentResult};
+use crate::types::adapter::{Intent, IntentError, IntentResult};
 use async_trait::async_trait;
 
 #[async_trait]

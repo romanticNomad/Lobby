@@ -1,7 +1,7 @@
 use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use std::sync::Arc;
 
-use kernel::adapter::Pipeline;
+use kernel::traits::Pipeline;
 
 use crate::rpc::JsonRpcRequest;
 
