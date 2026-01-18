@@ -3,7 +3,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use kernel::{types::adapter::{Intent, IntentResult, SendTransactionIntent}, traits::Pipeline};
+use kernel::{types::intent::{Intent, IntentResult, SendTransactionIntent}, traits::Pipeline};
 
 use crate::rpc::JsonRpcError;
 
