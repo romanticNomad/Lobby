@@ -2,5 +2,7 @@
 resolver = "3"
 members = [
     "bin/main",
-    "crate/adapter", "crate/kernel", "sink",
+    "crate/adapter",
+    "crate/kernel",
+    "crate/sink",
 ]
