@@ -4,6 +4,7 @@ pub enum Intent {
     SendTransaction(SendTransactionIntent),
 }
 
+// EIP-1159 compatible.
 pub struct SendTransactionIntent {
     pub from: Address,
     pub to: Option<Address>,
@@ -11,6 +12,8 @@ pub struct SendTransactionIntent {
     pub data: Bytes,
     pub gas: Option<U256>,
     pub gas_price: Option<U256>,
+    pub max_fee_per_gas: Option<U256>,       
+    pub max_priority_fee_per_gas: Option<U256>,
     pub nonce: Option<U256>,
     pub chain_id: Option<U256>,
 }

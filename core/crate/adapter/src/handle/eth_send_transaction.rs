@@ -15,6 +15,8 @@ struct TxParams {
     data: Option<Bytes>,
     gas: Option<U256>,
     gas_price: Option<U256>,
+    max_fee_per_gas: Option<U256>,     
+    max_priority_fee_per_gas: Option<U256>,
     nonce: Option<U256>,
     chain_id: Option<U256>,
 }
@@ -39,6 +41,8 @@ pub async fn eth_send_transaction(
         data: tx.data.clone().unwrap_or_default(), // Bytes is not Copy;
         gas: tx.gas,
         gas_price: tx.gas_price,
+        max_fee_per_gas: tx.max_fee_per_gas,
+        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
         nonce: tx.nonce,
         chain_id: tx.chain_id,
     });
