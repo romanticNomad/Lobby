@@ -2,7 +2,6 @@ use alloy_primitives::{Address, Bytes, U256};
 
 pub enum Intent {
     SendTransaction(SendTransactionIntent),
-    ChainId,
 }
 
 pub struct SendTransactionIntent {
@@ -18,7 +17,6 @@ pub struct SendTransactionIntent {
 
 pub enum IntentResult {
     TxHash(Bytes), // Tx hash
-    ChainId(U256),   // chain_id
 }
 
 #[derive(Debug)]

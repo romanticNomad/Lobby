@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use super::{JsonRpcError, JsonRpcResponse};
-use crate::handle::{eth_chain_id, eth_send_transaction};
+use crate::handle::eth_send_transaction;
 use kernel::traits::Pipeline;
 
 #[derive(Debug, Deserialize)]
@@ -27,7 +27,7 @@ impl JsonRpcRequest {
         }
 
         let result = match self.method.as_str() {
-            "eth_chainId" => eth_chain_id(pipeline).await,
+            // "eth_chainId" => eth_chain_id(pipeline).await,
             "eth_sendTransaction" => eth_send_transaction(pipeline, self.params).await,
             _ => Err(JsonRpcError::method_not_found("method not supported.")),
         };
