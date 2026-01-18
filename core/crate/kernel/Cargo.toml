@@ -7,3 +7,4 @@ license = "Apache-2.0"
 [dependencies]
 async-trait = "0.1.89"
 alloy-primitives = {version = "1.5.2"}
+uuid = { version ="1.19", features = ["v4"] }
