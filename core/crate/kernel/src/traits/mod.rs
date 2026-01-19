@@ -1,9 +1,14 @@
 pub mod broadcast;
 pub mod cannonicalize;
 pub mod nonce;
-pub mod pipeline;
 pub mod sign;
 pub mod state;
 pub mod validate;
 
-pub use pipeline::*;
+use crate::types::intent::{Intent, IntentError, IntentResult};
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait Pipeline: Send + Sync + 'static {
+    async fn submit(&self, intent: Intent) -> Result<IntentResult, IntentError>;
+}
