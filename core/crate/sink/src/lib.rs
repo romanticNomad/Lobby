@@ -61,25 +61,25 @@
 //         let chain_id = intent.chain_id();
 //         let from = intent.from();
 
-//         // ---------------------------------------------------------------------
-//         // 3. Acquire nonce (serialized per chain_id + from)
-//         // ---------------------------------------------------------------------
+        // // ---------------------------------------------------------------------
+        // // 3. Reserve nonce (provisional, not finalized)
+        // // ---------------------------------------------------------------------
 
-//         let nonce = match execution.nonce() {
-//             Some(nonce) => nonce,
-//             None => {
-//                 let next = self
-//                     .nonce
-//                     .acquire(chain_id, from)
-//                     .await?;
+        // let nonce = match execution.nonce() {
+        //     Some(nonce) => nonce,
+        //     None => {
+        //         let reserved = self
+        //             .nonce
+        //             .reserve(chain_id, from)
+        //             .await?; // renamed semantically, not behaviorally
 
-//                 self.state
-//                     .record_nonce(execution_id, next)
-//                     .await?;
+        //         self.state
+        //             .record_nonce(execution_id, reserved)
+        //             .await?;
 
-//                 next
-//             }
-//         };
+        //         reserved
+        //     }
+        // };
 
 //         // ---------------------------------------------------------------------
 //         // 4. Encode transaction (pure, deterministic)
@@ -177,33 +177,54 @@
 //             )
 //             .await?;
 
-//         // ---------------------------------------------------------------------
-//         // 8. Spawn finality tracking (non-blocking)
-//         // ---------------------------------------------------------------------
+        // // ---------------------------------------------------------------------
+        // // 8. Spawn finality tracking (non-blocking, resolves nonce)
+        // // ---------------------------------------------------------------------
 
-//         let state = self.state.clone();
-//         let finality = self.finality.clone();
+        // let state = self.state.clone();
+        // let finality = self.finality.clone();
+        // let nonce_mgr = self.nonce.clone();
 
-//         tokio::spawn(async move {
-//             // Finality watcher must be fully idempotent
-//             // It may run multiple times or resume after crash
-//             let outcome = finality
-//                 .watch(chain_id, tx_hash)
-//                 .await;
+        // tokio::spawn(async move {
+        //     let outcome = finality
+        //         .watch(chain_id, tx_hash)
+        //         .await;
 
-//             match outcome {
-//                 Ok(finality) => {
-//                     let _ = state
-//                         .mark_finalized(execution_id, finality)
-//                         .await;
-//                 }
-//                 Err(err) => {
-//                     let _ = state
-//                         .mark_failed(execution_id, err)
-//                         .await;
-//                 }
-//             }
-//         });
+        //     match outcome {
+        //         Ok(success) => {
+        //             // 1️⃣ Update execution state
+        //             let _ = state
+        //                 .mark_finalized(execution_id, success)
+        //                 .await;
+
+        //             // 2️⃣ Resolve nonce based on outcome
+        //             let _ = nonce_mgr
+        //                 .resolve(
+        //                     chain_id,
+        //                     from,
+        //                     nonce,
+        //                     success,
+        //                 )
+        //                 .await;
+        //         }
+
+        //         Err(err) => {
+        //             // 1️⃣ Mark execution failed
+        //             let _ = state
+        //                 .mark_failed(execution_id, err.clone())
+        //                 .await;
+
+        //             // 2️⃣ Mark nonce as dropped / replaceable
+        //             let _ = nonce_mgr
+        //                 .drop(
+        //                     chain_id,
+        //                     from,
+        //                     nonce,
+        //                 )
+        //                 .await;
+        //         }
+        //     }
+        // });
 
         // // ---------------------------------------------------------------------
         // // 9. Return immediate response (broadcast succeeded)
