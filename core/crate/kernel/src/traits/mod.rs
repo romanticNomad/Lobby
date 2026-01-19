@@ -1,7 +1,4 @@
-use crate::types::intent::{Intent, IntentError, IntentResult};
-use async_trait::async_trait;
+pub mod pipeline;
+pub mod state;
 
-#[async_trait]
-pub trait Pipeline: Send + Sync + 'static {
-    async fn submit(&self, intent: Intent) -> Result<IntentResult, IntentError>;
-}
+pub use pipeline::*;
