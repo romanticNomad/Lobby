@@ -1,4 +1,4 @@
-use crate::types::{execution::ExecutionError, id::ChainId, tx_artifacts::TxNonce};
+use crate::types::{nonce::TxNonce, state::ChainId, validate::ExecutionError};
 use alloy_primitives::Address;
 use async_trait::async_trait;
 

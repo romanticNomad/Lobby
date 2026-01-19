@@ -1,7 +1,0 @@
-use alloy_primitives::U256;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ExecutionId(pub uuid::Uuid);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ChainId(pub U256);

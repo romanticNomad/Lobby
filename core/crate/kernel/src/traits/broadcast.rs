@@ -1,6 +1,6 @@
 use crate::types::{
-    broadcast::BroadcastOutcome, execution::ExecutionError, id::ChainId,
-    tx_artifacts::SignedTransaction,
+    broadcast::BroadcastOutcome, canonicalize::SignedTransaction, state::ChainId,
+    validate::ExecutionError,
 };
 use async_trait::async_trait;
 

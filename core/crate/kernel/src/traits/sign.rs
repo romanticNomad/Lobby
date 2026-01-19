@@ -1,7 +1,7 @@
 use crate::types::{
-    execution::ExecutionError,
-    id::ChainId,
-    tx_artifacts::{RawTransaction, SignedTransaction},
+    canonicalize::{RawTransaction, SignedTransaction},
+    state::ChainId,
+    validate::ExecutionError,
 };
 use alloy_primitives::Address;
 use async_trait::async_trait;

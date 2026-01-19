@@ -1,13 +1,11 @@
 use crate::types::intent::SendTransactionIntent;
 use crate::types::{
-    execution::ExecutionError,
-    id::ChainId,
-    tx_artifacts::{RawTransaction, TxNonce},
+    canonicalize::RawTransaction, nonce::TxNonce, state::ChainId, validate::ExecutionError,
 };
 use async_trait::async_trait;
 
 #[async_trait]
-pub trait Cannonicalizer: Send + Sync {
+pub trait Canonicalizer: Send + Sync {
     async fn canonicalize(
         &self,
         intent: &SendTransactionIntent,

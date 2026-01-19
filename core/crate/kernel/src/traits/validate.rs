@@ -1,4 +1,7 @@
-use crate::types::{execution::ExecutionError, id::ChainId, tx_artifacts::TxHash};
+use crate::types::{
+    state::{ChainId, TxHash},
+    validate::ExecutionError,
+};
 use async_trait::async_trait;
 
 #[async_trait]

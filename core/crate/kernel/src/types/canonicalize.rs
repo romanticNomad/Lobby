@@ -1,9 +1,4 @@
-use alloy_primitives::{B256, Bytes, U256};
-
-pub type TxHash = B256;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TxNonce(pub U256);
+use alloy_primitives::Bytes;
 
 #[derive(Clone, Debug)]
 pub struct RawTransaction {

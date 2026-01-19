@@ -1,4 +1,4 @@
-use crate::types::tx_artifacts::TxHash;
+use crate::types::state::TxHash;
 
 #[derive(Clone, Debug)]
 pub enum BroadcastOutcome {
