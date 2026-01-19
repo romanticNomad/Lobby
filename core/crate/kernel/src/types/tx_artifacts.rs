@@ -14,10 +14,3 @@ pub struct RawTransaction {
 pub struct SignedTransaction {
     pub rlp: Bytes,
 }
-
-#[derive(Clone, Debug)]
-pub enum BroadcastOutcome {
-    Submitted { tx_hash: TxHash },
-    Rejected { reason: String }, // definitively not submitted
-    Unknown,                     // may have been submitted
-}
