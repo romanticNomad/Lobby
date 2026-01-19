@@ -125,22 +125,47 @@
 //         // 6. Broadcast transaction
 //         // ---------------------------------------------------------------------
 
-//         let tx_hash = match execution.broadcast_hash() {
-//             Some(hash) => hash,
-//             None => {
-//                 let hash = self
-//                     .broadcaster
-//                     .broadcast(chain_id, &signed_tx)
-//                     .await?;
+        // let tx_hash = match execution.tx_hash {
+        //     Some(hash) => hash,
+        //     None => {
+        //         match self.broadcaster.broadcast(chain_id, &signed_tx).await? {
+        //             BroadcastOutcome::Submitted { tx_hash } => {
+        //                 self.state
+        //                     .mark_broadcasted(execution_id, tx_hash)
+        //                     .await?;
+        //                 tx_hash
+        //             }
 
-//                 self.state
-//                     .mark_broadcasted(execution_id, hash)
-//                     .await?;
+        //             BroadcastOutcome::Rejected { reason } => {
+        //                 self.state
+        //                     .mark_failed(
+        //                         execution_id,
+        //                         ExecutionError::BroadcastFailure,
+        //                     )
+        //                     .await?;
 
-//                 hash
-//             }
-//         };
+        //                 return Err(IntentError::Rejected(reason));
+        //             }
 
+        //             BroadcastOutcome::Unknown => {
+        //                 // Assume broadcast happened; we must not double-send
+        //                 self.state
+        //                     .transition(
+        //                         execution_id,
+        //                         ExecutionState::PendingFinality {
+        //                             tx_hash: None,
+        //                         },
+        //                     )
+        //                     .await?;
+
+        //                 // We do NOT have a tx hash, so submit cannot succeed
+        //                 return Err(IntentError::Internal(
+        //                     "broadcast outcome unknown".into(),
+        //                 ));
+        //             }
+        //         }
+        //     }
+        // };
 //         // ---------------------------------------------------------------------
 //         // 7. Transition to pending-finality
 //         // ---------------------------------------------------------------------
@@ -180,13 +205,9 @@
 //             }
 //         });
 
-//         // ---------------------------------------------------------------------
-//         // 9. Return immediate response
-//         // ---------------------------------------------------------------------
+        // // ---------------------------------------------------------------------
+        // // 9. Return immediate response (broadcast succeeded)
+        // // ---------------------------------------------------------------------
 
-//         Ok(IntentResult::Submitted {
-//             execution_id,
-//             tx_hash,
-//         })
-//     }
+        // Ok(IntentResult::TxHash(tx_hash.into()))
 // }
