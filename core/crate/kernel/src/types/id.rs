@@ -1,4 +1,4 @@
-use alloy_primitives::{B256, U256};
+use alloy_primitives::{U256};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ExecutionId(pub uuid::Uuid);
