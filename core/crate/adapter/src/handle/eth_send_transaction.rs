@@ -3,7 +3,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use kernel::{types::intent::{Intent, IntentResult, SendTransactionIntent}, traits::Pipeline};
+use kernel::{
+    traits::Pipeline,
+    types::intent::{Intent, IntentResult, SendTransactionIntent},
+};
 
 use crate::rpc::JsonRpcError;
 
@@ -15,7 +18,7 @@ struct TxParams {
     data: Option<Bytes>,
     gas: Option<U256>,
     gas_price: Option<U256>,
-    max_fee_per_gas: Option<U256>,     
+    max_fee_per_gas: Option<U256>,
     max_priority_fee_per_gas: Option<U256>,
     nonce: Option<U256>,
     chain_id: Option<U256>,
@@ -47,7 +50,7 @@ pub async fn eth_send_transaction(
         chain_id: tx.chain_id,
     });
 
-// sending normalized data: intent, into the pipeine.
+    // sending normalized data: intent, into the pipeine.
     match pipeline.submit(intent).await {
         Ok(IntentResult::TxHash(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
         Err(e) => Err(JsonRpcError::internal(format!("{:?}", e))),

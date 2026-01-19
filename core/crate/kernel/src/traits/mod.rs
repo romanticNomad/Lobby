@@ -1,5 +1,3 @@
-
-
 use crate::types::intent::{Intent, IntentError, IntentResult};
 use async_trait::async_trait;
 

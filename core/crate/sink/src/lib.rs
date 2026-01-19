@@ -61,25 +61,25 @@
 //         let chain_id = intent.chain_id();
 //         let from = intent.from();
 
-        // // ---------------------------------------------------------------------
-        // // 3. Reserve nonce (provisional, not finalized)
-        // // ---------------------------------------------------------------------
+// // ---------------------------------------------------------------------
+// // 3. Reserve nonce (provisional, not finalized)
+// // ---------------------------------------------------------------------
 
-        // let nonce = match execution.nonce() {
-        //     Some(nonce) => nonce,
-        //     None => {
-        //         let reserved = self
-        //             .nonce
-        //             .reserve(chain_id, from)
-        //             .await?; // renamed semantically, not behaviorally
+// let nonce = match execution.nonce() {
+//     Some(nonce) => nonce,
+//     None => {
+//         let reserved = self
+//             .nonce
+//             .reserve(chain_id, from)
+//             .await?; // renamed semantically, not behaviorally
 
-        //         self.state
-        //             .record_nonce(execution_id, reserved)
-        //             .await?;
+//         self.state
+//             .record_nonce(execution_id, reserved)
+//             .await?;
 
-        //         reserved
-        //     }
-        // };
+//         reserved
+//     }
+// };
 
 //         // ---------------------------------------------------------------------
 //         // 4. Encode transaction (pure, deterministic)
@@ -125,47 +125,47 @@
 //         // 6. Broadcast transaction
 //         // ---------------------------------------------------------------------
 
-        // let tx_hash = match execution.tx_hash {
-        //     Some(hash) => hash,
-        //     None => {
-        //         match self.broadcaster.broadcast(chain_id, &signed_tx).await? {
-        //             BroadcastOutcome::Submitted { tx_hash } => {
-        //                 self.state
-        //                     .mark_broadcasted(execution_id, tx_hash)
-        //                     .await?;
-        //                 tx_hash
-        //             }
+// let tx_hash = match execution.tx_hash {
+//     Some(hash) => hash,
+//     None => {
+//         match self.broadcaster.broadcast(chain_id, &signed_tx).await? {
+//             BroadcastOutcome::Submitted { tx_hash } => {
+//                 self.state
+//                     .mark_broadcasted(execution_id, tx_hash)
+//                     .await?;
+//                 tx_hash
+//             }
 
-        //             BroadcastOutcome::Rejected { reason } => {
-        //                 self.state
-        //                     .mark_failed(
-        //                         execution_id,
-        //                         ExecutionError::BroadcastFailure,
-        //                     )
-        //                     .await?;
+//             BroadcastOutcome::Rejected { reason } => {
+//                 self.state
+//                     .mark_failed(
+//                         execution_id,
+//                         ExecutionError::BroadcastFailure,
+//                     )
+//                     .await?;
 
-        //                 return Err(IntentError::Rejected(reason));
-        //             }
+//                 return Err(IntentError::Rejected(reason));
+//             }
 
-        //             BroadcastOutcome::Unknown => {
-        //                 // Assume broadcast happened; we must not double-send
-        //                 self.state
-        //                     .transition(
-        //                         execution_id,
-        //                         ExecutionState::PendingFinality {
-        //                             tx_hash: None,
-        //                         },
-        //                     )
-        //                     .await?;
+//             BroadcastOutcome::Unknown => {
+//                 // Assume broadcast happened; we must not double-send
+//                 self.state
+//                     .transition(
+//                         execution_id,
+//                         ExecutionState::PendingFinality {
+//                             tx_hash: None,
+//                         },
+//                     )
+//                     .await?;
 
-        //                 // We do NOT have a tx hash, so submit cannot succeed
-        //                 return Err(IntentError::Internal(
-        //                     "broadcast outcome unknown".into(),
-        //                 ));
-        //             }
-        //         }
-        //     }
-        // };
+//                 // We do NOT have a tx hash, so submit cannot succeed
+//                 return Err(IntentError::Internal(
+//                     "broadcast outcome unknown".into(),
+//                 ));
+//             }
+//         }
+//     }
+// };
 //         // ---------------------------------------------------------------------
 //         // 7. Transition to pending-finality
 //         // ---------------------------------------------------------------------
@@ -177,58 +177,58 @@
 //             )
 //             .await?;
 
-        // // ---------------------------------------------------------------------
-        // // 8. Spawn finality tracking (non-blocking, resolves nonce)
-        // // ---------------------------------------------------------------------
+// // ---------------------------------------------------------------------
+// // 8. Spawn finality tracking (non-blocking, resolves nonce)
+// // ---------------------------------------------------------------------
 
-        // let state = self.state.clone();
-        // let finality = self.finality.clone();
-        // let nonce_mgr = self.nonce.clone();
+// let state = self.state.clone();
+// let finality = self.finality.clone();
+// let nonce_mgr = self.nonce.clone();
 
-        // tokio::spawn(async move {
-        //     let outcome = finality
-        //         .watch(chain_id, tx_hash)
-        //         .await;
+// tokio::spawn(async move {
+//     let outcome = finality
+//         .watch(chain_id, tx_hash)
+//         .await;
 
-        //     match outcome {
-        //         Ok(success) => {
-        //             // 1️⃣ Update execution state
-        //             let _ = state
-        //                 .mark_finalized(execution_id, success)
-        //                 .await;
+//     match outcome {
+//         Ok(success) => {
+//             // 1️⃣ Update execution state
+//             let _ = state
+//                 .mark_finalized(execution_id, success)
+//                 .await;
 
-        //             // 2️⃣ Resolve nonce based on outcome
-        //             let _ = nonce_mgr
-        //                 .resolve(
-        //                     chain_id,
-        //                     from,
-        //                     nonce,
-        //                     success,
-        //                 )
-        //                 .await;
-        //         }
+//             // 2️⃣ Resolve nonce based on outcome
+//             let _ = nonce_mgr
+//                 .resolve(
+//                     chain_id,
+//                     from,
+//                     nonce,
+//                     success,
+//                 )
+//                 .await;
+//         }
 
-        //         Err(err) => {
-        //             // 1️⃣ Mark execution failed
-        //             let _ = state
-        //                 .mark_failed(execution_id, err.clone())
-        //                 .await;
+//         Err(err) => {
+//             // 1️⃣ Mark execution failed
+//             let _ = state
+//                 .mark_failed(execution_id, err.clone())
+//                 .await;
 
-        //             // 2️⃣ Mark nonce as dropped / replaceable
-        //             let _ = nonce_mgr
-        //                 .drop(
-        //                     chain_id,
-        //                     from,
-        //                     nonce,
-        //                 )
-        //                 .await;
-        //         }
-        //     }
-        // });
+//             // 2️⃣ Mark nonce as dropped / replaceable
+//             let _ = nonce_mgr
+//                 .drop(
+//                     chain_id,
+//                     from,
+//                     nonce,
+//                 )
+//                 .await;
+//         }
+//     }
+// });
 
-        // // ---------------------------------------------------------------------
-        // // 9. Return immediate response (broadcast succeeded)
-        // // ---------------------------------------------------------------------
+// // ---------------------------------------------------------------------
+// // 9. Return immediate response (broadcast succeeded)
+// // ---------------------------------------------------------------------
 
-        // Ok(IntentResult::TxHash(tx_hash.into()))
+// Ok(IntentResult::TxHash(tx_hash.into()))
 // }
