@@ -8,5 +8,3 @@ pub struct ChainId(pub U256);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TxNonce(pub U256);
-
-pub type TxHash = B256;
