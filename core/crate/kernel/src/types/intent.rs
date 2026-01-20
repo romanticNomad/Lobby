@@ -1,5 +1,5 @@
-use alloy_primitives::{Address, Bytes, U256};
 use crate::types::{nonce::TxNonce, state::ChainId};
+use alloy_primitives::{Address, Bytes, U256};
 
 pub enum Intent {
     SendTransaction(SendTransactionIntent),

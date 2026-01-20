@@ -4,11 +4,12 @@ use crate::types::{
     validate::ExecutionError,
 };
 use alloy_primitives::{B256, U256};
+use serde::Deserialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ExecutionId(pub uuid::Uuid);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct ChainId(pub U256);
 
 pub type TxHash = B256;

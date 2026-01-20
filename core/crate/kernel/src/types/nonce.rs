@@ -1,7 +1,8 @@
 use crate::types::state::{ChainId, ExecutionId};
 use alloy_primitives::{Address, U256};
+use serde::Deserialize;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct TxNonce(pub U256);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

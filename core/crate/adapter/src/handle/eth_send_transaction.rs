@@ -5,7 +5,11 @@ use std::sync::Arc;
 
 use kernel::{
     traits::Pipeline,
-    types::intent::{Intent, IntentResult, SendTransactionIntent},
+    types::{
+        intent::{Intent, IntentResult, SendTransactionIntent},
+        nonce::TxNonce,
+        state::ChainId,
+    },
 };
 
 use crate::rpc::JsonRpcError;
@@ -20,8 +24,8 @@ struct TxParams {
     gas_price: Option<U256>,
     max_fee_per_gas: Option<U256>,
     max_priority_fee_per_gas: Option<U256>,
-    nonce: Option<U256>,
-    chain_id: Option<U256>,
+    nonce: TxNonce,
+    chain_id: ChainId,
 }
 
 pub async fn eth_send_transaction(
