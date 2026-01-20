@@ -7,4 +7,5 @@ pub enum ExecutionError {
     BroadcastFailure,
     ValidationFailure,
     Internal(String),
+    Rejected(String),
 }

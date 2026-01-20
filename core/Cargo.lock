@@ -1650,6 +1650,11 @@ dependencies = [
 [[package]]
 name = "sink"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "kernel",
+ "tokio",
+]
 
 [[package]]
 name = "smallvec"

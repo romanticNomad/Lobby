@@ -1,4 +1,5 @@
 use alloy_primitives::{Address, Bytes, U256};
+use crate::types::{nonce::TxNonce, state::ChainId};
 
 pub enum Intent {
     SendTransaction(SendTransactionIntent),
@@ -14,17 +15,10 @@ pub struct SendTransactionIntent {
     pub gas_price: Option<U256>,
     pub max_fee_per_gas: Option<U256>,
     pub max_priority_fee_per_gas: Option<U256>,
-    pub nonce: Option<U256>,
-    pub chain_id: Option<U256>,
+    pub nonce: TxNonce,
+    pub chain_id: ChainId,
 }
 
 pub enum IntentResult {
     TxHash(Bytes), // Tx hash
-}
-
-#[derive(Debug)]
-pub enum IntentError {
-    Rejected(String),
-    Invalid(String),
-    Internal(String),
 }

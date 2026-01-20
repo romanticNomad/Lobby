@@ -40,7 +40,6 @@ pub enum ExecutionState {
 pub struct Execution {
     pub id: ExecutionId,
     pub state: ExecutionState,
-
     pub nonce: Option<TxNonce>,
     pub raw_tx: Option<RawTransaction>,
     pub signed_tx: Option<SignedTransaction>,
