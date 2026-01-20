@@ -1,6 +1,6 @@
-use async_trait::async_trait;
-use alloy_primitives::Address;
 use crate::types::*;
+use alloy_primitives::Address;
+use async_trait::async_trait;
 
 // ============================================================
 

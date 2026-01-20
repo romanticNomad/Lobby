@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256, U256, Bytes};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use serde::Deserialize;
 
 // ============================================================

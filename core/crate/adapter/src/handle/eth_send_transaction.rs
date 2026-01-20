@@ -5,11 +5,7 @@ use std::sync::Arc;
 
 use kernel::{
     traits::Pipeline,
-    types::{
-        intent::{Intent, IntentResult, SendTransactionIntent},
-        nonce::TxNonce,
-        state::ChainId,
-    },
+    types::{ChainId, Intent, IntentResult, SendTransactionIntent, TxNonce},
 };
 
 use crate::rpc::JsonRpcError;
