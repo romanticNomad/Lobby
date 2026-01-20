@@ -4,6 +4,7 @@ use serde::Deserialize;
 // ============================================================
 
 // EIP-1159 compatible.
+#[derive(Debug)]
 pub struct SendTransactionIntent {
     pub from: Address,
     pub to: Option<Address>,
@@ -23,10 +24,11 @@ pub type TxHash = B256;
 
 // ============================================================
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Execution {
     pub id: ExecutionId,
     pub state: ExecutionState,
+    pub payload: Intent,
     pub nonce: Option<TxNonce>,
     pub raw_tx: Option<RawTransaction>,
     pub signed_tx: Option<SignedTransaction>,
@@ -75,6 +77,7 @@ pub struct SignedTransaction {
 
 // ================================================
 
+#[derive(Debug)]
 pub enum Intent {
     SendTransaction(SendTransactionIntent),
 }
@@ -82,7 +85,7 @@ pub enum Intent {
 // ============================================================
 
 pub enum IntentResult {
-    TxHash(Bytes), // Tx hash
+    TxHash(TxHash), // Tx hash
 }
 
 // ============================================================
@@ -93,7 +96,7 @@ pub enum ExecutionState {
     NonceReserved {
         nonce: TxNonce,
     },
-    Encoded,
+    Canonicalized,
     Signed,
     Broadcasted {
         tx_hash: TxHash,

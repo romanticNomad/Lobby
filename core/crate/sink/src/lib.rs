@@ -1,58 +1,79 @@
-// use std::sync::Arc;
-
 // use async_trait::async_trait;
-
 // use kernel::{
-//     traits::{Broadcaster, Canonicalizer, NonceManager, Pipeline, Signer, StateStore, Validator},
-//     types::{BroadcastOutcome, ExecutionError, ExecutionState, Intent, IntentResult, RawTransaction, SignedTransaction},
+//     traits::*,
+//     types::{
+//         BroadcastOutcome, ExecutionError, ExecutionState, Intent, IntentResult, RawTransaction,
+//         SignedTransaction, TxHash,
+//     },
 // };
+// use std::sync::Arc;
 
 // pub struct SinkPipeline {
 //     state: Arc<dyn StateStore>,
 //     nonce: Arc<dyn NonceManager>,
-//     signer: Arc<dyn Signer>,
-//     encoder: Arc<dyn Canonicalizer>,
-//     broadcaster: Arc<dyn Broadcaster>,
-//     finality: Arc<dyn Validator>,
+//     canonicalize: Arc<dyn Canonicalizer>,
+//     signe: Arc<dyn Signer>,
+//     broadcaste: Arc<dyn Broadcaster>,
+//     validate: Arc<dyn Validator>,
 // }
 
 // #[async_trait]
 // impl Pipeline for SinkPipeline {
 //     async fn submit(&self, intent: Intent) -> Result<IntentResult, ExecutionError> {
 
-//         // 0. match intent
-//         let tx_intent = match intent {
-//             Intent::SendTransaction(tx) => tx,
-//             _ => return Err(ExecutionError::Internal("Intent not supported yet".to_string())),
-//         };
-
 //         // ---------------------------------------------------------------------
 //         // 1. Register or recover execution
 //         // ---------------------------------------------------------------------
 
 //         let execution = self.state.register_intent(intent).await?;
-
-//         let execution_id = execution.id();
+//         let execution_id = execution.id;
 
 //         // If this execution already completed (idempotency), return immediately
-//         if let Some(result) = execution.final_result() {
-//             return Ok(result);
-//         }
+//         let existing_tx_hash: Option<TxHash> = match &execution.state {
+
+//             // Already broadcast (or beyond) — return immediately
+//             ExecutionState::Broadcasted { tx_hash }
+//             | ExecutionState::PendingValidation { tx_hash: Some(tx_hash) }
+//             | ExecutionState::Validated { tx_hash, .. } => {
+//                 Some(*tx_hash)
+//             }
+
+//             // Ambiguous broadcast: cannot safely return success
+//             ExecutionState::PendingValidation { tx_hash: None } => {
+//                 return Err(ExecutionError::Internal(
+//                     "execution in ambiguous broadcast state".to_string(),
+//                 ));
+//             }
+
+//             // Terminal failure before broadcast — propagate error
+//             ExecutionState::Failed { error } => {
+//                 return Err(error.clone());
+//             }
+
+//             // Otherwise: execution is incomplete, continue pipeline
+//             _ => None,
+//         };
+
+//         if let Some(tx_hash) = existing_tx_hash {
+//             return Ok(IntentResult::TxHash(tx_hash));
+//         };
 
 //         // ---------------------------------------------------------------------
 //         // 2. Enter deterministic execution scope
 //         // ---------------------------------------------------------------------
 
-//         // This scope defines *exactly once* semantics for nonce + signing
-//         // Anything past this point must be recoverable after crash
+//         let tx_intent = match &execution.payload {
+//             Intent::SendTransaction(tx) => tx,
+//         };
+        
 //         let chain_id = tx_intent.chain_id;
 //         let from = tx_intent.from;
 
 //         // ---------------------------------------------------------------------
-//         // 3. Reserve nonce (provisional, not finalized)
+//         // 3. Reserve nonce (provisional, not Validated)
 //         // ---------------------------------------------------------------------
 
-//         let nonce = match execution.nonce() {
+//         let nonce = match execution.nonce {
 //             Some(nonce) => nonce,
 //             None => {
 //                 let reserved = self.nonce.reserve(chain_id, from).await?; // renamed semantically, not behaviorally
@@ -67,12 +88,12 @@
 //         // 4. Encode transaction (pure, deterministic)
 //         // ---------------------------------------------------------------------
 
-//         let raw_tx: RawTransaction = match execution.raw_transaction() {
+//         let raw_tx: RawTransaction = match execution.raw_tx {
 //             Some(tx) => tx,
 //             None => {
-//                 let tx = self.encoder.encode(&intent, nonce).await?;
+//                 let tx = self.canonicalize.canonicalize(&tx_intent, chain_id, nonce).await?;
 
-//                 self.state.record_raw_transaction(execution_id, &tx).await?;
+//                 self.state.record_raw_tx(execution_id, &tx).await?;
 
 //                 tx
 //             }
@@ -82,13 +103,13 @@
 //         // 5. Sign transaction (serialized per chain_id + from)
 //         // ---------------------------------------------------------------------
 
-//         let signed_tx: SignedTransaction = match execution.signed_transaction() {
+//         let signed_tx: SignedTransaction = match execution.signed_tx {
 //             Some(tx) => tx,
 //             None => {
-//                 let tx = self.signer.sign(chain_id, from, &raw_tx).await?;
+//                 let tx = self.signe.sign(chain_id, from, &raw_tx).await?;
 
 //                 self.state
-//                     .record_signed_transaction(execution_id, &tx)
+//                     .record_signed_tx(execution_id, &tx)
 //                     .await?;
 
 //                 tx
@@ -102,7 +123,7 @@
 //         let tx_hash = match execution.tx_hash {
 //             Some(hash) => hash,
 //             None => {
-//                 match self.broadcaster.broadcast(chain_id, &signed_tx).await? {
+//                 match self.broadcaste.broadcast(chain_id, &signed_tx).await? {
 //                     BroadcastOutcome::Submitted { tx_hash } => {
 //                         self.state.mark_broadcasted(execution_id, tx_hash).await?;
 //                         tx_hash
@@ -132,28 +153,33 @@
 //             }
 //         };
 //         // ---------------------------------------------------------------------
-//         // 7. Transition to pending-finality
+//         // 7. Transition to pending-validator
 //         // ---------------------------------------------------------------------
 
 //         self.state
-//             .transition(execution_id, ExecutionState::PendingValidation { tx_hash: Some(tx_hash) })
+//             .transition(
+//                 execution_id,
+//                 ExecutionState::PendingValidation {
+//                     tx_hash: Some(tx_hash),
+//                 },
+//             )
 //             .await?;
 
 //         // ---------------------------------------------------------------------
-//         // 8. Spawn finality tracking (non-blocking, resolves nonce)
+//         // 8. Spawn validator tracking (non-blocking, resolves nonce)
 //         // ---------------------------------------------------------------------
 
 //         let state = self.state.clone();
-//         let finality = self.finality.clone();
+//         let validator = self.validate.clone();
 //         let nonce_mgr = self.nonce.clone();
 
 //         tokio::spawn(async move {
-//             let outcome = finality.watch(chain_id, tx_hash).await;
+//             let outcome = validator.watch(chain_id, tx_hash).await;
 
 //             match outcome {
 //                 Ok(success) => {
 //                     // Update execution state
-//                     let _ = state.mark_finalized(execution_id, success).await;
+//                     let _ = state.mark_final(execution_id, success).await;
 
 //                     // Resolve nonce based on outcome
 //                     let _ = nonce_mgr.resolve(chain_id, from, nonce, success).await;
@@ -164,7 +190,7 @@
 //                     let _ = state.mark_failed(execution_id, err.clone()).await;
 
 //                     // Mark nonce as dropped / replaceable
-//                     let _ = nonce_mgr.drop(chain_id, from, nonce).await;
+//                     let _ = nonce_mgr.reject(chain_id, from, nonce).await;
 //                 }
 //             }
 //         });
