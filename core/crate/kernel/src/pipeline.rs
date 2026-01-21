@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use crate::{
     traits::*,
     types::{
@@ -6,6 +5,7 @@ use crate::{
         SignedTransaction, TxHash,
     },
 };
+use async_trait::async_trait;
 use std::sync::Arc;
 
 pub struct SinkPipeline {
@@ -20,7 +20,6 @@ pub struct SinkPipeline {
 #[async_trait]
 impl Pipeline for SinkPipeline {
     async fn submit(&self, intent: Intent) -> Result<IntentResult, ExecutionError> {
-
         // ---------------------------------------------------------------------
         // 1. Register or recover execution
         // ---------------------------------------------------------------------
@@ -30,13 +29,12 @@ impl Pipeline for SinkPipeline {
 
         // If this execution already completed (idempotency), return immediately
         let existing_tx_hash: Option<TxHash> = match &execution.state {
-
             // Already broadcast (or beyond) — return immediately
             ExecutionState::Broadcasted { tx_hash }
-            | ExecutionState::PendingValidation { tx_hash: Some(tx_hash) }
-            | ExecutionState::Validated { tx_hash, .. } => {
-                Some(*tx_hash)
+            | ExecutionState::PendingValidation {
+                tx_hash: Some(tx_hash),
             }
+            | ExecutionState::Validated { tx_hash, .. } => Some(*tx_hash),
 
             // Ambiguous broadcast: cannot safely return success
             ExecutionState::PendingValidation { tx_hash: None } => {
@@ -65,7 +63,7 @@ impl Pipeline for SinkPipeline {
         let tx_intent = match &execution.payload {
             Intent::SendTransaction(tx) => tx,
         };
-        
+
         let chain_id = tx_intent.chain_id;
         let from = tx_intent.from;
 
@@ -76,7 +74,7 @@ impl Pipeline for SinkPipeline {
         let nonce = match execution.nonce {
             Some(nonce) => nonce,
             None => {
-                let reserved = self.nonce.reserve(chain_id, from).await?; 
+                let reserved = self.nonce.reserve(chain_id, from).await?;
 
                 self.state.record_nonce(execution_id, reserved).await?;
 
@@ -91,7 +89,10 @@ impl Pipeline for SinkPipeline {
         let raw_tx: RawTransaction = match execution.raw_tx {
             Some(tx) => tx,
             None => {
-                let tx = self.canonicalize.canonicalize(&tx_intent, chain_id, nonce).await?;
+                let tx = self
+                    .canonicalize
+                    .canonicalize(&tx_intent, chain_id, nonce)
+                    .await?;
 
                 self.state.record_raw_tx(execution_id, &tx).await?;
 
@@ -108,9 +109,7 @@ impl Pipeline for SinkPipeline {
             None => {
                 let tx = self.sign.sign(chain_id, from, &raw_tx).await?;
 
-                self.state
-                    .record_signed_tx(execution_id, &tx)
-                    .await?;
+                self.state.record_signed_tx(execution_id, &tx).await?;
 
                 tx
             }
@@ -125,8 +124,7 @@ impl Pipeline for SinkPipeline {
             None => {
                 match self.broadcaste.broadcast(chain_id, &signed_tx).await? {
                     BroadcastOutcome::Submitted { tx_hash } => {
-                        self.state
-                        .mark_broadcasted(execution_id, tx_hash).await?;
+                        self.state.mark_broadcasted(execution_id, tx_hash).await?;
                         tx_hash
                     }
 

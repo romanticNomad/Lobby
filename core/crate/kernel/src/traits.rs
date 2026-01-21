@@ -47,11 +47,7 @@ pub trait StateStore: Send + Sync {
         error: ExecutionError,
     ) -> Result<(), ExecutionError>;
 
-    async fn mark_final(
-        &self,
-        id: ExecutionId,
-        success: bool,
-    ) -> Result<(), ExecutionError>;
+    async fn mark_final(&self, id: ExecutionId, success: bool) -> Result<(), ExecutionError>;
 }
 
 // ============================================================

@@ -1104,6 +1104,10 @@ dependencies = [
 [[package]]
 name = "nonce"
 version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "kernel",
+]
 
 [[package]]
 name = "num-bigint"
