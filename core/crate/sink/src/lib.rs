@@ -125,7 +125,8 @@ impl Pipeline for SinkPipeline {
             None => {
                 match self.broadcaste.broadcast(chain_id, &signed_tx).await? {
                     BroadcastOutcome::Submitted { tx_hash } => {
-                        self.state.mark_broadcasted(execution_id, tx_hash).await?;
+                        self.state
+                        .mark_broadcasted(execution_id, tx_hash).await?;
                         tx_hash
                     }
 
