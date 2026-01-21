@@ -4,5 +4,5 @@ members = [
     "bin/main",
     "crate/adapter",
     "crate/kernel",
-    "crate/sink",
+    "crate/sink", "crate/state",
 ]
