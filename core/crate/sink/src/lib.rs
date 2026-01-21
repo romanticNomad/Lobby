@@ -12,7 +12,7 @@ pub struct SinkPipeline {
     state: Arc<dyn StateStore>,
     nonce: Arc<dyn NonceManager>,
     canonicalize: Arc<dyn Canonicalizer>,
-    signe: Arc<dyn Signer>,
+    sign: Arc<dyn Signer>,
     broadcaste: Arc<dyn Broadcaster>,
     validate: Arc<dyn Validator>,
 }
@@ -106,7 +106,7 @@ impl Pipeline for SinkPipeline {
         let signed_tx: SignedTransaction = match execution.signed_tx {
             Some(tx) => tx,
             None => {
-                let tx = self.signe.sign(chain_id, from, &raw_tx).await?;
+                let tx = self.sign.sign(chain_id, from, &raw_tx).await?;
 
                 self.state
                     .record_signed_tx(execution_id, &tx)
