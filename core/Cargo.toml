@@ -3,6 +3,6 @@ resolver = "3"
 members = [
     "bin/main",
     "crate/adapter",
-    "crate/kernel",
-    "crate/sink", "crate/state",
+    "crate/kernel", "crate/nonce",
+    "crate/state",
 ]

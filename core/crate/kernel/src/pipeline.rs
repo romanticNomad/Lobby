@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use kernel::{
+use crate::{
     traits::*,
     types::{
         BroadcastOutcome, ExecutionError, ExecutionState, Intent, IntentResult, RawTransaction,

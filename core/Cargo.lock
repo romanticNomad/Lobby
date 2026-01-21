@@ -1040,6 +1040,7 @@ dependencies = [
  "alloy-primitives",
  "async-trait",
  "serde",
+ "tokio",
  "uuid",
 ]
 
@@ -1099,6 +1100,10 @@ dependencies = [
  "wasi",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "nonce"
+version = "0.1.0"
 
 [[package]]
 name = "num-bigint"
@@ -1646,15 +1651,6 @@ checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
 dependencies = [
  "digest 0.10.7",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "sink"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "kernel",
- "tokio",
 ]
 
 [[package]]
