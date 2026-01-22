@@ -24,28 +24,20 @@ impl Pipeline for SinkPipeline {
         let execution = self.state.register_intent(intent).await?;
         let execution_id = execution.id;
 
-        // If this execution already completed (idempotency), return immediately
         let existing_tx_hash = match &execution.state {
-            // Already broadcast (or beyond) — return immediately
             ExecutionState::Broadcasted { tx_hash }
             | ExecutionState::PendingValidation {
                 tx_hash: Some(tx_hash),
             }
             | ExecutionState::Validated { tx_hash, .. } => Some(*tx_hash),
-
-            // Ambiguous broadcast: cannot safely return success
             ExecutionState::PendingValidation { tx_hash: None } => {
                 return Err(ExecutionError::Internal(
                     "execution in ambiguous broadcast state".to_string(),
                 ));
             }
-
-            // Terminal failure before broadcast — propagate error
             ExecutionState::Failed { error } => {
                 return Err(error.clone());
             }
-
-            // Otherwise: execution is incomplete, continue pipeline
             _ => None,
         };
 
@@ -72,9 +64,7 @@ impl Pipeline for SinkPipeline {
             Some(nonce) => nonce,
             None => {
                 let reserved = self.nonce.reserve(chain_id, from).await?;
-
                 self.state.record_nonce(execution_id, reserved).await?;
-
                 reserved
             }
         };
@@ -92,7 +82,6 @@ impl Pipeline for SinkPipeline {
                     .await?;
 
                 self.state.record_raw_tx(execution_id, &tx).await?;
-
                 tx
             }
         };
@@ -105,9 +94,7 @@ impl Pipeline for SinkPipeline {
             Some(tx) => tx,
             None => {
                 let tx = self.sign.sign(chain_id, from, &raw_tx).await?;
-
                 self.state.record_signed_tx(execution_id, &tx).await?;
-
                 tx
             }
         };
@@ -118,36 +105,29 @@ impl Pipeline for SinkPipeline {
 
         let tx_hash = match execution.tx_hash {
             Some(hash) => hash,
-            None => {
-                match self.broadcaste.broadcast(chain_id, &signed_tx).await? {
-                    BroadcastOutcome::Submitted { tx_hash } => {
-                        self.state.mark_broadcasted(execution_id, tx_hash).await?;
-                        tx_hash
-                    }
-
-                    BroadcastOutcome::Rejected { reason } => {
-                        self.state
-                            .mark_failed(execution_id, ExecutionError::BroadcastFailure)
-                            .await?;
-
-                        return Err(ExecutionError::Rejected(reason));
-                    }
-
-                    BroadcastOutcome::Unknown => {
-                        // Assume broadcast happened; we must not double-send
-                        self.state
-                            .transition(
-                                execution_id,
-                                ExecutionState::PendingValidation { tx_hash: None },
-                            )
-                            .await?;
-
-                        // We do NOT have a tx hash, so submit cannot succeed
-                        return Err(ExecutionError::Internal("broadcast outcome unknown".into()));
-                    }
+            None => match self.broadcaste.broadcast(chain_id, &signed_tx).await? {
+                BroadcastOutcome::Submitted { tx_hash } => {
+                    self.state.mark_broadcasted(execution_id, tx_hash).await?;
+                    tx_hash
                 }
-            }
+                BroadcastOutcome::Rejected { reason } => {
+                    self.state
+                        .mark_failed(execution_id, ExecutionError::BroadcastFailure)
+                        .await?;
+                    return Err(ExecutionError::Rejected(reason));
+                }
+                BroadcastOutcome::Unknown => {
+                    self.state
+                        .transition(
+                            execution_id,
+                            ExecutionState::PendingValidation { tx_hash: None },
+                        )
+                        .await?;
+                    return Err(ExecutionError::Internal("broadcast outcome unknown".into()));
+                }
+            },
         };
+
         // ---------------------------------------------------------------------
         // 7. Transition to pending-validator
         // ---------------------------------------------------------------------
@@ -171,21 +151,13 @@ impl Pipeline for SinkPipeline {
 
         tokio::spawn(async move {
             let outcome = validator.watch(chain_id, tx_hash).await;
-
             match outcome {
                 Ok(success) => {
-                    // Update execution state
                     let _ = state.mark_final(execution_id, success).await;
-
-                    // Resolve nonce based on outcome
                     let _ = nonce_mgr.resolve(chain_id, from, nonce, success).await;
                 }
-
                 Err(err) => {
-                    // Mark execution failed
                     let _ = state.mark_failed(execution_id, err.clone()).await;
-
-                    // Mark nonce as dropped / replaceable
                     let _ = nonce_mgr.reject(chain_id, from, nonce).await;
                 }
             }
