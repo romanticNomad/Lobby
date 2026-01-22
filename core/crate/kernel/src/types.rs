@@ -108,7 +108,7 @@ pub enum ExecutionState {
 pub enum BroadcastOutcome {
     Submitted { tx_hash: TxHash },
     Rejected { reason: String },
-    Unknown,                    
+    Unknown,
 }
 
 // ============================================================

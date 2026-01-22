@@ -1,23 +1,41 @@
-use alloy_primitives::Address;
-use kernel::types::{ChainId, ExecutionId, TxNonce};
+// use alloy_primitives::Address;
+// use kernel::traits::NonceManager;
+// use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
 
-// ============================================================
+// #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// pub enum NonceStatus {
+//     Reserved,
+//     Broadcasted,
+//     Confirmed,
+//     Dropped,
+// }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NonceStatus {
-    Reserved,    // allocated to an execution, not yet broadcast
-    Broadcasted, // tx sent (or assumed sent)
-    Confirmed,   // included on-chain
-    Dropped,     // not included, safe for replacement
-}
+// #[derive(Debug)]
+// pub struct LobbyNonce {
+//     pub chain_id: ChainId,
+//     pub from: Address,
+//     pub nonce: TxNonce,
+//     pub status: NonceStatus,
+//     pub execution_id: ExecutionId,
+// }
 
-// ============================================================
+// impl NonceManager for LobbyNonce {
+//     async fn reserve(&self, chain_id: ChainId, from: Address) -> Result<TxNonce, ExecutionError> {}
 
-#[derive(Clone, Debug)]
-pub struct NonceRecord {
-    pub chain_id: ChainId,
-    pub from: Address,
-    pub nonce: TxNonce,
-    pub status: NonceStatus,
-    pub execution_id: ExecutionId,
-}
+//     async fn resolve(
+//         &self,
+//         chain_id: ChainId,
+//         from: Address,
+//         nonce: TxNonce,
+//         outcome: bool,
+//     ) -> Result<(), ExecutionError> {
+//     }
+
+//     async fn reject(
+//         &self,
+//         chain_id: ChainId,
+//         from: Address,
+//         nonce: TxNonce,
+//     ) -> Result<(), ExecutionError> {
+//     }
+// }

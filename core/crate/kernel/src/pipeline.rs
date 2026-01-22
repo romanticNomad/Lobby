@@ -5,7 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use std::sync::Arc;
 
-pub struct SinkPipeline {
+pub struct LobbyPipeline {
     state_mgr: Arc<dyn StateStore>,
     nonce_mgr: Arc<dyn NonceManager>,
     canonicalizer: Arc<dyn Canonicalizer>,
@@ -15,7 +15,7 @@ pub struct SinkPipeline {
 }
 
 #[async_trait]
-impl Pipeline for SinkPipeline {
+impl Pipeline for LobbyPipeline {
     async fn submit(&self, intent: Intent) -> Result<IntentResult, ExecutionError> {
         // ---------------------------------------------------------------------
         // 1. Register or recover execution
@@ -107,7 +107,9 @@ impl Pipeline for SinkPipeline {
             Some(hash) => hash,
             None => match self.broadcaster.broadcast(chain_id, &signed_tx).await? {
                 BroadcastOutcome::Submitted { tx_hash } => {
-                    self.state_mgr.mark_broadcasted(execution_id, tx_hash).await?;
+                    self.state_mgr
+                        .mark_broadcasted(execution_id, tx_hash)
+                        .await?;
                     tx_hash
                 }
                 BroadcastOutcome::Rejected { reason } => {
