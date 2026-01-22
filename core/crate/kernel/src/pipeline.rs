@@ -1,9 +1,6 @@
 use crate::{
     traits::*,
-    types::{
-        BroadcastOutcome, ExecutionError, ExecutionState, Intent, IntentResult, RawTransaction,
-        SignedTransaction, TxHash,
-    },
+    types::{BroadcastOutcome, ExecutionError, ExecutionState, Intent, IntentResult},
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -28,7 +25,7 @@ impl Pipeline for SinkPipeline {
         let execution_id = execution.id;
 
         // If this execution already completed (idempotency), return immediately
-        let existing_tx_hash: Option<TxHash> = match &execution.state {
+        let existing_tx_hash = match &execution.state {
             // Already broadcast (or beyond) — return immediately
             ExecutionState::Broadcasted { tx_hash }
             | ExecutionState::PendingValidation {
@@ -86,7 +83,7 @@ impl Pipeline for SinkPipeline {
         // 4. Encode transaction (pure, deterministic)
         // ---------------------------------------------------------------------
 
-        let raw_tx: RawTransaction = match execution.raw_tx {
+        let raw_tx = match execution.raw_tx {
             Some(tx) => tx,
             None => {
                 let tx = self
@@ -104,7 +101,7 @@ impl Pipeline for SinkPipeline {
         // 5. Sign transaction (serialized per chain_id + from)
         // ---------------------------------------------------------------------
 
-        let signed_tx: SignedTransaction = match execution.signed_tx {
+        let signed_tx = match execution.signed_tx {
             Some(tx) => tx,
             None => {
                 let tx = self.sign.sign(chain_id, from, &raw_tx).await?;
