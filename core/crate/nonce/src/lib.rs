@@ -26,16 +26,8 @@
 //         &self,
 //         chain_id: ChainId,
 //         from: Address,
-//         nonce: TxNonce,
+//         id: ExecutionId,
 //         outcome: bool,
-//     ) -> Result<(), ExecutionError> {
-//     }
-
-//     async fn reject(
-//         &self,
-//         chain_id: ChainId,
-//         from: Address,
-//         nonce: TxNonce,
 //     ) -> Result<(), ExecutionError> {
 //     }
 // }

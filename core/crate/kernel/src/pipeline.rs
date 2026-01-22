@@ -63,9 +63,9 @@ impl Pipeline for LobbyPipeline {
         let nonce = match execution.nonce {
             Some(nonce) => nonce,
             None => {
-                let reserved = self.nonce_mgr.reserve(chain_id, from).await?;
-                self.state_mgr.record_nonce(execution_id, reserved).await?;
-                reserved
+                let reserved_nonce = self.nonce_mgr.reserve(chain_id, from).await?;
+                self.state_mgr.record_nonce(execution_id, reserved_nonce).await?;
+                reserved_nonce
             }
         };
 
@@ -149,18 +149,15 @@ impl Pipeline for LobbyPipeline {
 
         let v_state_mgr = self.state_mgr.clone();
         let validator = self.validator.clone();
-        let v_nonce_mgr = self.nonce_mgr.clone();
 
         tokio::spawn(async move {
             let outcome = validator.watch(chain_id, tx_hash).await;
             match outcome {
                 Ok(success) => {
                     let _ = v_state_mgr.mark_final(execution_id, success).await;
-                    let _ = v_nonce_mgr.resolve(chain_id, from, nonce, success).await;
                 }
                 Err(err) => {
                     let _ = v_state_mgr.mark_failed(execution_id, err.clone()).await;
-                    let _ = v_nonce_mgr.reject(chain_id, from, nonce).await;
                 }
             }
         });

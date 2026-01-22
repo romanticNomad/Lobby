@@ -62,16 +62,8 @@ pub trait NonceManager: Send + Sync {
         &self,
         chain_id: ChainId,
         from: Address,
-        nonce: TxNonce,
+        id: ExecutionId,
         outcome: bool,
-    ) -> Result<(), ExecutionError>;
-
-    /// Explicitly drop a nonce (broadcast failed or abandoned).
-    async fn reject(
-        &self,
-        chain_id: ChainId,
-        from: Address,
-        nonce: TxNonce,
     ) -> Result<(), ExecutionError>;
 }
 
