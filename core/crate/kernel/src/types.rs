@@ -107,20 +107,15 @@ pub enum ExecutionState {
 #[derive(Clone, Debug)]
 pub enum BroadcastOutcome {
     Submitted { tx_hash: TxHash },
-    Rejected { reason: String }, // definitively not submitted
-    Unknown,                     // may have been submitted
+    Rejected { reason: String },
+    Unknown,                    
 }
 
 // ============================================================
 
 #[derive(Clone, Debug)]
 pub enum ExecutionError {
-    InvalidIntent,
-    NonceFailure,
-    EncodingFailure,
-    SigningFailure,
     BroadcastFailure,
-    ValidationFailure,
     Internal(String),
     Rejected(String),
 }
