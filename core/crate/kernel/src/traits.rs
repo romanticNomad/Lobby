@@ -55,7 +55,12 @@ pub trait StateStore: Send + Sync {
 #[async_trait]
 pub trait NonceManager: Send + Sync {
     /// Reserve the next available nonce (provisional).
-    async fn reserve(&self, chain_id: ChainId, from: Address) -> Result<TxNonce, ExecutionError>;
+    async fn reserve(
+        &self,
+        chain_id: ChainId,
+        from: Address,
+        id: ExecutionId,
+    ) -> Result<TxNonce, ExecutionError>;
 
     /// Resolve a nonce after validation (success = confirmed, false = dropped).
     async fn resolve(
@@ -98,7 +103,8 @@ pub trait Broadcaster: Send + Sync {
     async fn broadcast(
         &self,
         chain_id: ChainId,
-        tx: &SignedTransaction,
+        id: ExecutionId,
+        tx: SignedTransaction,
     ) -> Result<BroadcastOutcome, ExecutionError>;
 }
 

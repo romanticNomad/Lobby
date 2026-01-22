@@ -53,6 +53,7 @@ pub async fn eth_send_transaction(
     // sending normalized data: intent, into the pipeine.
     match pipeline.submit(intent).await {
         Ok(IntentResult::TxHash(hash)) => Ok(json!(format!("0x{}", hex::encode(hash)))),
+        Ok(IntentResult::Submitted(id)) => Ok(json!(format!("tx submited with id: {:?}", id))),
         Err(e) => Err(JsonRpcError::internal(format!("{:?}", e))),
     }
 }

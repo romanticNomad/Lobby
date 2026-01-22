@@ -20,7 +20,7 @@
 // }
 
 // impl NonceManager for LobbyNonce {
-//     async fn reserve(&self, chain_id: ChainId, from: Address) -> Result<TxNonce, ExecutionError> {}
+//     async fn reserve(&self, chain_id: ChainId, from: Address, id: ExecutionId) -> Result<TxNonce, ExecutionError> {}
 
 //     async fn resolve(
 //         &self,

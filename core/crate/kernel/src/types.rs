@@ -74,7 +74,8 @@ pub enum Intent {
 // ============================================================
 
 pub enum IntentResult {
-    TxHash(TxHash), // Tx hash
+    Submitted(ExecutionId),
+    TxHash(TxHash),
 }
 
 // ============================================================
@@ -87,9 +88,7 @@ pub enum ExecutionState {
     },
     Canonicalized,
     Signed,
-    Broadcasted {
-        tx_hash: TxHash,
-    },
+    BroadcasteInitiated,
     PendingValidation {
         tx_hash: Option<TxHash>, // None if broadcast outcome was unknown
     },
