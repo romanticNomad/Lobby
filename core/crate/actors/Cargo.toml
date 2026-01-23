@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = { version = "1", features = ["full"] }
+kernel = { path = "../kernel" }
+alloy-primitives = {version = "1.5.2", features = ["serde"]}
