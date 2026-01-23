@@ -1,8 +1,0 @@
-[package]
-name = "nonce"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-kernel = { path = "../kernel" }
-alloy-primitives = {version = "1.5.2"}

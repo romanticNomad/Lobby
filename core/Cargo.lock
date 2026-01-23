@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "actors"
+version = "0.1.0"
+
+[[package]]
 name = "alloy-primitives"
 version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -397,6 +401,10 @@ dependencies = [
  "quote",
  "unicode-xid",
 ]
+
+[[package]]
+name = "constants"
+version = "0.1.0"
 
 [[package]]
 name = "convert_case"
@@ -877,14 +885,6 @@ name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
-
-[[package]]
-name = "nonce"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "kernel",
-]
 
 [[package]]
 name = "num-bigint"
@@ -1389,10 +1389,6 @@ dependencies = [
  "base64ct",
  "der",
 ]
-
-[[package]]
-name = "state"
-version = "0.1.0"
 
 [[package]]
 name = "static_assertions"

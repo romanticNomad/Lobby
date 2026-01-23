@@ -137,3 +137,5 @@ Actors are **long-lived Tokio tasks** that **exclusively own a category of mutab
 * Redis: watch scheduling, polling cadence
 
 ---
+
+## 2. Constants and Their Roles in Lobby
