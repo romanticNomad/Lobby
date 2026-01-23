@@ -2,7 +2,7 @@
 resolver = "3"
 members = [
     "bin/main",
-    "crate/adapter",
-    "crate/kernel", "crate/nonce",
+    "crate/kernel",
+    "crate/nonce",
     "crate/state",
 ]

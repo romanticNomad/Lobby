@@ -41,7 +41,6 @@ impl Pipeline for LobbyPipeline {
             Some(nonce) => nonce,
             None => {
                 let nonce = self.nonce_mgr.reserve(chain_id, from, execution_id).await?;
-
                 self.state_mgr.record_nonce(execution_id, nonce).await?;
 
                 nonce
@@ -59,7 +58,6 @@ impl Pipeline for LobbyPipeline {
                     .canonicalizer
                     .canonicalize(&tx_intent, chain_id, nonce)
                     .await?;
-
                 self.state_mgr.record_raw_tx(execution_id, &tx).await?;
 
                 tx
@@ -73,8 +71,9 @@ impl Pipeline for LobbyPipeline {
         let signed_tx = match execution.signed_tx {
             Some(tx) => tx,
             None => {
-                let tx = self.signer.sign(chain_id, from, &raw_tx).await?;
+                let tx = self.signer.sign(chain_id, from, execution_id, &raw_tx).await?;
                 self.state_mgr.record_signed_tx(execution_id, &tx).await?;
+
                 tx
             }
         };
