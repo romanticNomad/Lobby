@@ -1,3 +1,4 @@
+# docker-compose.yml
 version: "3.9"
 
 services:
@@ -9,10 +10,15 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: lobby
-      POSTGRES_PASSWORD: lobby_dev_password
+      POSTGRES_PASSWORD: lobby
       POSTGRES_DB: lobby
     volumes:
       - lobby_pgdata:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c fsync=on
+      -c synchronous_commit=on
+      -c max_connections=100
 
 volumes:
   lobby_pgdata:
