@@ -1,5 +1,5 @@
 # Lobby
 An open-source low-latency evm signer
 
-## local
-local workspace is the local client of Lobby.
+## core
+core is a rust based workspace that forms the foundational codebase of Lobby.
