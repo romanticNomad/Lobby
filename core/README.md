@@ -10,7 +10,7 @@ At a high level, Lobby is composed of:
 * **crate**
     * **kernel** – shared foundations and authority contracts
     * **actors** – long-lived, state-owning decision makers
-    * **constante** – deterministic, stateless computation
+    * **constants** – deterministic, stateless computation
 * **bin**
     * **main** – the server entry point and wiring layer
 
@@ -103,13 +103,13 @@ This actor defines **on-chain truth**.
 
 ---
 
-## Constante: Deterministic Computation
+## Constants: Deterministic Computation
 
-The **constante** crate contains **pure or bounded, deterministic logic** that does **not** require its own runtime task and does **not** own state authority.
+The **constants** crate contains **pure or bounded, deterministic logic** that does **not** require its own runtime task and does **not** own state authority.
 
 ### Constants in Lobby
 
-Constante includes:
+Constants includes:
 
 * **Intent Normalization**
 
@@ -127,7 +127,7 @@ Constante includes:
   * DER encoder/decoder
   * Canonical serialization for Lobby data structures
 
-Constante logic:
+Constants logic:
 
 * Is safe to run inline
 * Is easy to test
@@ -135,7 +135,7 @@ Constante logic:
 
 Rule of thumb:
 
-> *If it is deterministic and does not own state over time, it belongs in constante.*
+> *If it is deterministic and does not own state over time, it belongs in constants.*
 
 ---
 
@@ -168,7 +168,7 @@ Importantly:
 ## Execution Model Summary
 
 1. External requests enter via **RelayHost**
-2. Requests are normalized using **constante**
+2. Requests are normalized using **constants**
 3. The pipeline emits commands
 4. **Actors** make authoritative decisions
 5. Facts are persisted to PostgreSQL
@@ -176,7 +176,7 @@ Importantly:
 
 Key rule:
 
-> **Actors decide. Constante computes. Kernel defines. Main wires.**
+> **Actors decide. Constants computes. Kernel defines. Main wires.**
 
 ---
 
