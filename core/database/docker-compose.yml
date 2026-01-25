@@ -1,24 +1,31 @@
-# docker-compose.yml
-# version: "3.9"
-
 services:
   postgres:
     image: postgres:16
     container_name: lobby-postgres
     restart: unless-stopped
-    ports:
-      - "5432:5432"
+
     environment:
       POSTGRES_USER: lobby
-      POSTGRES_PASSWORD: lobby
+      POSTGRES_PASSWORD: lobby_dev_password
       POSTGRES_DB: lobby
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    ports:
+      - "5432:5432"
+
     volumes:
       - lobby_pgdata:/var/lib/postgresql/data
-    command: >
-      postgres
-      -c fsync=on
-      -c synchronous_commit=on
-      -c max_connections=100
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lobby -d lobby"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+    # Optional — keep only if you want explicitness
+    # command: >
+    #   postgres
+    #   -c max_connections=100
 
 volumes:
   lobby_pgdata:
