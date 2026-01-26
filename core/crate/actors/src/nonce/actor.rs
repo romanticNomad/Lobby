@@ -17,6 +17,11 @@
 // // implimentations of NonceActor
 
 // impl NonceActor {
+
+//     pub fn new(db: PgPool, rx: mpcs::Receiver<NonceCommand>) -> Self {
+//         Self { db, rx }
+//     }
+
 //     // =========================================================
 //     // running the NonceChannel
 
@@ -62,7 +67,7 @@
 //             FROM nonce.nonce_assignments
 //             WHERE execution_id = $1
 //             "#,
-//             execution_id.as_bytes(),
+//             execution_id.0.as_bytes(),
 //         )
 //         .fetch_optional(&self.db)
 //         .await?
