@@ -19,6 +19,6 @@ mod tests {
 
         let (_tx, rx) = mpsc::channel(8);
 
-        let actor = NonceActor::new(pool, rx);
+        let _actor = NonceActor::new(pool, rx);
     }
 }

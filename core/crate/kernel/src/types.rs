@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, Bytes, U256};
 use serde::Deserialize;
+use core::convert::TryFrom;
 
 // ============================================================
 
@@ -49,6 +50,18 @@ pub struct ChainId(pub U256);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct TxNonce(pub U256);
+
+impl TryFrom<i64> for TxNonce {
+    type Error = ExecutionError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value < 0 {
+            return Err(ExecutionError::Rejected(format!("Invalid Nonce: {value}")));
+        }
+
+        Ok(TxNonce(U256::from(value as u64)))
+    }
+}
 
 // ============================================================
 
@@ -114,6 +127,7 @@ pub enum BroadcastOutcome {
 
 #[derive(Clone, Debug)]
 pub enum ExecutionError {
+    DatabaseError(String),
     BroadcastFailure,
     Internal(String),
     Rejected(String),
