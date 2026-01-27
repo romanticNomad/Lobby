@@ -130,6 +130,7 @@ pub enum ExecutionError {
     DatabaseError(String),
     BroadcastFailure,
     Internal(String),
+    Invariant(String),
     Rejected(String),
 }
 

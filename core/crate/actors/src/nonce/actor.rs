@@ -58,6 +58,8 @@ impl NonceActor {
         from: Address,
         execution_id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError> {
+
+        // idempotency check.
         if let Some(existing_nonce) = sqlx::query_scalar!(
             r#"
             SELECT nonce
@@ -73,20 +75,25 @@ impl NonceActor {
             return Ok(TxNonce::try_from(existing_nonce)?);
         }
 
+        // choosing a candidate nonce.
         let mut candidate = {
-            let max = sqlx::query_scalar!(
+            let chain_id_i64: i64 = chain_id.0.try_into()
+            .map_err(|_| ExecutionError::Invariant("chain_id does not fir in i64".to_string()))?;
+
+            if let Some(max) = sqlx::query_scalar!(
                 r#"
                 SELECT COALESCE(MAX(nonce), -1)
                 FROM nonce.nonce_assignments
                 WHERE chain_id = $1 AND from_address = $2
                 "#,
-                chain_id.0 as i64,
-                from.as_fixed_bytes() as &[u8],
+                chain_id_i64 as i64,
+                from.as_bytes() as &[u8],
             )
             .fetch_one(&self.db)
-            .await?;
+            .await
+            .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
-            (max + 1) as TxNonce
+            TxNonce::try_from(max + 1)
         };
 
         loop {
@@ -122,7 +129,7 @@ impl NonceActor {
                     .fetch_optional(&self.db)
                     .await?
                     {
-                        return Ok(existing as TxNonce);
+                        return Ok(TxNonce::try_from(existing)?);
                     }
 
                     // Otherwise, active nonce collision → try next nonce
@@ -131,7 +138,7 @@ impl NonceActor {
                 }
 
                 Err(e) => {
-                    return Err(ExecutionError::Db(e));
+                    return Err(ExecutionError::DatabaseError(e.to_string()));
                 }
             }
         }
@@ -167,9 +174,9 @@ impl NonceActor {
 
         if res.rows_affected() == 0 {
             // Either:
-            // - already terminal (OK, idempotent)
-            // - or execution_id does not exist (invariant violation)
+            // already terminal (OK, idempotent)
 
+            // or execution_id does not exist (invariant violation) -> find through execution_id query.
             let exists = sqlx::query_scalar!(
                 r#"
                 SELECT 1
@@ -179,10 +186,11 @@ impl NonceActor {
                 execution_id.0.as_bytes(),
             )
             .fetch_optional(&self.db)
-            .await?;
+            .await
+            .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
             if exists.is_none() {
-                return Err(ExecutionError::Invariant("unknown execution_id"));
+                return Err(ExecutionError::DatabaseError("unknown execution_id".to_string()));
             }
         }
 
