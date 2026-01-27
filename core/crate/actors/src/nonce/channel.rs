@@ -79,11 +79,7 @@ impl NonceManager for NonceChannel {
             .map_err(|_| ExecutionError::Internal("NonceActor response corrupted".to_string()))?
     }
 
-    async fn resolve(
-        &self,
-        id: ExecutionId,
-        outcome: bool,
-    ) -> Result<(), ExecutionError> {
+    async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let cmd = NonceCommand::Resolve {

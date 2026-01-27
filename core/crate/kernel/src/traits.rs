@@ -63,11 +63,7 @@ pub trait NonceManager: Send + Sync {
     ) -> Result<TxNonce, ExecutionError>;
 
     /// Resolve a nonce after validation (success = confirmed, false = dropped).
-    async fn resolve(
-        &self,
-        id: ExecutionId,
-        outcome: bool,
-    ) -> Result<(), ExecutionError>;
+    async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError>;
 }
 
 // ============================================================

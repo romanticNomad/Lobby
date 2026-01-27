@@ -1,9 +1,6 @@
 use alloy_primitives::Address;
 use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
-use sqlx::{
-    PgPool,
-    postgres::PgDatabaseError,
-};
+use sqlx::{PgPool, postgres::PgDatabaseError};
 use tokio::sync::mpsc;
 
 use crate::nonce::{NonceCommand, NonceState};
@@ -20,7 +17,6 @@ pub struct NonceActor {
 // implimentations of NonceActor
 
 impl NonceActor {
-
     pub fn new(db: PgPool, rx: mpsc::Receiver<NonceCommand>) -> Self {
         Self { db, rx }
     }
@@ -40,11 +36,7 @@ impl NonceActor {
                     let result = self.handle_reserve(chain_id, from, id).await;
                     let _ = reply.send(result);
                 }
-                NonceCommand::Resolve {
-                    id,
-                    outcome,
-                    reply,
-                } => {
+                NonceCommand::Resolve { id, outcome, reply } => {
                     let result = self.handle_resolve(id, outcome).await;
                     let _ = reply.send(result);
                 }
@@ -61,7 +53,6 @@ impl NonceActor {
         from: Address,
         execution_id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError> {
-
         // idempotency check.
         if let Some(existing_nonce) = sqlx::query_scalar!(
             r#"
@@ -79,7 +70,9 @@ impl NonceActor {
         }
 
         // choosing a candidate nonce.
-        let chain_id_i64: i64 = chain_id.0.try_into()
+        let chain_id_i64: i64 = chain_id
+            .0
+            .try_into()
             .map_err(|_| ExecutionError::Invariant("chain_id does not fir in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
 
@@ -96,7 +89,9 @@ impl NonceActor {
             .fetch_one(&self.db)
             .await
             .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?
-            .ok_or_else(| | ExecutionError::Invariant("'COASLESCE(MAX(nonce), -1' returned Null".to_string()))?;
+            .ok_or_else(|| {
+                ExecutionError::Invariant("'COASLESCE(MAX(nonce), -1' returned Null".to_string())
+            })?;
 
             max + 1
         };
@@ -140,9 +135,9 @@ impl NonceActor {
     // resolving nonce state
 
     async fn handle_resolve(
-    &self,
-    execution_id: ExecutionId,
-    success: bool,
+        &self,
+        execution_id: ExecutionId,
+        success: bool,
     ) -> Result<(), ExecutionError> {
         let new_state = if success {
             NonceState::Finalized
@@ -157,7 +152,7 @@ impl NonceActor {
             WHERE execution_id = $1
             AND state IN ('reserved', 'inflight')
             RETURNING state
-            "#
+            "#,
         )
         .bind(execution_id.0.as_bytes().as_slice())
         .bind(new_state)
@@ -182,7 +177,9 @@ impl NonceActor {
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
                 if exists.is_none() {
-                    Err(ExecutionError::DatabaseError("unknown execution_id".to_string()))
+                    Err(ExecutionError::DatabaseError(
+                        "unknown execution_id".to_string(),
+                    ))
                 } else {
                     Ok(()) // idempotent: already resolved
                 }

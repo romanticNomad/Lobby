@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, B256, Bytes, U256};
-use serde::Deserialize;
 use core::convert::TryFrom;
+use serde::Deserialize;
 
 // ============================================================
 
