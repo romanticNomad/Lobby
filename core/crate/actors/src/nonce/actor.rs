@@ -140,53 +140,54 @@ impl NonceActor {
     // resolving nonce state
 
     async fn handle_resolve(
-        &self,
-        execution_id: ExecutionId,
-        success: bool,
+    &self,
+    execution_id: ExecutionId,
+    success: bool,
     ) -> Result<(), ExecutionError> {
-
         let new_state = if success {
             NonceState::Finalized
         } else {
             NonceState::Released
         };
 
-        let result = sqlx::query!(
+        let updated_state = sqlx::query_scalar::<_, NonceState>(
             r#"
             UPDATE nonce.nonce_assignments
             SET state = $2
             WHERE execution_id = $1
-              AND state IN ('reserved', 'inflight')
-            "#,
-            execution_id.0.as_bytes().as_slice(),
-            new_state,
+            AND state IN ('reserved', 'inflight')
+            RETURNING state
+            "#
         )
-        .execute(&self.db)
-        .await?;
+        .bind(execution_id.0.as_bytes().as_slice())
+        .bind(new_state)
+        .fetch_optional(&self.db)
+        .await
+        .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
-        if result.rows_affected() == 0 {
-            // Either:
-            // already terminal (OK, idempotent)
+        match updated_state {
+            Some(_) => Ok(()), // transition succeeded
+            None => {
+                // Either already terminal OR nonexistent
+                let exists = sqlx::query_scalar!(
+                    r#"
+                    SELECT 1
+                    FROM nonce.nonce_assignments
+                    WHERE execution_id = $1
+                    "#,
+                    execution_id.0.as_bytes().as_slice(),
+                )
+                .fetch_optional(&self.db)
+                .await
+                .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
-            // or execution_id does not exist (invariant violation) -> find through execution_id query.
-            let exists = sqlx::query_scalar!(
-                r#"
-                SELECT 1
-                FROM nonce.nonce_assignments
-                WHERE execution_id = $1
-                "#,
-                execution_id.0.as_bytes(),
-            )
-            .fetch_optional(&self.db)
-            .await
-            .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-
-            if exists.is_none() {
-                return Err(ExecutionError::DatabaseError("unknown execution_id".to_string()));
+                if exists.is_none() {
+                    Err(ExecutionError::DatabaseError("unknown execution_id".to_string()))
+                } else {
+                    Ok(()) // idempotent: already resolved
+                }
             }
         }
-
-        Ok(())
     }
 }
 
