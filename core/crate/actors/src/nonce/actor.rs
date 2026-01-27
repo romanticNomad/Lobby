@@ -76,44 +76,46 @@ impl NonceActor {
         }
 
         // choosing a candidate nonce.
-        let mut candidate = {
-            let chain_id_i64: i64 = chain_id.0.try_into()
+        let chain_id_i64: i64 = chain_id.0.try_into()
             .map_err(|_| ExecutionError::Invariant("chain_id does not fir in i64".to_string()))?;
+        let from_address_bytes = &from.0.0;
 
-            if let Some(max) = sqlx::query_scalar!(
+        let mut candidate = {
+            let max = sqlx::query_scalar!(
                 r#"
                 SELECT COALESCE(MAX(nonce), -1)
                 FROM nonce.nonce_assignments
                 WHERE chain_id = $1 AND from_address = $2
                 "#,
-                chain_id_i64 as i64,
-                from.as_bytes() as &[u8],
+                chain_id_i64,
+                from_address_bytes,
             )
             .fetch_one(&self.db)
             .await
-            .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+            .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?
+            .ok_or_else(| | ExecutionError::Invariant("'COASLESCE(MAX(nonce), -1' returned Null".to_string()))?;
 
-            TxNonce::try_from(max + 1)
+            max + 1
         };
 
         loop {
-            let res = sqlx::query!(
+            let result = sqlx::query!(
                 r#"
                 INSERT INTO nonce.nonce_assignments
                     (execution_id, chain_id, from_address, nonce, state)
                 VALUES ($1, $2, $3, $4, 'reserved')
                 "#,
-                execution_id.as_bytes(),
-                chain_id as i64,
-                from.as_bytes(),
-                candidate as i64,
+                execution_id.0.as_bytes().as_slice(),
+                chain_id_i64,
+                from_address_bytes,
+                candidate,
             )
             .execute(&self.db)
             .await;
 
-            match res {
+            match result {
                 Ok(_) => {
-                    return Ok(candidate);
+                    return Ok(TxNonce::try_from(candidate)?);
                 }
 
                 Err(e) if is_unique_violation(&e) => {
@@ -124,10 +126,11 @@ impl NonceActor {
                         FROM nonce.nonce_assignments
                         WHERE execution_id = $1
                         "#,
-                        execution_id.as_bytes(),
+                        execution_id.0.as_bytes().as_slice(),
                     )
                     .fetch_optional(&self.db)
-                    .await?
+                    .await
+                    .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?
                     {
                         return Ok(TxNonce::try_from(existing)?);
                     }
@@ -159,7 +162,7 @@ impl NonceActor {
             "released"
         };
 
-        let res = sqlx::query!(
+        let result = sqlx::query!(
             r#"
             UPDATE nonce.nonce_assignments
             SET state = $2
@@ -172,7 +175,7 @@ impl NonceActor {
         .execute(&self.db)
         .await?;
 
-        if res.rows_affected() == 0 {
+        if result.rows_affected() == 0 {
             // Either:
             // already terminal (OK, idempotent)
 
