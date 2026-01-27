@@ -8,7 +8,6 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "async-trait",
- "dotenvy",
  "kernel",
  "sqlx",
  "tokio",

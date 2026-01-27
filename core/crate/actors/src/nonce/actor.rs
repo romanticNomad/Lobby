@@ -98,6 +98,7 @@ impl NonceActor {
             max + 1
         };
 
+        // race condition handeling.
         loop {
             let result = sqlx::query!(
                 r#"
@@ -119,23 +120,8 @@ impl NonceActor {
                 }
 
                 Err(e) if is_unique_violation(&e) => {
-                    // Was this execution already inserted concurrently?
-                    if let Some(existing) = sqlx::query_scalar!(
-                        r#"
-                        SELECT nonce
-                        FROM nonce.nonce_assignments
-                        WHERE execution_id = $1
-                        "#,
-                        execution_id.0.as_bytes().as_slice(),
-                    )
-                    .fetch_optional(&self.db)
-                    .await
-                    .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?
-                    {
-                        return Ok(TxNonce::try_from(existing)?);
-                    }
-
-                    // Otherwise, active nonce collision → try next nonce
+                    // since idempotency is already handled in first block
+                    // this must be an active nonce collision → try next nonce
                     candidate += 1;
                     continue;
                 }
