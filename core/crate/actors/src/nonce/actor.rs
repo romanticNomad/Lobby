@@ -188,6 +188,9 @@ impl NonceActor {
     }
 }
 
+// =========================================================
+// race conditoin checker.
+
 fn is_unique_violation_on(err: &sqlx::Error, constraint: &str) -> bool {
     let sqlx::Error::Database(db_err) = err else {
         return false;
