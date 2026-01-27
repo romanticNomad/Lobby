@@ -38,8 +38,6 @@ impl NonceActor {
                     let _ = reply.send(result);
                 }
                 NonceCommand::Resolve {
-                    chain_id,
-                    from,
                     id,
                     outcome,
                     reply,
@@ -161,7 +159,7 @@ impl NonceActor {
             WHERE execution_id = $1
               AND state IN ('reserved', 'inflight')
             "#,
-            execution_id.as_bytes(),
+            execution_id.0.as_bytes().as_slice(),
             new_state,
         )
         .execute(&self.db)

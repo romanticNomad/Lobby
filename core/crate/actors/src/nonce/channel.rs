@@ -17,8 +17,6 @@ pub enum NonceCommand {
         reply: oneshot::Sender<Result<TxNonce, ExecutionError>>,
     },
     Resolve {
-        chain_id: ChainId,
-        from: Address,
         id: ExecutionId,
         outcome: bool,
         reply: oneshot::Sender<Result<(), ExecutionError>>,
@@ -71,16 +69,12 @@ impl NonceManager for NonceChannel {
 
     async fn resolve(
         &self,
-        chain_id: ChainId,
-        from: Address,
         id: ExecutionId,
         outcome: bool,
     ) -> Result<(), ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
         let cmd = NonceCommand::Resolve {
-            chain_id,
-            from,
             id,
             outcome,
             reply: reply_tx,

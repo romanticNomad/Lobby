@@ -65,8 +65,6 @@ pub trait NonceManager: Send + Sync {
     /// Resolve a nonce after validation (success = confirmed, false = dropped).
     async fn resolve(
         &self,
-        chain_id: ChainId,
-        from: Address,
         id: ExecutionId,
         outcome: bool,
     ) -> Result<(), ExecutionError>;
