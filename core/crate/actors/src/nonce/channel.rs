@@ -5,6 +5,19 @@ use kernel::{
     types::{ChainId, ExecutionError, ExecutionId, TxNonce},
 };
 use tokio::sync::{mpsc, oneshot};
+use sqlx::Type;
+
+// =========================================================
+// Nonce state type mapping for sqlx <-> Postgres
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]
+pub enum NonceState {
+    Reserved,
+    Inflight,
+    Finalized,
+    Released,
+}
 
 // =========================================================
 // Commands to send over the channel.

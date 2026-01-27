@@ -2,12 +2,11 @@ use alloy_primitives::Address;
 use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
 use sqlx::{
     PgPool,
-    Error,
     postgres::PgDatabaseError,
 };
 use tokio::sync::mpsc;
 
-use crate::nonce::NonceCommand;
+use crate::nonce::{NonceCommand, NonceState};
 
 // =========================================================
 // NonceActor struct declaration
@@ -147,9 +146,9 @@ impl NonceActor {
     ) -> Result<(), ExecutionError> {
 
         let new_state = if success {
-            "finalized"
+            NonceState::Finalized
         } else {
-            "released"
+            NonceState::Released
         };
 
         let result = sqlx::query!(
