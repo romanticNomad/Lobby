@@ -2,7 +2,6 @@ CREATE SCHEMA IF NOT EXISTS nonce;
 
 CREATE TYPE nonce.nonce_state AS ENUM (
     'reserved',
-    'inflight',
     'finalized',
     'released'
 );
@@ -19,7 +18,7 @@ CREATE TABLE nonce.nonce_assignments (
 
 CREATE UNIQUE INDEX uniq_active_nonce
 ON nonce.nonce_assignments (chain_id, from_address, nonce)
-WHERE state IN ('reserved', 'inflight');
+WHERE state IN ('reserved', 'finalized');
 
 CREATE INDEX idx_nonce_by_sender
 ON nonce.nonce_assignments (chain_id, from_address);
