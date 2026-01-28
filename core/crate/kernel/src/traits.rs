@@ -84,10 +84,8 @@ pub trait Canonicalizer: Send + Sync {
 pub trait Signer: Send + Sync {
     async fn sign(
         &self,
-        chain_id: ChainId,
-        from: Address,
         id: ExecutionId,
-        tx: &RawTransaction,
+        tx: RawTransaction,
     ) -> Result<SignedTransaction, ExecutionError>;
 }
 

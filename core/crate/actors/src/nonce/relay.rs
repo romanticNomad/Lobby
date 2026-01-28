@@ -35,7 +35,7 @@ pub enum NonceCommand {
 }
 
 // =========================================================
-// Entry point for Lobby into nonce actor.
+// Entry point for commands into nonce engine.
 
 #[derive(Clone)]
 pub struct NonceRelay {
@@ -43,16 +43,13 @@ pub struct NonceRelay {
 }
 
 impl NonceRelay {
-    // =========================================================
-    // inittiate channel
-
     pub fn new(tx: mpsc::Sender<NonceCommand>) -> Self {
         Self { tx }
     }
 }
 
 // =========================================================
-// implimentation of NonceManager for NonceChannel.
+// implimentation of NonceManager for NonceRelay.
 
 #[async_trait]
 impl NonceManager for NonceRelay {
@@ -63,7 +60,6 @@ impl NonceManager for NonceRelay {
         id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
-
         let cmd = NonceCommand::Reserve {
             chain_id,
             from,
@@ -83,7 +79,6 @@ impl NonceManager for NonceRelay {
 
     async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
-
         let cmd = NonceCommand::Resolve {
             id,
             outcome,
