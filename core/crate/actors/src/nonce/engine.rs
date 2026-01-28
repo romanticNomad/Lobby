@@ -6,23 +6,26 @@ use tokio::sync::mpsc;
 use crate::nonce::{NonceCommand, NonceState};
 
 // =========================================================
-// NonceActor struct declaration
+// NonceEngine struct declaration
 
-pub struct NonceActor {
+pub struct NonceEngine {
     db: PgPool,
     rx: mpsc::Receiver<NonceCommand>,
 }
 
 // =========================================================
-// implimentations of NonceActor
+// implimentations of NonceEngine
 
-impl NonceActor {
+impl NonceEngine {
+    // =========================================================
+    // initiating the actor
+
     pub fn new(db: PgPool, rx: mpsc::Receiver<NonceCommand>) -> Self {
         Self { db, rx }
     }
 
     // =========================================================
-    // running the NonceChannel
+    // running the NonceEngine
 
     pub async fn run(mut self) {
         while let Some(cmd) = self.rx.recv().await {
@@ -208,3 +211,5 @@ fn is_unique_violation_on(err: &sqlx::Error, constraint: &str) -> bool {
         None => false,
     }
 }
+
+// =========================================================

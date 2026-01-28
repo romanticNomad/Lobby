@@ -49,9 +49,9 @@ Each actor:
 * Persists authoritative facts to PostgreSQL
 * Is resilient to crashes, retries, and duplication
 
-### Actors in Lobby
+### actors in Lobby
 
-#### RelayHost (Ingress Actor)
+#### relayHost (Ingress Actor)
 
 * Accepts external requests (EIP-1193, WalletConnect, relays, localhost)
 * Normalizes them into `Intent`s
@@ -62,7 +62,7 @@ Does **not** perform signing, nonce assignment, or broadcasting.
 
 ---
 
-#### NonceManager (Ordering Actor)
+#### nonceManager (Ordering Actor)
 
 * Owns the nonce timeline for `(chain_id, from)`
 * Serializes nonce reservation, reuse, replacement, and resolution
@@ -72,7 +72,7 @@ No other component may assign or reuse nonces.
 
 ---
 
-#### Signer (Custody Actor)
+#### signer (Custody Actor)
 
 * Decides whether a transaction may be signed
 * Serializes signing per key
@@ -83,7 +83,7 @@ This is the **custody authority** of Lobby.
 
 ---
 
-#### Broadcaster (Execution Actor)
+#### broadcaster (Execution Actor)
 
 * Submits signed transactions to the network
 * Manages retries, gas bumping, and replacements
@@ -93,7 +93,7 @@ Owns execution-level economic decisions.
 
 ---
 
-#### Validator (Truth Actor)
+#### validator (Truth Actor)
 
 * Observes chain state
 * Handles confirmations, reorgs, and finality thresholds
@@ -103,25 +103,19 @@ This actor defines **on-chain truth**.
 
 ---
 
-## Constants: Deterministic Computation
+## constants: Deterministic Computation
 
 The **constants** crate contains **pure or bounded, deterministic logic** that does **not** require its own runtime task and does **not** own state authority.
 
-### Constants in Lobby
+### constants in Lobby
 
 Constants includes:
 
-* **Intent Normalization**
+* **intent normalization**
 
   * Converts external client requests into canonical `Intent`s
 
-* **StateManager**
-
-  * A stateless API for accessing the local database
-  * Used by actors and the pipeline
-  * Does **not** own or decide state
-
-* **Canonicalizer**
+* **canonicalizer**
 
   * RLP encoder/decoder
   * DER encoder/decoder
@@ -139,7 +133,7 @@ Rule of thumb:
 
 ---
 
-## Main: Server Entry Point
+## main: Server Entry Point
 
 The **main** crate is the **runtime entry point** for Lobby.
 
@@ -162,6 +156,12 @@ Importantly:
 * `main` contains **no business logic**
 * All authority lives in actors
 * All semantics come from the kernel
+
+---
+## database: database infra for Lobby
+
+* Contains docker-compose.yml for hosting PostgreSQL in Docker
+* Contanis SQLX migration files for schemas owned by individual actors
 
 ---
 

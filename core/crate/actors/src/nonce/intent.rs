@@ -39,11 +39,14 @@ pub enum NonceCommand {
 // Entry point for Lobby into nonce actor.
 
 #[derive(Clone)]
-pub struct NonceChannel {
+pub struct NonceIntent {
     tx: mpsc::Sender<NonceCommand>,
 }
 
-impl NonceChannel {
+impl NonceIntent {
+    // =========================================================
+    // inittiate channel
+
     pub fn new(tx: mpsc::Sender<NonceCommand>) -> Self {
         Self { tx }
     }
@@ -53,7 +56,7 @@ impl NonceChannel {
 // implimentation of NonceManager for NonceChannel.
 
 #[async_trait]
-impl NonceManager for NonceChannel {
+impl NonceManager for NonceIntent {
     async fn reserve(
         &self,
         chain_id: ChainId,
