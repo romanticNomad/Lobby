@@ -153,7 +153,7 @@ impl NonceEngine {
             UPDATE nonce.nonce_assignments
             SET state = $2
             WHERE execution_id = $1
-            AND state IN ('reserved', 'inflight')
+            AND state = 'reserved'
             RETURNING state
             "#,
         )

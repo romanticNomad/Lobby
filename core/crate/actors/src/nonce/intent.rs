@@ -13,7 +13,6 @@ use tokio::sync::{mpsc, oneshot};
 #[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]
 pub enum NonceState {
     Reserved,
-    Inflight,
     Finalized,
     Released,
 }
