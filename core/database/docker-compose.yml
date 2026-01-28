@@ -22,10 +22,5 @@ services:
       timeout: 5s
       retries: 5
 
-    # Optional — keep only if you want explicitness
-    # command: >
-    #   postgres
-    #   -c max_connections=100
-
 volumes:
   lobby_pgdata:
