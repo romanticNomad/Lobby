@@ -1,7 +1,6 @@
 use crate::types::*;
 use alloy_primitives::Address;
 use async_trait::async_trait;
-use secrecy::SecretBox;
 
 // ============================================================
 
@@ -95,7 +94,7 @@ pub trait Signer: Send + Sync {
 // ============================================================
 
 pub trait PolicyEngine: Send + Sync {
-    fn resolve_key(&self, from: &Address) -> Result<(String, SecretBox<[u8; 32]>), ExecutionError>;
+    fn resolve_key(&self, from: &Address) -> Result<(String, [u8; 32]), ExecutionError>;
 }
 
 // ============================================================
