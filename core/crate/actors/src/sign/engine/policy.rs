@@ -4,6 +4,8 @@ use alloy_primitives::Address;
 use kernel::{traits::PolicyEngine, types::ExecutionError};
 use serde::Deserialize;
 
+// ============================================================
+
 #[derive(Deserialize, Debug)]
 struct PolicyAccount {
     key_id: String,
@@ -11,6 +13,8 @@ struct PolicyAccount {
     pub_key: String,
     address: String,
 }
+
+// ============================================================
 
 pub struct JsonPolicyEngine {
     index: HashMap<Address, (String, String)>,
@@ -39,6 +43,8 @@ impl JsonPolicyEngine {
     }
 }
 
+// ============================================================
+
 impl PolicyEngine for JsonPolicyEngine {
     fn resolve_key(&self, from: &Address) -> Result<(String, [u8; 32]), ExecutionError> {
         let (key_id, pvt_string) = self.index.get(from).ok_or_else(|| {
@@ -54,3 +60,5 @@ impl PolicyEngine for JsonPolicyEngine {
         Ok((key_id.clone(), pvt_bytes))
     }
 }
+
+// ============================================================
