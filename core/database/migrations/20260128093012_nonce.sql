@@ -16,6 +16,7 @@ CREATE TABLE nonce.nonce_assignments (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Ensures nonce uniqueness during race condition
 CREATE UNIQUE INDEX uniq_active_nonce
 ON nonce.nonce_assignments (chain_id, from_address, nonce)
 WHERE state IN ('reserved', 'finalized');
@@ -26,6 +27,7 @@ ON nonce.nonce_assignments (chain_id, from_address);
 CREATE INDEX idx_nonce_by_state
 ON nonce.nonce_assignments (state);
 
+-- Ensure updated_at is always correct
 CREATE OR REPLACE FUNCTION nonce.touch_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN

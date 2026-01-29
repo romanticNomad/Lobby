@@ -17,18 +17,13 @@ CREATE TABLE sign.sign_requests (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Enforce idempotency at the execution level
--- (PRIMARY KEY already guarantees this)
-
--- Fast lookup by sender on a chain
 CREATE INDEX idx_sign_by_sender
 ON sign.sign_requests (chain_id, from_address);
 
--- Operational visibility (failed / unsigned / signed)
 CREATE INDEX idx_sign_by_state
 ON sign.sign_requests (state);
 
--- Useful for tracing or forensic tx lookup
+-- may never be used ...
 CREATE INDEX idx_sign_by_raw_tx_hash
 ON sign.sign_requests (raw_tx_hash);
 
