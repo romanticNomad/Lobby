@@ -71,7 +71,10 @@ impl Pipeline for LobbyPipeline {
         let signed_tx = match execution.signed_tx {
             Some(tx) => tx,
             None => {
-                let tx = self.signer.sign(execution_id, raw_tx).await?;
+                let tx = self
+                    .signer
+                    .sign(from, chain_id, execution_id, raw_tx)
+                    .await?;
                 self.state_mgr.record_signed_tx(execution_id, &tx).await?;
 
                 tx
