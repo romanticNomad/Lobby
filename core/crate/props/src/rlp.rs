@@ -9,6 +9,7 @@ use rlp::RlpStream;
 pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, ExecutionError> {
     let mut s = RlpStream::new_list(9);
 
+    // core tx fields
     tx.chain_id.eth_rlp_append(&mut s);
     tx.nonce.eth_rlp_append(&mut s);
     tx.max_priority_fee_per_gas.eth_rlp_append(&mut s);
@@ -50,7 +51,7 @@ pub fn encode_eip1559_signed(
 ) -> Result<Vec<u8>, ExecutionError> {
     let mut srlp = RlpStream::new_list(12);
 
-    // --- core tx fields ---
+    // core tx field
     tx.chain_id.eth_rlp_append(&mut srlp);
     tx.nonce.eth_rlp_append(&mut srlp);
     tx.max_priority_fee_per_gas.eth_rlp_append(&mut srlp);
@@ -67,7 +68,7 @@ pub fn encode_eip1559_signed(
     tx.value.eth_rlp_append(&mut srlp);
     srlp.append(&tx.data);
 
-    // --- access list ---
+    // access list
     srlp.begin_list(tx.access_list.len());
     for (addr, keys) in &tx.access_list {
         srlp.begin_list(2);
@@ -79,10 +80,10 @@ pub fn encode_eip1559_signed(
         }
     }
 
-    // --- signature fields (EIP-1559) ---
+    // signature fields (EIP-1559)
     srlp.append(&y_parity); // yParity ∈ {0,1}
     srlp.append(&r.as_slice()); // r: 32-byte big-endian
-    srlp.append(&s.as_slice()); // s: 32-byte big-endian (LOW-S enforced earlier)
+    srlp.append(&s.as_slice()); // s: 32-byte big-endian (LOW-S)
 
     Ok(srlp.out().to_vec())
 }

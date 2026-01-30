@@ -10,6 +10,7 @@ dependencies = [
  "async-trait",
  "hex",
  "kernel",
+ "props",
  "serde",
  "serde_json",
  "sqlx",

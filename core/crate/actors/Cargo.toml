@@ -15,3 +15,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
 kernel = { path = "../kernel" }
+props = { path = "../props" }
