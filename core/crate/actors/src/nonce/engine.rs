@@ -57,6 +57,7 @@ impl NonceEngine {
         execution_id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError> {
         // idempotency check.
+
         if let Some(existing_nonce) = sqlx::query_scalar!(
             r#"
             SELECT nonce
