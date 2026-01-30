@@ -21,7 +21,7 @@ pub trait StateStore: Send + Sync {
     async fn record_raw_tx(
         &self,
         id: ExecutionId,
-        tx: &RawTransaction,
+        tx: &Eip1559Transaction,
     ) -> Result<(), ExecutionError>;
 
     async fn record_signed_tx(
@@ -55,7 +55,6 @@ pub trait StateStore: Send + Sync {
 
 #[async_trait]
 pub trait NonceManager: Send + Sync {
-    /// Reserve the next available nonce (provisional).
     async fn reserve(
         &self,
         chain_id: ChainId,
@@ -63,7 +62,6 @@ pub trait NonceManager: Send + Sync {
         id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError>;
 
-    /// Resolve a nonce after validation (success = confirmed, false = dropped).
     async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError>;
 }
 
@@ -76,7 +74,7 @@ pub trait Canonicalizer: Send + Sync {
         intent: &SendTransactionIntent,
         chain_id: ChainId,
         nonce: TxNonce,
-    ) -> Result<RawTransaction, ExecutionError>;
+    ) -> Result<Eip1559Transaction, ExecutionError>;
 }
 
 // ============================================================
@@ -88,7 +86,7 @@ pub trait Signer: Send + Sync {
         from: Address,
         chain_id: ChainId,
         id: ExecutionId,
-        tx: RawTransaction,
+        tx: Eip1559Transaction,
     ) -> Result<SignedTransaction, ExecutionError>;
 }
 

@@ -2,7 +2,7 @@ use alloy_primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::Signer,
-    types::{ChainId, ExecutionError, ExecutionId, RawTransaction, SignedTransaction},
+    types::{ChainId, ExecutionError, ExecutionId, Eip1559Transaction, SignedTransaction},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -13,7 +13,7 @@ pub struct SignCommand {
     from: Address,
     chain_id: ChainId,
     id: ExecutionId,
-    txn: RawTransaction,
+    txn: Eip1559Transaction,
     reply_tx: oneshot::Sender<Result<SignedTransaction, ExecutionError>>,
 }
 
@@ -40,7 +40,7 @@ impl Signer for SignRelay {
         from: Address,
         chain_id: ChainId,
         id: ExecutionId,
-        txn: RawTransaction,
+        txn: Eip1559Transaction,
     ) -> Result<SignedTransaction, ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = SignCommand {

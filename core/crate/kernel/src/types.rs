@@ -48,7 +48,7 @@ pub struct Execution {
     pub state: ExecutionState,
     pub payload: Intent,
     pub nonce: Option<TxNonce>,
-    pub raw_tx: Option<RawTransaction>,
+    pub raw_tx: Option<Eip1559Transaction>,
     pub signed_tx: Option<SignedTransaction>,
     pub tx_hash: Option<TxHash>,
 }
@@ -90,13 +90,6 @@ impl EthRlpEncode for TxNonce {
     fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
         eth_rlp_append_u256(&self.0, s);
     }
-}
-
-// ============================================================
-
-#[derive(Clone, Debug)]
-pub struct RawTransaction {
-    pub rlp: Bytes,
 }
 
 // ============================================================

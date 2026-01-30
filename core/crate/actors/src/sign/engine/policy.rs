@@ -48,7 +48,7 @@ impl JsonPolicyEngine {
 impl PolicyEngine for JsonPolicyEngine {
     fn resolve_key(&self, from: &Address) -> Result<(String, [u8; 32]), ExecutionError> {
         let (key_id, pvt_string) = self.index.get(from).ok_or_else(|| {
-            ExecutionError::Internal(format!("Policy violation: no Key detected for:{}", from))
+            ExecutionError::Internal(format!("Policy violation: no Key detected for: {}", from))
         })?;
 
         let pvt_str = pvt_string.strip_prefix("0x").unwrap_or(pvt_string);
