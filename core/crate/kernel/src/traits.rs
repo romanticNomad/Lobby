@@ -141,6 +141,8 @@ pub fn eth_rlp_append_u256(value: &U256, s: &mut RlpStream) {
     }
 }
 
+// ============================================================
+
 impl EthRlpEncode for U256 {
     fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
         eth_rlp_append_u256(self, s);
