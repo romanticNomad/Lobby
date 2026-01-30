@@ -3,8 +3,8 @@ use core::convert::TryFrom;
 use serde::Deserialize;
 
 // ============================================================
+// Struct for recieving intent.
 
-// EIP-1159 compatible.
 #[derive(Debug)]
 pub struct SendTransactionIntent {
     pub from: Address,
@@ -17,6 +17,22 @@ pub struct SendTransactionIntent {
     pub max_priority_fee_per_gas: Option<U256>,
     pub nonce: TxNonce,
     pub chain_id: ChainId,
+}
+
+// ============================================================
+// Struct for eip-1159 rlp encoding.
+
+#[derive(Debug)]
+pub struct Eip1559Transaction {
+    pub chain_id: u64,
+    pub nonce: U256,
+    pub max_priority_fee_per_gas: U256,
+    pub max_fee_per_gas: U256,
+    pub gas_limit: U256,
+    pub to: Option<Address>, // None = contract creation
+    pub value: U256,
+    pub data: Bytes,
+    pub access_list: Vec<(Address, Vec<U256>)>,
 }
 
 // ============================================================
