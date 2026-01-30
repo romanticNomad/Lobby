@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, U256, bytes::Bytes};
 use core::convert::TryFrom;
+use crate::traits::{EthRlpEncode, eth_rlp_append_u256};
 use serde::Deserialize;
 
 // ============================================================
@@ -62,6 +63,12 @@ pub struct ExecutionId(pub uuid::Uuid);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct ChainId(pub U256);
 
+impl EthRlpEncode for ChainId {
+    fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
+        eth_rlp_append_u256(&self.0, s);
+    }
+}
+
 // ============================================================
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -76,6 +83,12 @@ impl TryFrom<i64> for TxNonce {
         }
 
         Ok(TxNonce(U256::from(value as u64)))
+    }
+}
+
+impl EthRlpEncode for TxNonce {
+    fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
+        eth_rlp_append_u256(&self.0, s);
     }
 }
 

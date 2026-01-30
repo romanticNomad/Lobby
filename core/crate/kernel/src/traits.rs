@@ -1,6 +1,7 @@
 use crate::types::*;
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use async_trait::async_trait;
+use rlp::RlpStream;
 
 // ============================================================
 
@@ -124,6 +125,32 @@ pub trait Validator: Send + Sync {
 
 pub trait EthRlpEncode {
     fn eth_rlp_append(&self, s: &mut rlp::RlpStream);
+}
+
+// ============================================================
+// Important function for EthRlpEncode trait implimentation on TxNonce, Chain_ID, U256 and Address type.
+
+pub fn eth_rlp_append_u256(value: &U256, s: &mut RlpStream) {
+    if value.is_zero() {
+        s.append_empty_data();
+    } else {
+        let buf: [u8; 32] = value.to_be_bytes();
+
+        let first_non_zero = buf.iter().position(|b| *b != 0).unwrap();
+        s.encoder().encode_value(&buf[first_non_zero..]);
+    }
+}
+
+impl EthRlpEncode for U256 {
+    fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
+        eth_rlp_append_u256(self, s);
+    }
+}
+
+impl EthRlpEncode for Address {
+    fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.encoder().encode_value(self.as_slice());
+    }
 }
 
 // ============================================================
