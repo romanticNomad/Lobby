@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_primitives::{Address, B256, U256, bytes::Bytes};
 use core::convert::TryFrom;
 use serde::Deserialize;
 
@@ -24,8 +24,8 @@ pub struct SendTransactionIntent {
 
 #[derive(Debug)]
 pub struct Eip1559Transaction {
-    pub chain_id: u64,
-    pub nonce: U256,
+    pub chain_id: ChainId,
+    pub nonce: TxNonce,
     pub max_priority_fee_per_gas: U256,
     pub max_fee_per_gas: U256,
     pub gas_limit: U256,
