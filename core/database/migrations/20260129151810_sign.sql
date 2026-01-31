@@ -1,7 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS sign;
 
 CREATE TYPE sign.sign_state AS ENUM (
-    'unsigned',
+    'reserved',
     'signed',
     'failed'
 );
@@ -18,6 +18,15 @@ CREATE TABLE sign.sign_requests (
 
     PRIMARY KEY (execution_id, revision)
 );
+
+-- Only ONE 'reserved' state row per execution_id
+CREATE UNIQUE INDEX uniq_active_reservation
+ON sign.sign_requests (execution_id)
+WHERE state = 'reserved';
+
+-- Lookup for latest revision row per execution_id
+CREATE INDEX idx_sign_latest_revision
+ON sign.sign_requests (execution_id, revision DESC);
 
 -- In case of admin lookups
 CREATE INDEX idx_sign_by_state

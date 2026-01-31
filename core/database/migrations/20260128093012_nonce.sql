@@ -16,6 +16,15 @@ CREATE TABLE nonce.nonce_assignments (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Only one ('reserved', 'finalized') state row for the same (chain_id, from_address, nonce) allowed
+CREATE UNIQUE INDEX uniq_active_nonce
+ON nonce.nonce_assignments (chain_id, from_address, nonce)
+WHERE state IN ('reserved', 'finalized');
+
+-- Lookup scoped by chain_id, from_address
+CREATE INDEX idx_nonce_by_sender
+ON nonce.nonce_assignments (chain_id, from_address);
+
 -- In case of admin lookup
 CREATE INDEX idx_nonce_by_state
 ON nonce.nonce_assignments (state);
