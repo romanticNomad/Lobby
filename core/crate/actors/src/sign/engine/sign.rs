@@ -68,127 +68,84 @@ impl SignEngine {
             .try_into()
             .map_err(|_| ExecutionError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
-        let revision: i64;
 
         // =========================================================
-        // row check: latest version only
+        // atomic insertion and lookup to avoid race condition (TOCTOU)
 
-        let row = sqlx::query!(
+        let revision = sqlx::query_scalar!(
             r#"
-            SELECT 
-                revision,
-                state::TEXT AS "state!"
-            FROM sign.sign_requests
-            WHERE execution_id = $1
-            ORDER BY revision DESC
-            LIMIT 1
+            INSERT INTO sign.sign_requests
+                (execution_id, revision, key_id, chain_id, from_address, state)
+            SELECT
+                $1,
+                COALESCE(
+                    (SELECT MAX(revision)
+                    FROM sign.sign_requests
+                    WHERE execution_id = $1),
+                    0
+                ) + 1,
+                $2,
+                $3,
+                $4,
+                'reserved'
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM sign.sign_requests
+                WHERE execution_id = $1
+                    AND state IN ('reserved', 'signed')
+            )
+            RETURNING revision
             "#,
-            execution_id.0.as_bytes().as_slice()
+            execution_id.0.as_bytes().as_slice(),
+            key_id,
+            chain_id_i64,
+            from_address_bytes,
         )
         .fetch_optional(&self.db)
         .await
         .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
-        // =========================================================
-        // Idempotency and control flow
-
-        match row {
-            None => {
-                revision = 1;
-
-                sqlx::query!(
-                    r#"
-                    INSERT INTO sign.sign_requests
-                        (execution_id, revision, key_id, chain_id, from_address, state)
-                    VALUES ($1, $2, $3, $4, $5, 'unsigned')
-                    "#,
-                    execution_id.0.as_bytes().as_slice(),
-                    revision,
-                    key_id,
-                    chain_id_i64,
-                    from_address_bytes,
-                )
-                .execute(&self.db)
-                .await
-                .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-            }
-
-            Some(row) => {
-                revision = row.revision;
-                let state = row.state;
-
-                match state.as_str() {
-                    "signed" => {
-                        // changed: idempotent replay is rejected early
-                        return Err(ExecutionError::Internal(
-                            "transaction already signed".to_string(),
-                        ));
-                    }
-                    "unsigned" | "failed" => {
-                        // allowed states, continue
-                    }
-                    _ => {
-                        return Err(ExecutionError::DatabaseError(
-                            "invalid state".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        let revision = revision.ok_or_else(|| {
+            ExecutionError::Invariant("sign database invariant faliure".to_string())
+        })?;
 
         // =========================================================
-        // signing + guarded update
+        // pattern matching the signing result
 
         match sign_eip1559_transaction(txn, pvt_key) {
             Ok(signed_tx) => {
-                let result = sqlx::query!(
+                sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
-                    SET state = 'signed',
-                        revision = revision + 1
+                    SET state = 'signed'
                     WHERE execution_id = $1
-                    AND revision = $2 
-                    AND state IN ('unsigned', 'failed')
+                    AND revision = $2
+                    AND state = 'failed'
                     "#,
                     execution_id.0.as_bytes().as_slice(),
-                    revision,
+                    revision
                 )
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
-                // changed: enforce exactly-once semantics
-                if result.rows_affected() != 1 {
-                    return Err(ExecutionError::Invariant(
-                        "lost signing race".to_string(),
-                    ));
-                }
-
                 Ok(signed_tx)
             }
-
             Err(e) => {
-                let result = sqlx::query!(
+                sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
                     SET state = 'failed'
                     WHERE execution_id = $1
                     AND revision = $2
-                    AND state IN ('unsigned', 'failed')
+                    AND state = 'failed'
                     "#,
                     execution_id.0.as_bytes().as_slice(),
-                    revision,
+                    revision
                 )
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-
-                // changed: failure must also win the race
-                if result.rows_affected() != 1 {
-                    return Err(ExecutionError::Invariant(
-                        "lost failure race".to_string(),
-                    ));
-                }
 
                 Err(e)
             }
