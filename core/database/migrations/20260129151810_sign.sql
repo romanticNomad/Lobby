@@ -7,25 +7,25 @@ CREATE TYPE sign.sign_state AS ENUM (
 );
 
 CREATE TABLE sign.sign_requests (
-    execution_id   BYTEA PRIMARY KEY,
+    execution_id   BYTEA NOT NULL,
+    revision       BIGINT NOT NULL,
     key_id         TEXT NOT NULL,
     from_address   BYTEA NOT NULL,
     chain_id       BIGINT NOT NULL,
-    raw_tx_hash    BYTEA NOT NULL,
     state          sign.sign_state NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (execution_id, revision)
 );
 
-CREATE INDEX idx_sign_by_sender
-ON sign.sign_requests (chain_id, from_address);
+-- Lookup of latest revision
+CREATE INDEX idx_sign_latest_revision
+ON sign.sign_requests (execution_id, revision DESC);
 
-CREATE INDEX idx_sign_by_state
+-- Monitoring state
+CREATE INDEX idx_sign_state
 ON sign.sign_requests (state);
-
--- may never be used ...
-CREATE INDEX idx_sign_by_raw_tx_hash
-ON sign.sign_requests (raw_tx_hash);
 
 -- Ensure updated_at is always correct
 CREATE OR REPLACE FUNCTION sign.touch_updated_at()

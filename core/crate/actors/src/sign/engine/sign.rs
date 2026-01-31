@@ -78,7 +78,7 @@ impl SignEngine {
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()
-            .map_err(|_| ExecutionError::Invariant("chain_id does not fir in i64".to_string()))?;
+            .map_err(|_| ExecutionError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
 
         sqlx::query!(
