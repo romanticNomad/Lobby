@@ -19,9 +19,9 @@ CREATE TABLE sign.sign_requests (
     PRIMARY KEY (execution_id, revision)
 );
 
--- Lookup of latest revision
-CREATE INDEX idx_sign_latest_revision
-ON sign.sign_requests (execution_id, revision DESC);
+-- In case of admin lookups
+CREATE INDEX idx_sign_by_state
+ON sign.sign_requests (state);
 
 -- Ensure updated_at is always correct
 CREATE OR REPLACE FUNCTION sign.touch_updated_at()

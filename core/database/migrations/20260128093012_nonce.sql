@@ -16,9 +16,7 @@ CREATE TABLE nonce.nonce_assignments (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_nonce_by_sender
-ON nonce.nonce_assignments (chain_id, from_address);
-
+-- In case of admin lookup
 CREATE INDEX idx_nonce_by_state
 ON nonce.nonce_assignments (state);
 
