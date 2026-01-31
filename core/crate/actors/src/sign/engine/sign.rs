@@ -93,6 +93,7 @@ impl SignEngine {
                 FROM sign.sign_requests
                 WHERE execution_id = $1
                     AND state IN ('reserved', 'signed')
+                    AND updated_at > now() - interval '5 minutes'
             )
             RETURNING revision
             "#,
@@ -114,13 +115,14 @@ impl SignEngine {
 
         match sign_eip1559_transaction(txn, pvt_key) {
             Ok(signed_tx) => {
-                sqlx::query!(
+                let result = sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
                     SET state = 'signed'
                     WHERE execution_id = $1
                     AND revision = $2
-                    AND state = 'failed'
+                    AND state = 'reserved'
+                    AND updated_at > now() - interval '5 minutes'
                     "#,
                     execution_id.0.as_bytes().as_slice(),
                     revision
@@ -128,24 +130,38 @@ impl SignEngine {
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+                
+                if result.rows_affected() != 1 {
+                    return Err(ExecutionError::Invariant(
+                        "invalid sign_requests state transition".to_string(),
+                    ));
+                }
 
                 Ok(signed_tx)
             }
+
             Err(e) => {
-                sqlx::query!(
+                let result = sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
                     SET state = 'failed'
                     WHERE execution_id = $1
                     AND revision = $2
-                    AND state = 'failed'
+                    AND state = 'reserved'
+                    AND updated_at > now() - interval '5 minutes'
                     "#,
                     execution_id.0.as_bytes().as_slice(),
                     revision
                 )
                 .execute(&self.db)
                 .await
-                .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+                .map_err(|err| ExecutionError::DatabaseError(err.to_string()))?;
+
+                if result.rows_affected() != 1 {
+                    return Err(ExecutionError::Invariant(
+                        "invalid sign_requests state transition".to_string(),
+                    ));
+                }
 
                 Err(e)
             }
