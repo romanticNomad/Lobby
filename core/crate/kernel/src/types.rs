@@ -44,7 +44,7 @@ pub type TxHash = B256;
 
 #[derive(Debug)]
 pub struct Execution {
-    pub id: ExecutionId,
+    pub execution_id: ExecutionId,
     pub state: ExecutionState,
     pub payload: Intent,
     pub nonce: Option<TxNonce>,

@@ -21,7 +21,7 @@ impl Pipeline for LobbyPipeline {
         // ---------------------------------------------------------------------
 
         let execution = self.state_mgr.register_intent(intent).await?;
-        let execution_id = execution.id;
+        let execution_id = execution.execution_id;
 
         if let Some(tx_hash) = execution.tx_hash {
             return Ok(IntentResult::TxHash(tx_hash));

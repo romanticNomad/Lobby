@@ -85,7 +85,7 @@ pub trait Signer: Send + Sync {
         &self,
         from: Address,
         chain_id: ChainId,
-        id: ExecutionId,
+        execution_id: ExecutionId,
         tx: Eip1559Transaction,
     ) -> Result<SignedTransaction, ExecutionError>;
 }
