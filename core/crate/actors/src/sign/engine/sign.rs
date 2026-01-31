@@ -92,8 +92,13 @@ impl SignEngine {
                 SELECT 1
                 FROM sign.sign_requests
                 WHERE execution_id = $1
-                    AND state IN ('reserved', 'signed')
-                    AND updated_at > now() - interval '5 minutes'
+                    AND (
+                        state = 'signed'
+                        OR (
+                            state = 'reserved'
+                            AND updated_at > now() - interval '5 minutes'    
+                        )
+                    )
             )
             RETURNING revision
             "#,
