@@ -22,7 +22,7 @@ CREATE TABLE sign.sign_requests (
 -- Only ONE 'reserved' state row per execution_id
 CREATE UNIQUE INDEX uniq_active_reservation
 ON sign.sign_requests (execution_id)
-WHERE state = 'reserved';
+WHERE state IN ('reserved', 'signed');
 
 -- Lookup for latest revision row per execution_id
 CREATE INDEX idx_sign_latest_revision
