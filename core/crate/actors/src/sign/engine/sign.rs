@@ -20,7 +20,11 @@ impl SignEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
         let path = "../test_keys.json";
         let json_policy = JsonPolicyEngine::load_file(path);
-        Self { db, json_policy, rx }
+        Self {
+            db,
+            json_policy,
+            rx,
+        }
     }
 }
 
@@ -64,7 +68,7 @@ impl SignEngine {
             .try_into()
             .map_err(|_| ExecutionError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
-        let mut revision: i64 = 0;
+        let revision: i64;
 
         // =========================================================
         // row check: latest version only
@@ -107,40 +111,44 @@ impl SignEngine {
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-                
             }
 
             Some(row) => {
                 revision = row.revision;
                 let state = row.state;
 
-                match state {
-                    s if s == String::from("unsigned") => {
-                        Err(ExecutionError::Invariant("corrupted transaction request".to_string()))?
+                match state.as_str() {
+                    "signed" => {
+                        // changed: idempotent replay is rejected early
+                        return Err(ExecutionError::Internal(
+                            "transaction already signed".to_string(),
+                        ));
                     }
-                    s if s == String::from("signed") => {
-                        Err(ExecutionError::Internal("transaction already signed".to_string()))?
-                    }
-                    s if s == String::from("failed") => {
-                        
+                    "unsigned" | "failed" => {
+                        // allowed states, continue
                     }
                     _ => {
-                        Err(ExecutionError::DatabaseError("invalid State".to_string()))?
+                        return Err(ExecutionError::DatabaseError(
+                            "invalid state".to_string(),
+                        ));
                     }
                 }
             }
         }
 
+        // =========================================================
+        // signing + guarded update
+
         match sign_eip1559_transaction(txn, pvt_key) {
             Ok(signed_tx) => {
-                sqlx::query!(
+                let result = sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
                     SET state = 'signed',
                         revision = revision + 1
                     WHERE execution_id = $1
                     AND revision = $2 
-                    AND state = 'unsigned'
+                    AND state IN ('unsigned', 'failed')
                     "#,
                     execution_id.0.as_bytes().as_slice(),
                     revision,
@@ -148,18 +156,25 @@ impl SignEngine {
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+
+                // changed: enforce exactly-once semantics
+                if result.rows_affected() != 1 {
+                    return Err(ExecutionError::Invariant(
+                        "lost signing race".to_string(),
+                    ));
+                }
 
                 Ok(signed_tx)
             }
 
             Err(e) => {
-                sqlx::query!(
+                let result = sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
                     SET state = 'failed'
                     WHERE execution_id = $1
                     AND revision = $2
-                    AND state = 'unsigned'
+                    AND state IN ('unsigned', 'failed')
                     "#,
                     execution_id.0.as_bytes().as_slice(),
                     revision,
@@ -167,6 +182,13 @@ impl SignEngine {
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+
+                // changed: failure must also win the race
+                if result.rows_affected() != 1 {
+                    return Err(ExecutionError::Invariant(
+                        "lost failure race".to_string(),
+                    ));
+                }
 
                 Err(e)
             }
