@@ -23,10 +23,6 @@ CREATE TABLE sign.sign_requests (
 CREATE INDEX idx_sign_latest_revision
 ON sign.sign_requests (execution_id, revision DESC);
 
--- update table
-CREATE INDEX idx_sign_exec_rev_state
-ON sign.sign_requests (execution_id, revision, state);
-
 -- Ensure updated_at is always correct
 CREATE OR REPLACE FUNCTION sign.touch_updated_at()
 RETURNS TRIGGER AS $$
