@@ -32,11 +32,13 @@ ON sign.sign_requests (execution_id, revision DESC);
 CREATE INDEX idx_sign_by_state
 ON sign.sign_requests (state);
 
--- Ensure updated_at is always correct
+-- Ensure updated_at is always called on state change
 CREATE OR REPLACE FUNCTION sign.touch_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = now();
+    IF NEW.state IS DISTINCT FROM OLD.state THEN
+        NEW.updated_at = now();
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
