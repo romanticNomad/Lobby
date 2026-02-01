@@ -15,7 +15,7 @@ pub fn sign_eip1559_transaction(
     pvt_key: [u8; 32],
 ) -> Result<SignedTransaction, ExecutionError> {
     // ============================================================
-    // prepare rlp(unsigned_tx)
+    // prepare keccak-256(rlp(unsigned_tx)) for EIP-1159
 
     let unsigned_rlp = encode_eip1559_unsigned(&tx)?;
 
@@ -25,7 +25,7 @@ pub fn sign_eip1559_transaction(
     let signing_hash = hasher.finalize();
 
     // ============================================================
-    // Load key & sign hash (recoverable)
+    // load key & produce (signature, recovery_id) -> { signature = sekp256k1( keccak-256(rlp_unsigned_tx), pvt_key ) }
 
     let signing_key = SigningKey::from_bytes(&pvt_key.into())
         .map_err(|e| ExecutionError::Internal(format!("Invalid private key: {e}")))?;
@@ -38,7 +38,7 @@ pub fn sign_eip1559_transaction(
         .map_err(|e| ExecutionError::Invariant(format!("Signing failed: {e}")))?;
 
     // ============================================================
-    // canonicalize
+    // canonicalize to low 's'
 
     if signature.s().is_high().into() {
         signature = signature
@@ -53,7 +53,7 @@ pub fn sign_eip1559_transaction(
     let s_bytes = signature.s().to_bytes();
 
     // ============================================================
-    // package and return signed transaction_rlp
+    // package into 'Bytes' and return 0x02 || rlp(signed_tx)
 
     let signed_rlp = encode_eip1559_signed(&tx, y_parity, &r_bytes.into(), &s_bytes.into())?;
 
@@ -67,6 +67,7 @@ pub fn sign_eip1559_transaction(
 }
 
 // ============================================================
+// checking if the alloy provided 'keccak-256' hash is the one used by evm
 
 #[cfg(test)]
 mod test {

@@ -70,7 +70,7 @@ impl SignEngine {
         let from_address_bytes = &from.0.0;
 
         // =========================================================
-        // atomic insertion and lookup to avoid race condition (TOCTOU)
+        // atomic insertion and lookup to avoid race condition (TOCTOU) and idempotency
 
         let revision = sqlx::query_scalar!(
             r#"
