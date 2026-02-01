@@ -6,54 +6,6 @@ use rlp::RlpStream;
 // ============================================================
 
 #[async_trait]
-pub trait Pipeline: Send + Sync + 'static {
-    async fn submit(&self, intent: Intent) -> Result<IntentResult, ExecutionError>;
-}
-
-// ============================================================
-
-#[async_trait]
-pub trait StateStore: Send + Sync {
-    async fn register_intent(&self, intent: Intent) -> Result<Execution, ExecutionError>;
-
-    async fn record_nonce(&self, id: ExecutionId, nonce: TxNonce) -> Result<(), ExecutionError>;
-
-    async fn record_raw_tx(
-        &self,
-        id: ExecutionId,
-        tx: &Eip1559Transaction,
-    ) -> Result<(), ExecutionError>;
-
-    async fn record_signed_tx(
-        &self,
-        id: ExecutionId,
-        tx: &SignedTransaction,
-    ) -> Result<(), ExecutionError>;
-
-    async fn mark_broadcasted(
-        &self,
-        id: ExecutionId,
-        tx_hash: TxHash,
-    ) -> Result<(), ExecutionError>;
-
-    async fn transition(
-        &self,
-        id: ExecutionId,
-        state: ExecutionState,
-    ) -> Result<(), ExecutionError>;
-
-    async fn mark_failed(
-        &self,
-        id: ExecutionId,
-        error: ExecutionError,
-    ) -> Result<(), ExecutionError>;
-
-    async fn mark_final(&self, id: ExecutionId, success: bool) -> Result<(), ExecutionError>;
-}
-
-// ============================================================
-
-#[async_trait]
 pub trait NonceManager: Send + Sync {
     async fn reserve(
         &self,
@@ -63,18 +15,6 @@ pub trait NonceManager: Send + Sync {
     ) -> Result<TxNonce, ExecutionError>;
 
     async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError>;
-}
-
-// ============================================================
-
-#[async_trait]
-pub trait Canonicalizer: Send + Sync {
-    async fn canonicalize(
-        &self,
-        intent: &SendTransactionIntent,
-        chain_id: ChainId,
-        nonce: TxNonce,
-    ) -> Result<Eip1559Transaction, ExecutionError>;
 }
 
 // ============================================================

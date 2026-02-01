@@ -4,23 +4,6 @@ use core::convert::TryFrom;
 use serde::Deserialize;
 
 // ============================================================
-// Struct for recieving intent.
-
-#[derive(Debug)]
-pub struct SendTransactionIntent {
-    pub from: Address,
-    pub to: Option<Address>,
-    pub value: U256,
-    pub data: Bytes,
-    pub gas: Option<U256>,
-    pub gas_price: Option<U256>,
-    pub max_fee_per_gas: Option<U256>,
-    pub max_priority_fee_per_gas: Option<U256>,
-    pub nonce: TxNonce,
-    pub chain_id: ChainId,
-}
-
-// ============================================================
 // Struct for eip-1159 rlp encoding.
 
 #[derive(Debug)]
@@ -39,19 +22,6 @@ pub struct Eip1559Transaction {
 // ============================================================
 
 pub type TxHash = B256;
-
-// ============================================================
-
-#[derive(Debug)]
-pub struct Execution {
-    pub execution_id: ExecutionId,
-    pub state: ExecutionState,
-    pub payload: Intent,
-    pub nonce: Option<TxNonce>,
-    pub raw_tx: Option<Eip1559Transaction>,
-    pub signed_tx: Option<SignedTransaction>,
-    pub tx_hash: Option<TxHash>,
-}
 
 // ============================================================
 
@@ -99,43 +69,6 @@ pub struct SignedTransaction {
     pub rlp: Bytes,
 }
 
-// ================================================
-
-#[derive(Debug)]
-pub enum Intent {
-    SendTransaction(SendTransactionIntent),
-}
-
-// ============================================================
-
-pub enum IntentResult {
-    Submitted(ExecutionId),
-    TxHash(TxHash),
-}
-
-// ============================================================
-
-#[derive(Clone, Debug)]
-pub enum ExecutionState {
-    Registered,
-    NonceReserved {
-        nonce: TxNonce,
-    },
-    Canonicalized,
-    Signed,
-    BroadcasteInitiated,
-    PendingValidation {
-        tx_hash: Option<TxHash>, // None if broadcast outcome was unknown
-    },
-    Validated {
-        tx_hash: TxHash,
-        success: bool,
-    },
-    Failed {
-        error: ExecutionError,
-    },
-}
-
 // ============================================================
 
 #[derive(Clone, Debug)]
@@ -150,7 +83,6 @@ pub enum BroadcastOutcome {
 #[derive(Clone, Debug)]
 pub enum ExecutionError {
     DatabaseError(String),
-    BroadcastFailure,
     Internal(String),
     Invariant(String),
     Rejected(String),
