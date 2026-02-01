@@ -80,6 +80,7 @@ pub fn eth_rlp_append_u256(value: &U256, s: &mut RlpStream) {
 }
 
 // ============================================================
+// implimenting EthRlpEncode to encode U256 and Address types into RlpStream
 
 impl EthRlpEncode for U256 {
     fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
