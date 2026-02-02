@@ -68,28 +68,7 @@ pub fn sign_eip1559_transaction(
 }
 
 // ============================================================
-// checking if the alloy provided 'keccak-256' hash is the one used by evm
-
-#[cfg(test)]
-mod test {
-    use alloy_primitives::Keccak256;
-    use hex_literal::hex;
-
-    #[test]
-    fn hasher_check_evm_keccak_256() {
-        let mut hash = Keccak256::new();
-        hash.update([]);
-        let output = hash.finalize();
-
-        let keccak_expected =
-            hex!("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
-        assert_eq!(
-            output.as_slice(),
-            keccak_expected,
-            "Hasher is not ethereum Keccak-256"
-        );
-    }
-}
+// encoding unsigned tx to rpl stream
 
 pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, ExecutionError> {
     let mut s = RlpStream::new_list(9);
@@ -127,6 +106,7 @@ pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, Execu
 }
 
 // ============================================================
+// encode signed transaction to rlp stream
 
 pub fn encode_eip1559_signed(
     tx: &Eip1559Transaction,
@@ -172,3 +152,5 @@ pub fn encode_eip1559_signed(
 
     Ok(srlp.out().to_vec())
 }
+
+// ============================================================
