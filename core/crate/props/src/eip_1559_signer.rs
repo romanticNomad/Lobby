@@ -1,10 +1,11 @@
-use crate::rlp::{encode_eip1559_signed, encode_eip1559_unsigned};
 use alloy_primitives::bytes::Bytes;
 use k256::{
     ecdsa::{RecoveryId, Signature, SigningKey},
     elliptic_curve::scalar::IsHigh,
 };
+use kernel::traits::EthRlpEncode;
 use kernel::types::{Eip1559Transaction, ExecutionError, SignedTransaction};
+use rlp::RlpStream;
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroize;
 
@@ -73,18 +74,101 @@ pub fn sign_eip1559_transaction(
 mod test {
     use alloy_primitives::Keccak256;
     use hex_literal::hex;
-    
+
     #[test]
     fn hasher_check_evm_keccak_256() {
         let mut hash = Keccak256::new();
         hash.update([]);
         let output = hash.finalize();
 
-        let keccak_expected = hex!("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
+        let keccak_expected =
+            hex!("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
         assert_eq!(
             output.as_slice(),
             keccak_expected,
             "Hasher is not ethereum Keccak-256"
         );
     }
+}
+
+pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, ExecutionError> {
+    let mut s = RlpStream::new_list(9);
+
+    // core tx fields
+    tx.chain_id.eth_rlp_append(&mut s);
+    tx.nonce.eth_rlp_append(&mut s);
+    tx.max_priority_fee_per_gas.eth_rlp_append(&mut s);
+    tx.max_fee_per_gas.eth_rlp_append(&mut s);
+    tx.gas_limit.eth_rlp_append(&mut s);
+
+    match &tx.to {
+        Some(to) => to.eth_rlp_append(&mut s),
+        None => {
+            s.append_empty_data();
+        }
+    }
+
+    tx.value.eth_rlp_append(&mut s);
+    s.append(&tx.data);
+
+    // accessList
+    s.begin_list(tx.access_list.len());
+    for (addr, keys) in &tx.access_list {
+        s.begin_list(2);
+        addr.eth_rlp_append(&mut s);
+
+        s.begin_list(keys.len());
+        for key in keys {
+            key.eth_rlp_append(&mut s);
+        }
+    }
+
+    Ok(s.out().to_vec())
+}
+
+// ============================================================
+
+pub fn encode_eip1559_signed(
+    tx: &Eip1559Transaction,
+    y_parity: u8,
+    r: &[u8; 32],
+    s: &[u8; 32],
+) -> Result<Vec<u8>, ExecutionError> {
+    let mut srlp = RlpStream::new_list(12);
+
+    // core tx field
+    tx.chain_id.eth_rlp_append(&mut srlp);
+    tx.nonce.eth_rlp_append(&mut srlp);
+    tx.max_priority_fee_per_gas.eth_rlp_append(&mut srlp);
+    tx.max_fee_per_gas.eth_rlp_append(&mut srlp);
+    tx.gas_limit.eth_rlp_append(&mut srlp);
+
+    match &tx.to {
+        Some(to) => to.eth_rlp_append(&mut srlp),
+        None => {
+            srlp.append_empty_data();
+        }
+    }
+
+    tx.value.eth_rlp_append(&mut srlp);
+    srlp.append(&tx.data);
+
+    // access list
+    srlp.begin_list(tx.access_list.len());
+    for (addr, keys) in &tx.access_list {
+        srlp.begin_list(2);
+        addr.eth_rlp_append(&mut srlp);
+
+        srlp.begin_list(keys.len());
+        for key in keys {
+            key.eth_rlp_append(&mut srlp);
+        }
+    }
+
+    // signature fields (EIP-1559)
+    srlp.append(&y_parity); // yParity ∈ {0,1}
+    srlp.append(&r.as_slice()); // r: 32-byte big-endian
+    srlp.append(&s.as_slice()); // s: 32-byte big-endian (LOW-S)
+
+    Ok(srlp.out().to_vec())
 }
