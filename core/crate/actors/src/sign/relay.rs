@@ -39,8 +39,8 @@ impl SignRelay {
 impl Signer for SignRelay {
     async fn sign(
         &self,
-        from: Address,
         chain_id: ChainId,
+        from: Address,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
     ) -> Result<SignedTransaction, ExecutionError> {

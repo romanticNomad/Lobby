@@ -11,7 +11,7 @@ pub trait NonceManager: Send + Sync {
         &self,
         chain_id: ChainId,
         from: Address,
-        id: ExecutionId,
+        execution_id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError>;
 
     async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError>;
@@ -23,8 +23,8 @@ pub trait NonceManager: Send + Sync {
 pub trait Signer: Send + Sync {
     async fn sign(
         &self,
-        from: Address,
         chain_id: ChainId,
+        from: Address,
         execution_id: ExecutionId,
         tx: Eip1559Transaction,
     ) -> Result<SignedTransaction, ExecutionError>;
@@ -43,7 +43,8 @@ pub trait Broadcaster: Send + Sync {
     async fn broadcast(
         &self,
         chain_id: ChainId,
-        id: ExecutionId,
+        from: Address,
+        execution_id: ExecutionId,
         tx: SignedTransaction,
     ) -> Result<BroadcastOutcome, ExecutionError>;
 }

@@ -33,14 +33,18 @@ impl NonceEngine {
                 NonceCommand::Reserve {
                     chain_id,
                     from,
-                    id,
+                    execution_id,
                     reply,
                 } => {
-                    let result = self.handle_reserve(chain_id, from, id).await;
+                    let result = self.handle_reserve(chain_id, from, execution_id).await;
                     let _ = reply.send(result);
                 }
-                NonceCommand::Resolve { id, outcome, reply } => {
-                    let result = self.handle_resolve(id, outcome).await;
+                NonceCommand::Resolve {
+                    execution_id,
+                    outcome,
+                    reply,
+                } => {
+                    let result = self.handle_resolve(execution_id, outcome).await;
                     let _ = reply.send(result);
                 }
             }

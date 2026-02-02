@@ -24,11 +24,11 @@ pub enum NonceCommand {
     Reserve {
         chain_id: ChainId,
         from: Address,
-        id: ExecutionId,
+        execution_id: ExecutionId,
         reply: oneshot::Sender<Result<TxNonce, ExecutionError>>,
     },
     Resolve {
-        id: ExecutionId,
+        execution_id: ExecutionId,
         outcome: bool,
         reply: oneshot::Sender<Result<(), ExecutionError>>,
     },
@@ -57,13 +57,13 @@ impl NonceManager for NonceRelay {
         &self,
         chain_id: ChainId,
         from: Address,
-        id: ExecutionId,
+        execution_id: ExecutionId,
     ) -> Result<TxNonce, ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Reserve {
             chain_id,
             from,
-            id,
+            execution_id,
             reply: reply_tx,
         };
 
@@ -77,10 +77,14 @@ impl NonceManager for NonceRelay {
             .map_err(|_| ExecutionError::Internal("NonceActor response corrupted".to_string()))?
     }
 
-    async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError> {
+    async fn resolve(
+        &self,
+        execution_id: ExecutionId,
+        outcome: bool,
+    ) -> Result<(), ExecutionError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Resolve {
-            id,
+            execution_id,
             outcome,
             reply: reply_tx,
         };
