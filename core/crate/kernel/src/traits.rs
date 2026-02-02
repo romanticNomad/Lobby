@@ -26,7 +26,7 @@ pub trait Signer: Send + Sync {
         chain_id: ChainId,
         from: Address,
         execution_id: ExecutionId,
-        tx: Eip1559Transaction,
+        txn: Eip1559Transaction,
     ) -> Result<SignedTransaction, ExecutionError>;
 }
 
@@ -45,7 +45,7 @@ pub trait Broadcaster: Send + Sync {
         chain_id: ChainId,
         from: Address,
         execution_id: ExecutionId,
-        tx: SignedTransaction,
+        txn: SignedTransaction,
     ) -> Result<BroadcastOutcome, ExecutionError>;
 }
 

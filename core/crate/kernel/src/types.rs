@@ -73,7 +73,7 @@ pub struct SignedTransaction {
 
 #[derive(Clone, Debug)]
 pub enum BroadcastOutcome {
-    Submitted { tx_hash: TxHash },
+    Submitted { txn_hash: TxHash },
     Rejected { reason: String },
     Unknown,
 }
