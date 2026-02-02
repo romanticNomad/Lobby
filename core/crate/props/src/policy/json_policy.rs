@@ -5,7 +5,7 @@ use kernel::{traits::PolicyEngine, types::ExecutionError};
 use serde::Deserialize;
 
 // ============================================================
-#[allow(dead_code)]
+
 #[derive(Deserialize, Debug)]
 struct PolicyAccount {
     key_id: String,
@@ -16,6 +16,7 @@ struct PolicyAccount {
 
 // ============================================================
 
+#[derive(Debug)]
 pub struct JsonPolicyEngine {
     index: HashMap<Address, (String, String)>,
 }
