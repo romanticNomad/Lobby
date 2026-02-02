@@ -19,7 +19,7 @@ pub struct SignEngine {
 
 impl SignEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
-        let path = "../test_keys.json";
+        let path = "test_keys.json";
         let json_policy = JsonPolicyEngine::load_file(path);
         Self {
             db,
