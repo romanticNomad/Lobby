@@ -12,8 +12,7 @@ struct JsonPolicyTest {
 
 impl JsonPolicyTest {
     fn new() -> Self {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src/policy/test_keys.json");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
         let set1 = JsonPolicyEngine::load_file(path.to_str().unwrap());
         let from_address: Address = Address::from_str("0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92")
             .expect("address failed");

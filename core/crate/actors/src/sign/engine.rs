@@ -4,9 +4,9 @@ use kernel::{
     traits::PolicyEngine,
     types::{ChainId, Eip1559Transaction, ExecutionError, ExecutionId, SignedTransaction},
 };
-use props::eip_1559_signer::sign_eip1559_transaction;
-use props::policy::JsonPolicyEngine;
+use props::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 use sqlx::PgPool;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 // ============================================================
@@ -19,8 +19,8 @@ pub struct SignEngine {
 
 impl SignEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
-        let path = "test_keys.json";
-        let json_policy = JsonPolicyEngine::load_file(path);
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
+        let json_policy = JsonPolicyEngine::load_file(path.to_str().unwrap());
         Self {
             db,
             json_policy,
@@ -32,8 +32,6 @@ impl SignEngine {
 // ============================================================
 
 impl SignEngine {
-    // the type of 'rx' contains the information of cmd.
-
     pub async fn run(mut self) {
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
