@@ -8,11 +8,8 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "async-trait",
- "hex",
  "kernel",
  "props",
- "serde",
- "serde_json",
  "sqlx",
  "tokio",
 ]
@@ -1564,10 +1561,13 @@ name = "props"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "hex",
  "hex-literal",
  "k256",
  "kernel",
  "rlp 0.6.1",
+ "serde",
+ "serde_json",
  "sha3",
  "zeroize",
 ]

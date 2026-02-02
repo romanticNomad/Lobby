@@ -1,10 +1,11 @@
-use crate::sign::{SignCommand, policy::JsonPolicyEngine};
+use crate::sign::SignCommand;
 use alloy_primitives::Address;
 use kernel::{
     traits::PolicyEngine,
     types::{ChainId, Eip1559Transaction, ExecutionError, ExecutionId, SignedTransaction},
 };
-use props::evm_signer::sign_eip1559_transaction;
+use props::eip_1559_signer::sign_eip1559_transaction;
+use props::policy::JsonPolicyEngine;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
@@ -135,7 +136,7 @@ impl SignEngine {
                 .execute(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-                
+
                 if result.rows_affected() != 1 {
                     return Err(ExecutionError::Invariant(
                         "invalid sign_requests state transition".to_string(),
