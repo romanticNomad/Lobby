@@ -29,16 +29,18 @@ ON nonce.nonce_assignments (chain_id, from_address);
 CREATE INDEX idx_nonce_by_state
 ON nonce.nonce_assignments (state);
 
--- Ensure updated_at is always correct
+-- Ensure updated_at is always called on state change
 CREATE OR REPLACE FUNCTION nonce.touch_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = now();
+    IF NEW.state IS DISTINCT FROM OLD.state THEN
+        NEW.updated_at = now();
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_touch_updated_at
+CREATE TRIGGER trg_nonce_touch_updated_at
 BEFORE UPDATE ON nonce.nonce_assignments
 FOR EACH ROW
 EXECUTE FUNCTION nonce.touch_updated_at();
