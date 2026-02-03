@@ -1,7 +1,13 @@
 use crate::traits::{EthRlpEncode, eth_rlp_append_u256};
-use alloy::primitives::{Address, B256, U256, bytes::Bytes};
+use alloy::{
+    network::AnyNetwork,
+    primitives::{Address, B256, U256, bytes::Bytes},
+    providers::DynProvider,
+};
 use core::convert::TryFrom;
+use dashmap::DashMap;
 use serde::Deserialize;
+use std::sync::Arc;
 
 // ============================================================
 // Struct for eip-1159 rlp encoding.
@@ -18,6 +24,14 @@ pub struct Eip1559Transaction {
     pub data: Bytes,
     pub access_list: Vec<(Address, Vec<U256>)>,
 }
+
+// ============================================================
+// Concurrent registry of per-chain RPC providers.
+// 
+// Designed for multi-threaded and async environments where
+// providers are shared across broadcast and network execution paths.
+
+pub type RpcProviderRegistry = Arc<DashMap<ChainId, Arc<DynProvider<AnyNetwork>>>>;
 
 // ============================================================
 
