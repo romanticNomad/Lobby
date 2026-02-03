@@ -2,7 +2,7 @@ use alloy_primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::Broadcaster,
-    types::{BroadcastOutcome, ChainId, ExecutionError, ExecutionId, SignedTransaction},
+    types::{BroadcastError, BroadcastOutcome, ChainId, ExecutionId, SignedTransaction},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -15,12 +15,12 @@ pub enum BroadcastCommand {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
-        reply_tx: oneshot::Sender<Result<BroadcastOutcome, ExecutionError>>,
+        reply_tx: oneshot::Sender<Result<BroadcastOutcome, BroadcastError>>,
     },
 }
 
 // ============================================================
-// entr point for commands into BroadcastEngine
+// entry point for commands into BroadcastEngine
 
 pub struct BroadcastRelay {
     tx: mpsc::Sender<BroadcastCommand>,
@@ -43,7 +43,7 @@ impl Broadcaster for BroadcastRelay {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
-    ) -> Result<BroadcastOutcome, ExecutionError> {
+    ) -> Result<BroadcastOutcome, BroadcastError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = BroadcastCommand::Broadcast {
             chain_id,
@@ -56,10 +56,10 @@ impl Broadcaster for BroadcastRelay {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| ExecutionError::Internal("BroadcastEngine not available".to_string()))?;
+            .map_err(|_| BroadcastError::Internal("BroadcastEngine not available".to_string()))?;
 
         reply_rx.await.map_err(|_| {
-            ExecutionError::Internal("BroadcastEngine response corrupted".to_string())
+            BroadcastError::Internal("BroadcastEngine response corrupted".to_string())
         })?
     }
 }

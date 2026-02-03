@@ -46,7 +46,7 @@ pub trait Broadcaster: Send + Sync {
         from: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
-    ) -> Result<BroadcastOutcome, ExecutionError>;
+    ) -> Result<BroadcastOutcome, BroadcastError>;
 }
 
 // ============================================================

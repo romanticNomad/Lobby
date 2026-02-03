@@ -75,7 +75,7 @@ pub struct SignedTransaction {
 pub enum BroadcastOutcome {
     Submitted { txn_hash: TxHash },
     Rejected { reason: String },
-    Unknown,
+    Unexpected,
 }
 
 // ============================================================
@@ -89,3 +89,8 @@ pub enum ExecutionError {
 }
 
 // ============================================================
+
+#[derive(Debug)]
+pub enum BroadcastError {
+    Internal(String),
+}
