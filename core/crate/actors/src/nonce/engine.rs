@@ -1,4 +1,4 @@
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
 use sqlx::{PgPool, postgres::PgDatabaseError};
 use tokio::sync::mpsc;

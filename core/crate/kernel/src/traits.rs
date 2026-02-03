@@ -1,5 +1,5 @@
 use crate::types::*;
-use alloy_primitives::{Address, U256};
+use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
 use rlp::RlpStream;
 

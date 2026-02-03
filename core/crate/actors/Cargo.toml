@@ -9,7 +9,7 @@ sqlx = { version = "0.8", features = [
   "postgres",
 ] }
 tokio = { version = "1", features = ["full"] }
-alloy-primitives = {version = "1.5.2", features = ["serde"]}
 async-trait = "0.1.89"
 kernel = { path = "../kernel" }
 props = { path = "../props" }
+alloy = { version = "1.6.0", features = ["full"] }

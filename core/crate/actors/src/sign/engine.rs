@@ -1,5 +1,5 @@
 use crate::sign::SignCommand;
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use kernel::{
     traits::PolicyEngine,
     types::{ChainId, Eip1559Transaction, ExecutionError, ExecutionId, SignedTransaction},

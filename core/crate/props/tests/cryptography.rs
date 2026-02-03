@@ -1,7 +1,7 @@
 // ============================================================
 // checking if the alloy provided 'keccak-256' hash is the one used by evm
 
-use alloy_primitives::Keccak256;
+use alloy::primitives::Keccak256;
 use hex_literal::hex;
 
 #[test]

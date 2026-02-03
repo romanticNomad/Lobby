@@ -1,4 +1,4 @@
-use alloy_primitives::bytes::Bytes;
+use alloy::primitives::bytes::Bytes;
 use k256::{
     ecdsa::{RecoveryId, Signature, SigningKey},
     elliptic_curve::scalar::IsHigh,

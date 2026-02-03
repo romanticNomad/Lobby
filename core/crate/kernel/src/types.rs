@@ -1,5 +1,5 @@
 use crate::traits::{EthRlpEncode, eth_rlp_append_u256};
-use alloy_primitives::{Address, B256, U256, bytes::Bytes};
+use alloy::primitives::{Address, B256, U256, bytes::Bytes};
 use core::convert::TryFrom;
 use serde::Deserialize;
 

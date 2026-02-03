@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use alloy_primitives::Address;
+use alloy::primitives::{Address, hex};
 use kernel::traits::PolicyEngine;
 use props::policy::JsonPolicyEngine;
 
@@ -18,7 +18,7 @@ impl JsonPolicyTest {
             .expect("address failed");
         let (key_id, pvt_bytes) = set1.resolve_key(&from_address).expect("resolving failed");
 
-        let pvt_key = alloy_primitives::hex::encode(pvt_bytes);
+        let pvt_key = hex::encode(pvt_bytes);
         Self { key_id, pvt_key }
     }
 }

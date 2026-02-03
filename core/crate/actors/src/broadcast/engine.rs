@@ -1,9 +1,8 @@
 use crate::broadcast::relay::BroadcastCommand;
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use kernel::types::{BroadcastError, BroadcastOutcome, ChainId, ExecutionId, SignedTransaction};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
-
 
 pub struct BroadcastEngine {
     db: PgPool,

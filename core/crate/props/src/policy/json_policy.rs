@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs::File, io::BufReader};
 
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use kernel::{traits::PolicyEngine, types::ExecutionError};
 use serde::Deserialize;
 
