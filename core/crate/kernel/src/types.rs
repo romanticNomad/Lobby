@@ -27,7 +27,7 @@ pub struct Eip1559Transaction {
 
 // ============================================================
 // Concurrent registry of per-chain RPC providers.
-// 
+//
 // Designed for multi-threaded and async environments where
 // providers are shared across broadcast and network execution paths.
 

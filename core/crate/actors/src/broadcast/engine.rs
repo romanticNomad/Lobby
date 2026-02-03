@@ -1,6 +1,8 @@
 use crate::broadcast::relay::BroadcastCommand;
 use alloy::primitives::Address;
-use kernel::types::{BroadcastError, BroadcastOutcome, ChainId, ExecutionId, SignedTransaction, RpcProviderRegistry};
+use kernel::types::{
+    BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
+};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
@@ -11,7 +13,11 @@ pub struct BroadcastEngine {
 }
 
 impl BroadcastEngine {
-    pub fn new(db: PgPool, provider: RpcProviderRegistry, rx: mpsc::Receiver<BroadcastCommand>) -> Self {
+    pub fn new(
+        db: PgPool,
+        provider: RpcProviderRegistry,
+        rx: mpsc::Receiver<BroadcastCommand>,
+    ) -> Self {
         Self { db, provider, rx }
     }
 }
@@ -43,5 +49,6 @@ impl BroadcastEngine {
         execution_id: ExecutionId,
         txn: SignedTransaction,
     ) -> Result<BroadcastOutcome, BroadcastError> {
+        
     }
 }
