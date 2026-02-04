@@ -8,6 +8,7 @@ CREATE TYPE nonce.nonce_state AS ENUM (
 
 CREATE TABLE nonce.nonce_assignments (
     execution_id      BYTEA PRIMARY KEY,
+    revision         BIGINT NOT NULL,
     chain_id          BIGINT NOT NULL,
     from_address      BYTEA NOT NULL,
     nonce             BIGINT NOT NULL,
