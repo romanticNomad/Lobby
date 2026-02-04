@@ -22,6 +22,10 @@ CREATE UNIQUE INDEX uniq_active_nonce
 ON nonce.nonce_assignments (chain_id, from_address, nonce)
 WHERE state IN ('reserved', 'finalized');
 
+-- Index for efficient revision lookups
+CREATE INDEX idx_nonce_revision 
+ON nonce.nonce_assignments (execution_id, revision);
+
 -- Lookup scoped by chain_id, from_address
 CREATE INDEX idx_nonce_by_sender
 ON nonce.nonce_assignments (chain_id, from_address);
