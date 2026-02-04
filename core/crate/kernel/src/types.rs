@@ -8,6 +8,7 @@ use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::Deserialize;
 use std::sync::Arc;
+use std::hash::Hash;
 
 // ============================================================
 // Struct for eip-1159 rlp encoding.
@@ -44,7 +45,7 @@ pub struct ExecutionId(pub uuid::Uuid);
 
 // ============================================================
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Hash)]
 pub struct ChainId(pub U256);
 
 impl EthRlpEncode for ChainId {
@@ -89,7 +90,7 @@ pub struct SignedTransaction {
 pub enum BroadcastOutcome {
     Submitted { txn_hash: TxHash },
     Rejected { reason: String },
-    Unexpected,
+    Unexpected(String)
 }
 
 // ============================================================
@@ -107,4 +108,7 @@ pub enum ExecutionError {
 #[derive(Debug)]
 pub enum BroadcastError {
     Internal(String),
+    DatabaseError(String),
+    Invariant(String),
+    MissingProvider(ChainId),
 }

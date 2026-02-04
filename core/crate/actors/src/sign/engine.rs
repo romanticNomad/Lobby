@@ -66,10 +66,10 @@ impl SignEngine {
             .0
             .try_into()
             .map_err(|_| ExecutionError::Invariant("chain_id does not fit in i64".to_string()))?;
-        let from_address_bytes = &from.0.0;
+        let from_bytes = &from.0.0;
 
         // =========================================================
-        // atomic insertion and lookup to avoid race condition (TOCTOU) and idempotency
+        // ensuring idempotency and lease lock for race condition and crash safety
 
         let revision = sqlx::query_scalar!(
             r#"
@@ -79,7 +79,7 @@ impl SignEngine {
                 $1,
                 COALESCE(
                     (SELECT MAX(revision)
-                    FROM sign.sign_requests
+                    from sign.sign_requests
                     WHERE execution_id = $1),
                     0
                 ) + 1,
@@ -88,7 +88,7 @@ impl SignEngine {
                 'reserved'
             WHERE NOT EXISTS (
                 SELECT 1
-                FROM sign.sign_requests
+                from sign.sign_requests
                 WHERE execution_id = $1
                     AND (
                         state = 'signed'
@@ -102,7 +102,7 @@ impl SignEngine {
             "#,
             execution_id.0.as_bytes().as_slice(),
             chain_id_i64,
-            from_address_bytes,
+            from_bytes,
         )
         .fetch_optional(&self.db)
         .await
