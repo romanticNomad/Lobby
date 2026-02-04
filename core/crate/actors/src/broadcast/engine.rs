@@ -59,16 +59,33 @@
 //             INSERT INTO broadcast.broadcast_requests
 //                 (execution_id, revision, chain_id, from_address, state)
 //             SELECT
-//             &1,
-//             COALESCE(
-//                 (SELECT MAX(revision)
-//                 FROM boradcast.broadcast_requests
-//                 WHERE execution_id = $1)
-//             ) + 1,
-//             $2,
-//             $3,
-//             $4
+//                 $1,
+//                 COALESCE(
+//                     (SELECT MAX(revision)
+//                     FROM broadcast.broadcast_requests
+//                     WHERE execution_id = $1),
+//                     0
+//                 ) + 1,
+//                 $2,
+//                 $3,
+//                 'received'
+//             WHERE NOT EXIST (
+//                 SELECT 1 
+//                 FROM broadcast.broadcast_requests
+//                 WHERE execution_id = $1,
+//                 AND (
+//                     state = 'submitted'
+//                     OR (
+//                         state = 'received'
+//                         AND updated_at > now() - interval '5 minutes'
+//                     )
+//                 )
+//             )
+//             RETURNING revision
 //             "#,
+//             execution_id.0.as_bytes().as_slice(),
+//             chain_id_i64,
+//             from_address_bytes,
 //         )
 //     }
 // }
