@@ -9,7 +9,6 @@ CREATE TYPE sign.sign_state AS ENUM (
 CREATE TABLE sign.sign_requests (
     execution_id   BYTEA NOT NULL,
     revision       BIGINT NOT NULL,
-    key_id         TEXT NOT NULL,
     chain_id       BIGINT NOT NULL,
     from_address   BYTEA NOT NULL,
     state          sign.sign_state NOT NULL,

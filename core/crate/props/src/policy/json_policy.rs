@@ -8,7 +8,6 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 struct PolicyAccount {
-    key_id: String,
     pvt_key: String,
     pub_key: String,
     address: String,
@@ -18,7 +17,7 @@ struct PolicyAccount {
 
 #[derive(Debug)]
 pub struct JsonPolicyEngine {
-    index: HashMap<Address, (String, String)>,
+    index: HashMap<Address, String>,
 }
 
 impl JsonPolicyEngine {
@@ -37,7 +36,7 @@ impl JsonPolicyEngine {
                 panic!("duplicate address found in policy")
             }
 
-            index.insert(address, (account.key_id.clone(), account.pvt_key.clone()));
+            index.insert(address, account.pvt_key.clone());
         }
 
         Self { index }
@@ -47,8 +46,8 @@ impl JsonPolicyEngine {
 // ============================================================
 
 impl PolicyEngine for JsonPolicyEngine {
-    fn resolve_key(&self, from: &Address) -> Result<(String, [u8; 32]), ExecutionError> {
-        let (key_id, pvt_string) = self.index.get(from).ok_or_else(|| {
+    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], ExecutionError> {
+        let pvt_string = self.index.get(from).ok_or_else(|| {
             ExecutionError::Internal(format!("Policy violation: no Key detected for: {}", from))
         })?;
 
@@ -58,7 +57,7 @@ impl PolicyEngine for JsonPolicyEngine {
             .try_into()
             .map_err(|e| ExecutionError::Invariant(format!("Invalid pvt key length: {:?}", e)))?;
 
-        Ok((key_id.clone(), pvt_bytes))
+        Ok(pvt_bytes)
     }
 }
 

@@ -33,7 +33,7 @@ pub trait Signer: Send + Sync {
 // ============================================================
 
 pub trait PolicyEngine: Send + Sync {
-    fn resolve_key(&self, from: &Address) -> Result<(String, [u8; 32]), ExecutionError>;
+    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], ExecutionError>;
 }
 
 // ============================================================
