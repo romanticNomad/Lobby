@@ -69,7 +69,7 @@ impl SignEngine {
         let from_bytes = &from.0.0;
 
         // =========================================================
-        // ensuring idempotency and lease lock for race condition and crash safety
+        // atomic INSERT with concurrency-safe tx signing and idempotency check
 
         let revision = sqlx::query_scalar!(
             r#"
@@ -170,3 +170,5 @@ impl SignEngine {
         }
     }
 }
+
+// ============================================================

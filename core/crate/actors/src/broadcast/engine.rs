@@ -7,6 +7,8 @@ use kernel::types::{
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
+// =========================================================
+
 pub struct BroadcastEngine {
     db: PgPool,
     provider: RpcProviderRegistry,
@@ -22,6 +24,8 @@ impl BroadcastEngine {
         Self { db, provider, rx }
     }
 }
+
+// =========================================================
 
 impl BroadcastEngine {
     pub async fn run(mut self) {
@@ -60,7 +64,7 @@ impl BroadcastEngine {
         let from_address_bytes = &from_address.0.0;
 
         // =========================================================
-        // ensuring idempotency and lease lock for race condition and crash safety
+        // atomic INSERT with concurrency-safe broadcast attempt and idempotency check
 
         let revision = sqlx::query_scalar!(
             r#"
@@ -208,3 +212,5 @@ impl BroadcastEngine {
         }
     }
 }
+
+// =========================================================

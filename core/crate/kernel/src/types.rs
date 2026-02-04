@@ -7,8 +7,7 @@ use alloy::{
 use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::Deserialize;
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 
 // ============================================================
 // Struct for eip-1159 rlp encoding.
@@ -112,3 +111,5 @@ pub enum BroadcastError {
     Invariant(String),
     MissingProvider(ChainId),
 }
+
+// ============================================================
