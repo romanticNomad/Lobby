@@ -61,7 +61,7 @@ impl SignEngine {
         // =========================================================
         // loading pvt_key from key policy and setting types for db
 
-        l pvt_key) = self.json_policy.resolve_key(&from)?;
+        let pvt_key = self.json_policy.resolve_key(&from)?;
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()
@@ -74,7 +74,7 @@ impl SignEngine {
         let revision = sqlx::query_scalar!(
             r#"
             INSERT INTO sign.sign_requests
-                (execution_id, revisi chain_id, from_address, state)
+                (execution_id, revision, chain_id, from_address, state)
             SELECT
                 $1,
                 COALESCE(
@@ -85,7 +85,6 @@ impl SignEngine {
                 ) + 1,
                 $2,
                 $3,
-                $4,
                 'reserved'
             WHERE NOT EXISTS (
                 SELECT 1
