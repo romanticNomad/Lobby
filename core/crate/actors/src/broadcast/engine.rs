@@ -1,7 +1,8 @@
 use crate::broadcast::relay::BroadcastCommand;
 use alloy::{primitives::Address, providers::Provider};
 use kernel::types::{
-    BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction, TxHash,
+    BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
+    TxHash,
 };
 use sqlx::PgPool;
 use tokio::sync::mpsc;
@@ -118,32 +119,23 @@ impl BroadcastEngine {
                 .await
                 .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
 
-                return Ok(
-                    match row.state.unwrap().as_str() {
-                        "submitted" => {
-                            BroadcastOutcome::Submitted {
-                                txn_hash: TxHash::from_slice(
-                                    row.tx_hash
-                                    .as_ref()
-                                    .ok_or(BroadcastError::Invariant(
-                                        "Submitted without TxHash".to_string()
-                                    ))?
-                                )
-                            }
-                        },
+                return Ok(match row.state.unwrap().as_str() {
+                    "submitted" => BroadcastOutcome::Submitted {
+                        txn_hash: TxHash::from_slice(row.tx_hash.as_ref().ok_or(
+                            BroadcastError::Invariant("Submitted without TxHash".to_string()),
+                        )?),
+                    },
 
-                        "rejected" => {
-                            BroadcastOutcome::Rejected { 
-                                reason: row
-                                .rejection_reason
-                                .unwrap_or_else(| | "unknows rejection reason".to_string())
-                
-                            }
-                        },
+                    "rejected" => BroadcastOutcome::Rejected {
+                        reason: row
+                            .rejection_reason
+                            .unwrap_or_else(|| "unknows rejection reason".to_string()),
+                    },
 
-                        _ => BroadcastOutcome::Unexpected("unknown database inclusion error".to_string()),
+                    _ => {
+                        BroadcastOutcome::Unexpected("unknown database inclusion error".to_string())
                     }
-                )
+                });
             }
         };
 
@@ -151,21 +143,19 @@ impl BroadcastEngine {
         // fetching provider and sending transaction
 
         let provider = self
-        .provider
-        .get(&chain_id)
-        .map(|entry| entry.value().clone())
-        .ok_or(BroadcastError::MissingProvider(chain_id))?;
-        
-        let send_txn = provider
-        .send_raw_transaction(&txn.rlp)
-        .await;
+            .provider
+            .get(&chain_id)
+            .map(|entry| entry.value().clone())
+            .ok_or(BroadcastError::MissingProvider(chain_id))?;
+
+        let send_txn = provider.send_raw_transaction(&txn.rlp).await;
 
         // =========================================================
         // pattern matching for the broadcasted transaction
 
         match send_txn {
             Ok(pending_tx) => {
-                let tx_hash  = pending_tx.tx_hash();
+                let tx_hash = pending_tx.tx_hash();
                 sqlx::query!(
                     r#"
                     UPDATE broadcast.broadcast_requests
@@ -181,9 +171,9 @@ impl BroadcastEngine {
                 .execute(&self.db)
                 .await
                 .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
-                
+
                 Ok(BroadcastOutcome::Submitted { txn_hash: *tx_hash })
-            },
+            }
 
             Err(err) => {
                 let err_str = err.to_string();

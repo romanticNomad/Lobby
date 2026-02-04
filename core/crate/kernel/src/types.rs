@@ -7,8 +7,8 @@ use alloy::{
 use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::Deserialize;
-use std::sync::Arc;
 use std::hash::Hash;
+use std::sync::Arc;
 
 // ============================================================
 // Struct for eip-1159 rlp encoding.
@@ -90,7 +90,7 @@ pub struct SignedTransaction {
 pub enum BroadcastOutcome {
     Submitted { txn_hash: TxHash },
     Rejected { reason: String },
-    Unexpected(String)
+    Unexpected(String),
 }
 
 // ============================================================
