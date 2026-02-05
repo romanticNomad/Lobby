@@ -8,7 +8,7 @@ CREATE TYPE nonce.nonce_state AS ENUM (
 
 CREATE TABLE nonce.nonce_assignments (
     execution_id      BYTEA PRIMARY KEY,
-    revision         BIGINT NOT NULL,
+    revision          BIGINT NOT NULL,
     chain_id          BIGINT NOT NULL,
     from_address      BYTEA NOT NULL,
     nonce             BIGINT NOT NULL,
@@ -23,8 +23,8 @@ ON nonce.nonce_assignments (chain_id, from_address, nonce)
 WHERE state IN ('reserved', 'finalized');
 
 -- Index for efficient revision lookups
-CREATE INDEX idx_nonce_revision 
-ON nonce.nonce_assignments (execution_id, revision);
+CREATE INDEX idx_nonce_latest_revision 
+ON nonce.nonce_assignments (execution_id, revision DESC);
 
 -- Lookup scoped by chain_id, from_address
 CREATE INDEX idx_nonce_by_sender
