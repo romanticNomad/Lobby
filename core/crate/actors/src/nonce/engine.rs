@@ -121,9 +121,7 @@ impl NonceEngine {
         // pattern matching the candidate (nonce, revision)
 
         match candidate {
-            Some(row) => {
-                Ok(TxNonce::try_from(row.nonce)?)
-            }
+            Some(row) => Ok(TxNonce::try_from(row.nonce)?),
             None => {
                 let existing = sqlx::query!(
                     r#"
@@ -139,7 +137,7 @@ impl NonceEngine {
                 .fetch_one(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-                
+
                 Ok(TxNonce::try_from(existing.nonce)?)
             }
         }
@@ -217,22 +215,27 @@ impl NonceEngine {
                 .fetch_optional(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
-                
+
                 match latest {
                     Some(row) => {
                         if row.state == new_state {
                             Ok(())
-                        } else if matches!(row.state, NonceState::Finalized | NonceState::Released) {
-                            Err(ExecutionError::DatabaseError(format!("execution_id already resolved to {:?}, cannot transition to {:?}",
-                        row.state, new_state)))
+                        } else if matches!(row.state, NonceState::Finalized | NonceState::Released)
+                        {
+                            Err(ExecutionError::DatabaseError(format!(
+                                "execution_id already resolved to {:?}, cannot transition to {:?}",
+                                row.state, new_state
+                            )))
                         } else {
-                            Err(ExecutionError::DatabaseError("expected reserved state but INSERT failed".to_string()))
+                            Err(ExecutionError::DatabaseError(
+                                "expected reserved state but INSERT failed".to_string(),
+                            ))
                         }
                     }
 
-                    None => {
-                        Err(ExecutionError::Invariant("invalid execution_id".to_string()))
-                    }
+                    None => Err(ExecutionError::Invariant(
+                        "invalid execution_id".to_string(),
+                    )),
                 }
             }
         }
