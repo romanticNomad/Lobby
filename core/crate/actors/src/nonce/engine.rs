@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
-use sqlx::{PgPool, postgres::PgDatabaseError};
+use sqlx::PgPool;
 use tokio::sync::mpsc;
 
 use crate::nonce::{NonceCommand, NonceState};
@@ -199,27 +199,6 @@ impl NonceEngine {
                 }
             }
         }
-    }
-}
-
-// =========================================================
-// race conditoin checker.
-
-fn is_unique_violation_on(err: &sqlx::Error, constraint: &str) -> bool {
-    let sqlx::Error::Database(db_err) = err else {
-        return false;
-    };
-    let pg_err = db_err.downcast_ref::<PgDatabaseError>();
-
-    // 23505 = unique_violation
-    if pg_err.code() != "23505" {
-        return false;
-    }
-
-    // Ensure it's *your* index, not some other uniqueness rule
-    match pg_err.constraint() {
-        Some(name) => name == constraint,
-        None => false,
     }
 }
 
