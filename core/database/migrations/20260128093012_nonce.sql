@@ -7,14 +7,16 @@ CREATE TYPE nonce.nonce_state AS ENUM (
 );
 
 CREATE TABLE nonce.nonce_assignments (
-    execution_id      BYTEA PRIMARY KEY,
+    execution_id      BYTEA NOT NULL,
     revision          BIGINT NOT NULL,
     chain_id          BIGINT NOT NULL,
     from_address      BYTEA NOT NULL,
     nonce             BIGINT NOT NULL,
     state             nonce.nonce_state NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (execution_id, revision)
 );
 
 -- Only one ('reserved', 'finalized') state row for the same (chain_id, from_address, nonce) allowed
@@ -28,7 +30,7 @@ ON nonce.nonce_assignments (execution_id, revision DESC);
 
 -- Lookup scoped by chain_id, from_address
 CREATE INDEX idx_nonce_by_sender
-ON nonce.nonce_assignments (chain_id, from_address);
+ON nonce.nonce_assignments (chain_id, from_address, revision DESC);
 
 -- In case of admin lookup
 CREATE INDEX idx_nonce_by_state
