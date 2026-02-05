@@ -153,49 +153,86 @@ impl NonceEngine {
         execution_id: ExecutionId,
         success: bool,
     ) -> Result<(), ExecutionError> {
+        // =========================================================
+        // loading state update
+
         let new_state = if success {
             NonceState::Finalized
         } else {
             NonceState::Released
         };
 
-        let updated_state = sqlx::query_scalar::<_, NonceState>(
+        // =========================================================
+        // Atomic state transition
+
+        let updated = sqlx::query!(
             r#"
-            UPDATE nonce.nonce_assignments
-            SET state = $2
+            INSERT INTO nonce.nonce_assignments
+                (execution_id, revision, chain_id, from_address, nonce, state)
+            SELECT
+                $1,
+                COALESCE(
+                    (SELECT MAX(REVISION)
+                        FROM nonce.nonce_assignments
+                        WHERE execution_id = $1),
+                        0
+                ) + 1,
+                chain_id,
+                from_address,
+                nonce,
+                $2 as "new_state: NonceState"
+            FROM nonce.nonce_assignments
             WHERE execution_id = $1
-            AND state = 'reserved'
-            RETURNING state
+                AND state = 'reserved'
+            ORDER BY revision DESC
+            LIMIT 1
+            ON CONFLICT (execution_id, revision) DO NOTHING 
+            RETURNING revision
             "#,
+            execution_id.0.as_bytes().as_slice(),
+            new_state as NonceState,
         )
-        .bind(execution_id.0.as_bytes().as_slice())
-        .bind(new_state)
         .fetch_optional(&self.db)
         .await
         .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
-        match updated_state {
-            Some(_) => Ok(()), // transition succeeded
+        // =========================================================
+        // pattern matching the update result
+
+        match updated {
+            Some(_) => Ok(()),
             None => {
-                // Either already terminal OR nonexistent
-                let exists = sqlx::query_scalar!(
+                // check for idempotency or error
+
+                let latest = sqlx::query!(
                     r#"
-                    SELECT 1
+                    SELECT state as "state: NonceState"
                     FROM nonce.nonce_assignments
                     WHERE execution_id = $1
+                    ORDER BY revision DESC
+                    LIMIT 1
                     "#,
-                    execution_id.0.as_bytes().as_slice(),
+                    execution_id.0.as_bytes().as_slice()
                 )
                 .fetch_optional(&self.db)
                 .await
                 .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+                
+                match latest {
+                    Some(row) => {
+                        if row.state == new_state {
+                            Ok(())
+                        } else if matches!(row.state, NonceState::Finalized | NonceState::Released) {
+                            Err(ExecutionError::DatabaseError(format!("execution_id already resolved to {:?}, cannot transition to {:?}",
+                        row.state, new_state)))
+                        } else {
+                            Err(ExecutionError::DatabaseError("expected reserved state but INSERT failed".to_string()))
+                        }
+                    }
 
-                if exists.is_none() {
-                    Err(ExecutionError::DatabaseError(
-                        "unknown execution_id".to_string(),
-                    ))
-                } else {
-                    Ok(()) // idempotent: already resolved
+                    None => {
+                        Err(ExecutionError::Invariant("invalid execution_id".to_string()))
+                    }
                 }
             }
         }

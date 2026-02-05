@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 // =========================================================
 // Nonce state type mapping for sqlx <-> Postgres
 
-#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]
 pub enum NonceState {
     Reserved,
