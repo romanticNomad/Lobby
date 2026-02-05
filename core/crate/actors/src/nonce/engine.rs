@@ -52,7 +52,7 @@ impl NonceEngine {
     }
 
     // =========================================================
-    // nonce reservation management
+    // nonce reservation handler
 
     async fn handle_reserve(
         &self,
@@ -70,7 +70,7 @@ impl NonceEngine {
         let from_address_bytes = &from.0.0;
 
         // =========================================================
-        // atomic INSERT with concurrency-safe nonce selection and idempotency check
+        // atomic INSERT with concurrency-safe nonce selection and lease locking
 
         let candidate = sqlx::query!(
             r#"

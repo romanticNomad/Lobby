@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 // ============================================================
+// SignEngine struct declaration with policy details
 
 pub struct SignEngine {
     db: PgPool,
@@ -49,7 +50,8 @@ impl SignEngine {
         }
     }
 
-    // state management and signing raw transaction.
+    // =========================================================
+    // state logic for concurrecny safe signing of raw transaction.
 
     async fn handle_sign(
         &self,
@@ -69,7 +71,7 @@ impl SignEngine {
         let from_bytes = &from.0.0;
 
         // =========================================================
-        // atomic INSERT with concurrency-safe tx signing and idempotency check
+        // idempotency safe atomic INSERT and lease locking
 
         let revision = sqlx::query_scalar!(
             r#"
@@ -108,12 +110,15 @@ impl SignEngine {
         .await
         .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
 
+        // =========================================================
+        // pattern matching the state recieved (need to be done yet)
+
         let revision = revision.ok_or_else(|| {
             ExecutionError::Invariant("sign database invariant faliure".to_string())
         })?;
 
         // =========================================================
-        // pattern matching the signing result
+        // signing logic and pattern matching
 
         match sign_eip1559_transaction(txn, pvt_key) {
             Ok(signed_tx) => {

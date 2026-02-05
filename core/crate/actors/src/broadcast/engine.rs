@@ -8,6 +8,7 @@ use sqlx::PgPool;
 use tokio::sync::mpsc;
 
 // =========================================================
+// CroadcastEngine struct declaration with provider details
 
 pub struct BroadcastEngine {
     db: PgPool,
@@ -47,6 +48,9 @@ impl BroadcastEngine {
         }
     }
 
+    // =========================================================
+    // state logic for concurrency safe broadcasting
+
     async fn handle_broadcast(
         &self,
         chain_id: ChainId,
@@ -64,7 +68,7 @@ impl BroadcastEngine {
         let from_address_bytes = &from_address.0.0;
 
         // =========================================================
-        // atomic INSERT with concurrency-safe broadcast attempt and idempotency check
+        // idempotency safe atomic INSERT and lease locking
 
         let revision = sqlx::query_scalar!(
             r#"
@@ -178,7 +182,6 @@ impl BroadcastEngine {
 
                 Ok(BroadcastOutcome::Submitted { txn_hash: *tx_hash })
             }
-
             Err(err) => {
                 let err_str = err.to_string();
 
