@@ -1,4 +1,4 @@
-use crate::broadcast::relay::BroadcastCommand;
+use crate::broadcast::BroadcastCommand;
 use alloy::{primitives::Address, providers::Provider};
 use kernel::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
