@@ -1,4 +1,4 @@
-use crate::sign::SignCommand;
+use crate::sign::{SignCommand, SignHandle};
 use alloy::primitives::Address;
 use kernel::{
     traits::PolicyEngine,
@@ -19,14 +19,17 @@ pub struct SignEngine {
 }
 
 impl SignEngine {
-    pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
+    pub fn spawm(db: PgPool) -> SignHandle {
+        let (tx, rx) = mpsc::channel(1024);
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
         let json_policy = JsonPolicyEngine::load_file(path.to_str().unwrap());
-        Self {
-            db,
-            json_policy,
-            rx,
-        }
+
+        let actor_engine = SignEngine {db, json_policy, rx};
+        tokio::spawn(async move {
+            actor_engine.run().await;
+        });
+
+        SignHandle::new(tx)
     }
 }
 

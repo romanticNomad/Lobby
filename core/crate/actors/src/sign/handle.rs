@@ -22,21 +22,21 @@ pub enum SignCommand {
 // ============================================================
 // Entry point for commands into SignEngine
 
-pub struct SignRelay {
+pub struct SignHandle {
     tx: mpsc::Sender<SignCommand>,
 }
 
-impl SignRelay {
-    fn new(tx: mpsc::Sender<SignCommand>) -> Self {
+impl SignHandle {
+    pub fn new(tx: mpsc::Sender<SignCommand>) -> Self {
         Self { tx }
     }
 }
 
 // ============================================================
-// implimentation of Signer trait for SignRelay
+// implimentation of Signer trait for SignHandle
 
 #[async_trait]
-impl Signer for SignRelay {
+impl Signer for SignHandle {
     async fn sign(
         &self,
         chain_id: ChainId,

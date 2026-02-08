@@ -38,21 +38,21 @@ pub enum NonceCommand {
 // Entry point for commands into nonce engine.
 
 #[derive(Clone)]
-pub struct NonceRelay {
+pub struct NonceHandle {
     tx: mpsc::Sender<NonceCommand>,
 }
 
-impl NonceRelay {
+impl NonceHandle {
     pub fn new(tx: mpsc::Sender<NonceCommand>) -> Self {
         Self { tx }
     }
 }
 
 // =========================================================
-// implimentation of NonceManager for NonceRelay.
+// implimentation of NonceManager for NonceHandle.
 
 #[async_trait]
-impl NonceManager for NonceRelay {
+impl NonceManager for NonceHandle {
     async fn reserve(
         &self,
         chain_id: ChainId,

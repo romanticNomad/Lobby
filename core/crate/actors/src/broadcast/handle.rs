@@ -22,21 +22,21 @@ pub enum BroadcastCommand {
 // ============================================================
 // entry point for commands into BroadcastEngine
 
-pub struct BroadcastRelay {
+pub struct BroadcastHandle {
     tx: mpsc::Sender<BroadcastCommand>,
 }
 
-impl BroadcastRelay {
+impl BroadcastHandle {
     pub fn new(tx: mpsc::Sender<BroadcastCommand>) -> Self {
         Self { tx }
     }
 }
 
 // ============================================================
-// implimentation of Broadcaster for BroadcastRelay
+// implimentation of Broadcaster for BroadcastHandle
 
 #[async_trait]
-impl Broadcaster for BroadcastRelay {
+impl Broadcaster for BroadcastHandle {
     async fn broadcast(
         &self,
         chain_id: ChainId,
