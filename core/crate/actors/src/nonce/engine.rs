@@ -3,7 +3,7 @@ use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
-use crate::nonce::{NonceCommand, NonceState};
+use crate::nonce::{NonceCommand, NonceHandle, NonceState};
 
 // =========================================================
 // NonceEngine struct declaration
@@ -13,20 +13,23 @@ pub struct NonceEngine {
     rx: mpsc::Receiver<NonceCommand>,
 }
 
+impl NonceEngine {
+    pub fn spawn(db: PgPool) -> NonceHandle {
+        let (tx, rx) = mpsc::channel(1024);
+
+        let actor_engine = NonceEngine { db, rx };
+        tokio::spawn(async move {
+            actor_engine.run().await;
+        });
+
+        NonceHandle::new(tx)
+    }
+}
+
 // =========================================================
-// implimentations of NonceEngine
+// NonceEngine functioning
 
 impl NonceEngine {
-    // =========================================================
-    // initiating the actor
-
-    pub fn new(db: PgPool, rx: mpsc::Receiver<NonceCommand>) -> Self {
-        Self { db, rx }
-    }
-
-    // =========================================================
-    // running the NonceEngine
-
     pub async fn run(mut self) {
         while let Some(cmd) = self.rx.recv().await {
             match cmd {

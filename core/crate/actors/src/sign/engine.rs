@@ -24,7 +24,11 @@ impl SignEngine {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
         let json_policy = JsonPolicyEngine::load_file(path.to_str().unwrap());
 
-        let actor_engine = SignEngine {db, json_policy, rx};
+        let actor_engine = SignEngine {
+            db,
+            json_policy,
+            rx,
+        };
         tokio::spawn(async move {
             actor_engine.run().await;
         });
@@ -34,6 +38,7 @@ impl SignEngine {
 }
 
 // ============================================================
+// SignEngine functioning
 
 impl SignEngine {
     pub async fn run(mut self) {
