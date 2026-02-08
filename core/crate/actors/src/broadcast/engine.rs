@@ -8,7 +8,7 @@ use sqlx::PgPool;
 use tokio::sync::mpsc;
 
 // =========================================================
-// CroadcastEngine struct declaration with provider details
+// BroadcastEngine struct declaration with provider details
 
 pub struct BroadcastEngine {
     db: PgPool,
