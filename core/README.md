@@ -62,6 +62,7 @@ This achieves:
 - **Database**: PostgreSQL (Docker-hosted, sqlx for compile-time query checking)
 - **Message Passing**: `tokio::sync::mpsc` for actor queues, `tokio::sync::oneshot` for responses
 - **Type Safety**: SQLx macros (`sqlx::query!`) for compile-time SQL verification
+- **Axum**: Http requests handling
 
 ## Current State
 I have implemented:
