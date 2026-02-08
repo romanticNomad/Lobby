@@ -1,4 +1,4 @@
-use crate::broadcast::BroadcastCommand;
+use crate::broadcast::{BroadcastCommand, handle::BroadcastHandle};
 use alloy::{primitives::Address, providers::Provider};
 use kernel::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
@@ -17,12 +17,18 @@ pub struct BroadcastEngine {
 }
 
 impl BroadcastEngine {
-    pub fn new(
+    pub fn spawn(
         db: PgPool,
-        provider: RpcProviderRegistry,
-        rx: mpsc::Receiver<BroadcastCommand>,
-    ) -> Self {
-        Self { db, provider, rx }
+        provider: RpcProviderRegistry
+    ) -> BroadcastHandle {
+        let (tx, rx) = mpsc::channel(1024);
+        
+        let actor_engine = BroadcastEngine {db, provider, rx};
+        tokio::spawn(async move {
+            actor_engine.run().await;
+        });
+
+        BroadcastHandle::new(tx)
     }
 }
 
