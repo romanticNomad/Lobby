@@ -1,3 +1,5 @@
+## Prompt for Next Session
+
 I am building a low-latency, high-concurrency blockchain transaction signing service called **Lobby**. 
 
 ## Architecture Overview
@@ -30,12 +32,13 @@ To achieve high throughput while maintaining correctness, Lobby uses a **two-lay
 
 ### Layer 1: Pipeline Per Transaction
 - Each incoming transaction spawns a **lightweight pipeline task** (cheap Tokio task)
+- A Pipeline pool is used to prevent memory overflow
 - The pipeline orchestrates sequential calls across actors: `RelayHost → Nonce → Sign → Broadcast`
 - Pipelines run **concurrently** - 1000 requests = 1000 pipeline tasks executing in parallel
 - Each pipeline holds **cloned actor handles** (`ActorHandle` wraps `mpsc::Sender`, cheap to clone)
 
-### Layer 2: Sharded Actors (Address-Based)
-- Instead of **one** nonce actor (bottleneck), Lobby runs **N sharded nonce actors**
+### Layer 2: Sharded Actors (nonce actor example given blow)
+- Instead of **one** nonce actor (bottleneck), Lobby runs **N sharded nonce actors (keyd by from_addredd)**
 - Requests are routed to actors based on `hash(from_address) % N`
 - Different addresses → different actors → **true parallelism**
 - Same address → same actor → **sequential ordering** (critical for nonce safety)
@@ -51,6 +54,8 @@ This achieves:
 - **High concurrency** - N actors processing in parallel
 - **Correctness** - Sequential processing per address prevents nonce races
 - **Low latency** - Minimal actor queue depth per shard
+- Similarly logic can be used for **broadcast (keyed by chain_id)** and **sign (keyed by execution_id)**
+- **RelayHost** does not need sharding since it is the entry point to the pipeline
 
 ## Tech Stack
 - **Runtime**: Tokio (async Rust)
@@ -60,24 +65,24 @@ This achieves:
 
 ## Current State
 I have implemented:
-- Nonce, Sign and Broadcast actor with atomic reserve/resolve operations
+- Nonce, Broadcast and Sign actors with atomic reserve/resolve operations
 - PostgreSQL schema with revision tracking and partial unique indexes
 - TOCTOU-safe query patterns using `INSERT ... SELECT` with `WHERE NOT EXISTS`
 - Idempotency handling via lease-based deduplication
 
-<!-- ## What I Need Help With
-[INSERT YOUR SPECIFIC REQUEST HERE - e.g., "Implement the Sign actor with HSM integration" or "Design the sharding router logic" or "Build the Pipeline orchestration struct"] -->
-
-## Key constraints:
+Key constraints:
 - Must maintain ACID properties for state transitions
 - Must handle actor crashes gracefully (lease expiration as recovery mechanism)
 - Must support idempotent retries (same execution_id can be called multiple times)
 - Prefer compile-time safety (sqlx::query! over runtime queries)
 
-<!-- ```
-This prompt:
+---
+
+This doc:
 1. Defines what actors are in Lobby's context
 2. Explains the pipeline + sharding concurrency model
 3. Avoids implementation details (lets the next LLM focus on your specific ask)
 4. Provides enough context for any technical person/LLM to understand the architecture
-5. Mentions key constraints and design principles -->
+5. Mentions key constraints and design principles
+
+---
