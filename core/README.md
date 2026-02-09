@@ -1,6 +1,4 @@
-## Prompt for Next Session
-
-I am building a low-latency, high-concurrency blockchain transaction signing service called **Lobby**. 
+We are building a low-latency, high-concurrency blockchain transaction signing service called **Lobby**. 
 
 ## Architecture Overview
 
@@ -62,14 +60,23 @@ This achieves:
 - **Database**: PostgreSQL (Docker-hosted, sqlx for compile-time query checking)
 - **Message Passing**: `tokio::sync::mpsc` for actor queues, `tokio::sync::oneshot` for responses
 - **Type Safety**: SQLx macros (`sqlx::query!`) for compile-time SQL verification
-- **Axum**: Http requests handling
+- **Axum**: Http requests handling and providing EIP-1193 evm adapter.
 
 ## Current State
-I have implemented:
+We have implemented:
 - Nonce, Broadcast and Sign actors with atomic reserve/resolve operations
 - PostgreSQL schema with revision tracking and partial unique indexes
 - TOCTOU-safe query patterns using `INSERT ... SELECT` with `WHERE NOT EXISTS`
 - Idempotency handling via lease-based deduplication
+
+## Pending implimentations:
+- RelayHost actor
+- A Validator task at the end of the pipeline to validate the block inclusion of the transaction
+- EIP-1559 Gas estimation library
+- Setting up the RpcProviderRegistry Dashmap
+- Setting up the pipeline for orchestration of all the actors
+- Wiring down all the crates in the main function
+- Unit and Integration tests before launching the prototype
 
 Key constraints:
 - Must maintain ACID properties for state transitions
@@ -82,8 +89,7 @@ Key constraints:
 This doc:
 1. Defines what actors are in Lobby's context
 2. Explains the pipeline + sharding concurrency model
-3. Avoids implementation details (lets the next LLM focus on your specific ask)
-4. Provides enough context for any technical person/LLM to understand the architecture
-5. Mentions key constraints and design principles
+3. Provides enough context for any technical person/LLM to understand the architecture
+4. Mentions key constraints and design principles
 
 ---
