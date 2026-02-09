@@ -4,5 +4,5 @@ members = [
     "bin/main",
     "crate/local",
     "crate/kernel",
-    "crate/common",
-]
+    "crate/common"
+, "crate/webhost"]

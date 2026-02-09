@@ -4572,6 +4572,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "webhost"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "kernel",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "webpki-roots"
 version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
