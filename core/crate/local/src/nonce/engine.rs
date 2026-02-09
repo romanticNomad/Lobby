@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use kernel::types::{ChainId, LocalError, ExecutionId, TxNonce};
+use kernel::types::{ChainId, ExecutionId, LocalError, TxNonce};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
@@ -236,9 +236,7 @@ impl NonceEngine {
                         }
                     }
 
-                    None => Err(LocalError::Invariant(
-                        "invalid execution_id".to_string(),
-                    )),
+                    None => Err(LocalError::Invariant("invalid execution_id".to_string())),
                 }
             }
         }

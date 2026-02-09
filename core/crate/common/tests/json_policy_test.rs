@@ -1,8 +1,8 @@
 use std::{path::PathBuf, str::FromStr};
 
 use alloy::primitives::{Address, hex};
-use kernel::traits::PolicyEngine;
 use common::policy::JsonPolicyEngine;
+use kernel::traits::PolicyEngine;
 
 #[derive(Debug)]
 struct JsonPolicyTest {

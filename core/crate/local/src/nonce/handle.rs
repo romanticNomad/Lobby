@@ -2,7 +2,7 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::NonceManager,
-    types::{ChainId, LocalError, ExecutionId, TxNonce},
+    types::{ChainId, ExecutionId, LocalError, TxNonce},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -77,11 +77,7 @@ impl NonceManager for NonceHandle {
             .map_err(|_| LocalError::Internal("NonceActor response corrupted".to_string()))?
     }
 
-    async fn resolve(
-        &self,
-        execution_id: ExecutionId,
-        outcome: bool,
-    ) -> Result<(), LocalError> {
+    async fn resolve(&self, execution_id: ExecutionId, outcome: bool) -> Result<(), LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Resolve {
             execution_id,

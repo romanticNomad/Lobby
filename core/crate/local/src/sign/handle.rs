@@ -2,7 +2,7 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::Signer,
-    types::{ChainId, Eip1559Transaction, LocalError, ExecutionId, SignedTransaction},
+    types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignedTransaction},
 };
 use tokio::sync::{mpsc, oneshot};
 

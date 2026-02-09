@@ -1,10 +1,10 @@
 use crate::sign::{SignCommand, SignHandle};
 use alloy::primitives::Address;
+use common::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 use kernel::{
     traits::PolicyEngine,
-    types::{ChainId, Eip1559Transaction, LocalError, ExecutionId, SignedTransaction},
+    types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignedTransaction},
 };
-use common::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 use sqlx::PgPool;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -121,9 +121,8 @@ impl SignEngine {
         // =========================================================
         // pattern matching the state recieved (need to be done yet)
 
-        let revision = revision.ok_or_else(|| {
-            LocalError::Invariant("sign database invariant faliure".to_string())
-        })?;
+        let revision = revision
+            .ok_or_else(|| LocalError::Invariant("sign database invariant faliure".to_string()))?;
 
         // =========================================================
         // signing logic and pattern matching
