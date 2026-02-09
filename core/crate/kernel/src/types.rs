@@ -86,20 +86,20 @@ pub struct SignedTransaction {
 // ============================================================
 
 #[derive(Clone, Debug)]
-pub enum BroadcastOutcome {
-    Submitted { txn_hash: TxHash },
-    Rejected { reason: String },
-    Unexpected(String),
-}
-
-// ============================================================
-
-#[derive(Clone, Debug)]
 pub enum ExecutionError {
     DatabaseError(String),
     Internal(String),
     Invariant(String),
     Rejected(String),
+}
+
+// ============================================================
+
+#[derive(Clone, Debug)]
+pub enum BroadcastOutcome {
+    Submitted { txn_hash: TxHash },
+    Rejected { reason: String },
+    Unexpected(String),
 }
 
 // ============================================================

@@ -7,7 +7,7 @@ use kernel::{
 use tokio::sync::{mpsc, oneshot};
 
 // =========================================================
-// Nonce state type mapping for sqlx <-> Postgres
+// sonce state type mapping for sqlx <-> Postgres
 
 #[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]
@@ -18,7 +18,7 @@ pub enum NonceState {
 }
 
 // =========================================================
-// Commands to send over the channel.
+// commands to sent over the channel.
 
 pub enum NonceCommand {
     Reserve {
@@ -35,7 +35,7 @@ pub enum NonceCommand {
 }
 
 // =========================================================
-// Entry point for commands into nonce engine.
+// entry point for commands into nonce engine.
 
 #[derive(Clone)]
 pub struct NonceHandle {

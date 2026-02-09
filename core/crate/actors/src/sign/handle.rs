@@ -20,7 +20,7 @@ pub enum SignCommand {
 }
 
 // ============================================================
-// Entry point for commands into SignEngine
+// entry point for commands into SignEngine
 
 pub struct SignHandle {
     tx: mpsc::Sender<SignCommand>,
