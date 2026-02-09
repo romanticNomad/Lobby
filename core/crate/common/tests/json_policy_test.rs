@@ -2,7 +2,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use alloy::primitives::{Address, hex};
 use kernel::traits::PolicyEngine;
-use props::policy::JsonPolicyEngine;
+use common::policy::JsonPolicyEngine;
 
 #[derive(Debug)]
 struct JsonPolicyTest {

@@ -59,11 +59,11 @@ impl EthRlpEncode for ChainId {
 pub struct TxNonce(pub U256);
 
 impl TryFrom<i64> for TxNonce {
-    type Error = ExecutionError;
+    type Error = LocalError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
         if value < 0 {
-            return Err(ExecutionError::Rejected(format!("Invalid Nonce: {value}")));
+            return Err(LocalError::Rejected(format!("Invalid Nonce: {value}")));
         }
 
         Ok(TxNonce(U256::from(value as u64)))
@@ -86,7 +86,7 @@ pub struct SignedTransaction {
 // ============================================================
 
 #[derive(Clone, Debug)]
-pub enum ExecutionError {
+pub enum LocalError {
     DatabaseError(String),
     Internal(String),
     Invariant(String),

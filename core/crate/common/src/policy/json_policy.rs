@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::File, io::BufReader};
 
 use alloy::primitives::Address;
-use kernel::{traits::PolicyEngine, types::ExecutionError};
+use kernel::{traits::PolicyEngine, types::LocalError};
 use serde::Deserialize;
 
 // ============================================================
@@ -46,16 +46,16 @@ impl JsonPolicyEngine {
 // ============================================================
 
 impl PolicyEngine for JsonPolicyEngine {
-    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], ExecutionError> {
+    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], LocalError> {
         let pvt_string = self.index.get(from).ok_or_else(|| {
-            ExecutionError::Internal(format!("Policy violation: no Key detected for: {}", from))
+            LocalError::Internal(format!("Policy violation: no Key detected for: {}", from))
         })?;
 
         let pvt_str = pvt_string.strip_prefix("0x").unwrap_or(pvt_string);
         let pvt_bytes: [u8; 32] = hex::decode(pvt_str)
-            .map_err(|e| ExecutionError::Invariant(e.to_string()))?
+            .map_err(|e| LocalError::Invariant(e.to_string()))?
             .try_into()
-            .map_err(|e| ExecutionError::Invariant(format!("Invalid pvt key length: {:?}", e)))?;
+            .map_err(|e| LocalError::Invariant(format!("Invalid pvt key length: {:?}", e)))?;
 
         Ok(pvt_bytes)
     }

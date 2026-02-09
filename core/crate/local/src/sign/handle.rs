@@ -2,7 +2,7 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::Signer,
-    types::{ChainId, Eip1559Transaction, ExecutionError, ExecutionId, SignedTransaction},
+    types::{ChainId, Eip1559Transaction, LocalError, ExecutionId, SignedTransaction},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -15,7 +15,7 @@ pub enum SignCommand {
         chain_id: ChainId,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
-        reply_tx: oneshot::Sender<Result<SignedTransaction, ExecutionError>>,
+        reply_tx: oneshot::Sender<Result<SignedTransaction, LocalError>>,
     },
 }
 
@@ -43,7 +43,7 @@ impl Signer for SignHandle {
         from: Address,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
-    ) -> Result<SignedTransaction, ExecutionError> {
+    ) -> Result<SignedTransaction, LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = SignCommand::Sign {
             from,
@@ -56,11 +56,11 @@ impl Signer for SignHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| ExecutionError::Internal("SignEngine not available".to_string()))?;
+            .map_err(|_| LocalError::Internal("SignEngine not available".to_string()))?;
 
         reply_rx
             .await
-            .map_err(|_| ExecutionError::Internal("SignEngine response corrupted".to_string()))?
+            .map_err(|_| LocalError::Internal("SignEngine response corrupted".to_string()))?
     }
 }
 

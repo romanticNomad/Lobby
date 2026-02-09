@@ -4,7 +4,7 @@ use k256::{
     elliptic_curve::scalar::IsHigh,
 };
 use kernel::traits::EthRlpEncode;
-use kernel::types::{Eip1559Transaction, ExecutionError, SignedTransaction};
+use kernel::types::{Eip1559Transaction, LocalError, SignedTransaction};
 use rlp::RlpStream;
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroize;
@@ -14,7 +14,7 @@ use zeroize::Zeroize;
 pub fn sign_eip1559_transaction(
     tx: Eip1559Transaction,
     pvt_key: [u8; 32],
-) -> Result<SignedTransaction, ExecutionError> {
+) -> Result<SignedTransaction, LocalError> {
     // ============================================================
     // prepare keccak-256(rlp(unsigned_tx)) for EIP-1159
 
@@ -29,14 +29,14 @@ pub fn sign_eip1559_transaction(
     // load key & produce (signature, recovery_id) -> { signature = sekp256k1( keccak-256(rlp_unsigned_tx), pvt_key ) }
 
     let signing_key = SigningKey::from_bytes(&pvt_key.into())
-        .map_err(|e| ExecutionError::Internal(format!("Invalid private key: {e}")))?;
+        .map_err(|e| LocalError::Internal(format!("Invalid private key: {e}")))?;
 
     let mut pk = pvt_key;
     pk.zeroize();
 
     let (mut signature, recovery_id): (Signature, RecoveryId) = signing_key
         .sign_prehash_recoverable(&signing_hash)
-        .map_err(|e| ExecutionError::Invariant(format!("Signing failed: {e}")))?;
+        .map_err(|e| LocalError::Invariant(format!("Signing failed: {e}")))?;
 
     // ============================================================
     // canonicalize to low 's'
@@ -44,7 +44,7 @@ pub fn sign_eip1559_transaction(
     if signature.s().is_high().into() {
         signature = signature
             .normalize_s()
-            .ok_or_else(|| ExecutionError::Internal("Failed to normalize signature".into()))?;
+            .ok_or_else(|| LocalError::Internal("Failed to normalize signature".into()))?;
     }
 
     // yParity ∈ {0,1}
@@ -70,7 +70,7 @@ pub fn sign_eip1559_transaction(
 // ============================================================
 // encoding unsigned tx to rpl stream
 
-pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, ExecutionError> {
+pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, LocalError> {
     let mut s = RlpStream::new_list(9);
 
     // core tx fields
@@ -113,7 +113,7 @@ pub fn encode_eip1559_signed(
     y_parity: u8,
     r: &[u8; 32],
     s: &[u8; 32],
-) -> Result<Vec<u8>, ExecutionError> {
+) -> Result<Vec<u8>, LocalError> {
     let mut srlp = RlpStream::new_list(12);
 
     // core tx field

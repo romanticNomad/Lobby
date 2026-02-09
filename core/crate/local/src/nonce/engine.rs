@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use kernel::types::{ChainId, ExecutionError, ExecutionId, TxNonce};
+use kernel::types::{ChainId, LocalError, ExecutionId, TxNonce};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
@@ -62,14 +62,14 @@ impl NonceEngine {
         chain_id: ChainId,
         from: Address,
         execution_id: ExecutionId,
-    ) -> Result<TxNonce, ExecutionError> {
+    ) -> Result<TxNonce, LocalError> {
         // =========================================================
         // setting types for db
 
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()
-            .map_err(|_| ExecutionError::Invariant("chain_id does not fit in i64".to_string()))?;
+            .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
 
         // =========================================================
@@ -118,7 +118,7 @@ impl NonceEngine {
         )
         .fetch_optional(&self.db)
         .await
-        .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
         // =========================================================
         // pattern matching the candidate (nonce, revision)
@@ -139,7 +139,7 @@ impl NonceEngine {
                 )
                 .fetch_one(&self.db)
                 .await
-                .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
                 Ok(TxNonce::try_from(existing.nonce)?)
             }
@@ -153,7 +153,7 @@ impl NonceEngine {
         &self,
         execution_id: ExecutionId,
         success: bool,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<(), LocalError> {
         // =========================================================
         // loading state update
 
@@ -195,7 +195,7 @@ impl NonceEngine {
         )
         .fetch_optional(&self.db)
         .await
-        .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
         // =========================================================
         // pattern matching the update result
@@ -217,7 +217,7 @@ impl NonceEngine {
                 )
                 .fetch_optional(&self.db)
                 .await
-                .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
                 match latest {
                     Some(row) => {
@@ -225,18 +225,18 @@ impl NonceEngine {
                             Ok(())
                         } else if matches!(row.state, NonceState::Finalized | NonceState::Released)
                         {
-                            Err(ExecutionError::DatabaseError(format!(
+                            Err(LocalError::DatabaseError(format!(
                                 "execution_id already resolved to {:?}, cannot transition to {:?}",
                                 row.state, new_state
                             )))
                         } else {
-                            Err(ExecutionError::DatabaseError(
+                            Err(LocalError::DatabaseError(
                                 "expected reserved state but INSERT failed".to_string(),
                             ))
                         }
                     }
 
-                    None => Err(ExecutionError::Invariant(
+                    None => Err(LocalError::Invariant(
                         "invalid execution_id".to_string(),
                     )),
                 }

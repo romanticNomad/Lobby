@@ -2,9 +2,9 @@ use crate::sign::{SignCommand, SignHandle};
 use alloy::primitives::Address;
 use kernel::{
     traits::PolicyEngine,
-    types::{ChainId, Eip1559Transaction, ExecutionError, ExecutionId, SignedTransaction},
+    types::{ChainId, Eip1559Transaction, LocalError, ExecutionId, SignedTransaction},
 };
-use props::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
+use common::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 use sqlx::PgPool;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
@@ -67,7 +67,7 @@ impl SignEngine {
         chain_id: ChainId,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
-    ) -> Result<SignedTransaction, ExecutionError> {
+    ) -> Result<SignedTransaction, LocalError> {
         // =========================================================
         // loading pvt_key from key policy and setting types for db
 
@@ -75,7 +75,7 @@ impl SignEngine {
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()
-            .map_err(|_| ExecutionError::Invariant("chain_id does not fit in i64".to_string()))?;
+            .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_bytes = &from.0.0;
 
         // =========================================================
@@ -116,13 +116,13 @@ impl SignEngine {
         )
         .fetch_optional(&self.db)
         .await
-        .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
         // =========================================================
         // pattern matching the state recieved (need to be done yet)
 
         let revision = revision.ok_or_else(|| {
-            ExecutionError::Invariant("sign database invariant faliure".to_string())
+            LocalError::Invariant("sign database invariant faliure".to_string())
         })?;
 
         // =========================================================
@@ -144,10 +144,10 @@ impl SignEngine {
                 )
                 .execute(&self.db)
                 .await
-                .map_err(|e| ExecutionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
                 if result.rows_affected() != 1 {
-                    return Err(ExecutionError::Invariant(
+                    return Err(LocalError::Invariant(
                         "invalid sign_requests state transition".to_string(),
                     ));
                 }
@@ -170,10 +170,10 @@ impl SignEngine {
                 )
                 .execute(&self.db)
                 .await
-                .map_err(|err| ExecutionError::DatabaseError(err.to_string()))?;
+                .map_err(|err| LocalError::DatabaseError(err.to_string()))?;
 
                 if result.rows_affected() != 1 {
-                    return Err(ExecutionError::Invariant(
+                    return Err(LocalError::Invariant(
                         "invalid sign_requests state transition".to_string(),
                     ));
                 }

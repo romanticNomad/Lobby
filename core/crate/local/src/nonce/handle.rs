@@ -2,7 +2,7 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::NonceManager,
-    types::{ChainId, ExecutionError, ExecutionId, TxNonce},
+    types::{ChainId, LocalError, ExecutionId, TxNonce},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -25,12 +25,12 @@ pub enum NonceCommand {
         chain_id: ChainId,
         from: Address,
         execution_id: ExecutionId,
-        reply: oneshot::Sender<Result<TxNonce, ExecutionError>>,
+        reply: oneshot::Sender<Result<TxNonce, LocalError>>,
     },
     Resolve {
         execution_id: ExecutionId,
         outcome: bool,
-        reply: oneshot::Sender<Result<(), ExecutionError>>,
+        reply: oneshot::Sender<Result<(), LocalError>>,
     },
 }
 
@@ -58,7 +58,7 @@ impl NonceManager for NonceHandle {
         chain_id: ChainId,
         from: Address,
         execution_id: ExecutionId,
-    ) -> Result<TxNonce, ExecutionError> {
+    ) -> Result<TxNonce, LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Reserve {
             chain_id,
@@ -70,18 +70,18 @@ impl NonceManager for NonceHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| ExecutionError::Internal("NonceActor not available".to_string()))?;
+            .map_err(|_| LocalError::Internal("NonceActor not available".to_string()))?;
 
         reply_rx
             .await
-            .map_err(|_| ExecutionError::Internal("NonceActor response corrupted".to_string()))?
+            .map_err(|_| LocalError::Internal("NonceActor response corrupted".to_string()))?
     }
 
     async fn resolve(
         &self,
         execution_id: ExecutionId,
         outcome: bool,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<(), LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Resolve {
             execution_id,
@@ -92,11 +92,11 @@ impl NonceManager for NonceHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| ExecutionError::Internal("NonceActor unavailable".into()))?;
+            .map_err(|_| LocalError::Internal("NonceActor unavailable".into()))?;
 
         reply_rx
             .await
-            .map_err(|_| ExecutionError::Internal("NonceActor dropped response".into()))?
+            .map_err(|_| LocalError::Internal("NonceActor dropped response".into()))?
     }
 }
 

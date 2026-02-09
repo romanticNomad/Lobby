@@ -12,9 +12,9 @@ pub trait NonceManager: Send + Sync {
         chain_id: ChainId,
         from: Address,
         execution_id: ExecutionId,
-    ) -> Result<TxNonce, ExecutionError>;
+    ) -> Result<TxNonce, LocalError>;
 
-    async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), ExecutionError>;
+    async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), LocalError>;
 }
 
 // ============================================================
@@ -27,13 +27,13 @@ pub trait Signer: Send + Sync {
         from: Address,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
-    ) -> Result<SignedTransaction, ExecutionError>;
+    ) -> Result<SignedTransaction, LocalError>;
 }
 
 // ============================================================
 
 pub trait PolicyEngine: Send + Sync {
-    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], ExecutionError>;
+    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], LocalError>;
 }
 
 // ============================================================
@@ -53,7 +53,7 @@ pub trait Broadcaster: Send + Sync {
 
 #[async_trait]
 pub trait Validator: Send + Sync {
-    async fn watch(&self, chain_id: ChainId, tx_hash: TxHash) -> Result<bool, ExecutionError>;
+    async fn watch(&self, chain_id: ChainId, tx_hash: TxHash) -> Result<bool, LocalError>;
 }
 
 // ============================================================

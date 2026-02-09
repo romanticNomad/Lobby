@@ -8,9 +8,9 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "async-trait",
+ "common",
  "dashmap",
  "kernel",
- "props",
  "sqlx",
  "tokio",
 ]
@@ -1261,6 +1261,22 @@ dependencies = [
  "num-traits",
  "serde",
  "windows-link",
+]
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "hex",
+ "hex-literal",
+ "k256",
+ "kernel",
+ "rlp 0.6.1",
+ "serde",
+ "serde_json",
+ "sha3",
+ "zeroize",
 ]
 
 [[package]]
@@ -2904,22 +2920,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "535d180e0ecab6268a3e718bb9fd44db66bbbc256257165fc699dadf70d16fe7"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "props"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "hex",
- "hex-literal",
- "k256",
- "kernel",
- "rlp 0.6.1",
- "serde",
- "serde_json",
- "sha3",
- "zeroize",
 ]
 
 [[package]]
