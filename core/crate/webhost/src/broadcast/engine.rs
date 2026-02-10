@@ -1,4 +1,4 @@
-use crate::egress::{BroadcastCommand, handle::BroadcastHandle};
+use crate::broadcast::{BroadcastCommand, handle::BroadcastHandle};
 use alloy::{primitives::Address, providers::Provider};
 use kernel::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
