@@ -2,4 +2,4 @@
 pub mod broadcast;
 
 #[allow(dead_code)]
-pub mod relayhost;
+pub mod adapter;
