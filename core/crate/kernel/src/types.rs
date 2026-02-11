@@ -128,7 +128,7 @@ pub enum BroadcastError {
 }
 
 // ============================================================
-// temporary (will be shifted to kernel after testing)
+// temporary
 
 #[derive(Debug, Error)]
 pub enum RelayHostError {
