@@ -1,6 +1,5 @@
 use crate::sign::{SignCommand, SignHandle};
 use alloy::primitives::Address;
-use utils::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 use kernel::{
     traits::PolicyEngine,
     types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignedTransaction},
@@ -8,6 +7,7 @@ use kernel::{
 use sqlx::PgPool;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
+use utils::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 
 // ============================================================
 // SignEngine struct declaration with policy details
