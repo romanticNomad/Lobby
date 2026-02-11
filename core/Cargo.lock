@@ -2572,6 +2572,7 @@ dependencies = [
  "kernel",
  "sqlx",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
