@@ -8,6 +8,7 @@ use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::Deserialize;
 use std::{hash::Hash, sync::Arc};
+use thiserror::Error;
 
 // ============================================================
 // Struct for eip-1159 rlp encoding.
@@ -32,6 +33,20 @@ pub struct Eip1559Transaction {
 // providers are shared across broadcast and network execution paths.
 
 pub type RpcProviderRegistry = Arc<DashMap<ChainId, Arc<DynProvider<AnyNetwork>>>>;
+
+// ============================================================
+// Client configuration loaded from environment variables.
+
+#[derive(Debug, Clone)]
+pub struct ClientConfig {
+    pub client_id: uuid::Uuid,
+    pub from_address: Address,
+}
+
+// ============================================================
+// API key type (Bearer token).
+
+pub type ApiKey = String;
 
 // ============================================================
 
@@ -110,6 +125,27 @@ pub enum BroadcastError {
     DatabaseError(String),
     Invariant(String),
     MissingProvider(ChainId),
+}
+
+// ============================================================
+// temporary (will be shifted to kernel after testing)
+
+#[derive(Debug, Error)]
+pub enum RelayHostError {
+    #[error("Duplicate execution_id: {0}")]
+    DuplicateExecutionId(uuid::Uuid),
+
+    #[error("Invalid transaction: {0}")]
+    ValidationFailed(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
+
+    #[error("Actor has shut down")]
+    ActorShutdown,
+
+    #[error("From address mismatch: expected {expected}, got {actual}")]
+    FromAddressMismatch { expected: String, actual: String },
 }
 
 // ============================================================

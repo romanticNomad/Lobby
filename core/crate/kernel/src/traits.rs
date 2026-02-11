@@ -57,6 +57,18 @@ pub trait Validator: Send + Sync {
 }
 
 // ============================================================
+
+#[async_trait]
+pub trait IntentRelay: Send + Sync {
+    async fn send_transaction(
+        &self,
+        execution_id: ExecutionId,
+        txn: Eip1559Transaction,
+        client_config: ClientConfig,
+    ) -> Result<(), RelayHostError>;
+}
+
+// ============================================================
 // Ethereum-specific RLP encoding.
 //
 // This trait defines how a value is appended to an RLP stream
