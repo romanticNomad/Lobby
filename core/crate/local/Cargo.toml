@@ -11,6 +11,6 @@ sqlx = { version = "0.8", features = [
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1.89"
 kernel = { path = "../kernel" }
-common = { path = "../common" }
+utils = { path = "../utils" }
 alloy = { version = "1.6.0", features = ["full"] }
 dashmap = "6.1.0"

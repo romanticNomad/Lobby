@@ -8,11 +8,11 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "async-trait",
- "common",
  "dashmap",
  "kernel",
  "sqlx",
  "tokio",
+ "utils",
 ]
 
 [[package]]
@@ -1261,22 +1261,6 @@ dependencies = [
  "num-traits",
  "serde",
  "windows-link",
-]
-
-[[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "hex",
- "hex-literal",
- "k256",
- "kernel",
- "rlp 0.6.1",
- "serde",
- "serde_json",
- "sha3",
- "zeroize",
 ]
 
 [[package]]
@@ -2575,6 +2559,17 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "netio"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "kernel",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]
@@ -4411,6 +4406,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
+name = "utils"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "hex",
+ "hex-literal",
+ "k256",
+ "kernel",
+ "rlp 0.6.1",
+ "serde",
+ "serde_json",
+ "sha3",
+ "zeroize",
+]
+
+[[package]]
 name = "uuid"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4569,17 +4580,6 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webhost"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "async-trait",
- "kernel",
- "sqlx",
- "tokio",
 ]
 
 [[package]]

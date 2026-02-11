@@ -1,6 +1,6 @@
 use crate::sign::{SignCommand, SignHandle};
 use alloy::primitives::Address;
-use common::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
+use utils::{eip_1559_signer::sign_eip1559_transaction, policy::JsonPolicyEngine};
 use kernel::{
     traits::PolicyEngine,
     types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignedTransaction},

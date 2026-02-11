@@ -1,7 +1,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 use alloy::primitives::{Address, hex};
-use common::policy::JsonPolicyEngine;
+use utils::policy::JsonPolicyEngine;
 use kernel::traits::PolicyEngine;
 
 #[derive(Debug)]
