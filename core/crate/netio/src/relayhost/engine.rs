@@ -2,6 +2,7 @@
 // use sqlx::PgPool;
 // use tokio::sync::mpsc;
 // use tracing::info;
+// use utils::eip1159_linter::transaction_lint;
 
 // use crate::relayhost::handle::{RelayHostCommand, RelayHostHandle};
 
@@ -55,6 +56,31 @@
 //         txn: Eip1559Transaction,
 //         client_config: ClientConfig
 //     ) -> Result<(), RelayHostError> {
+//         // ============================================================
+//         // idempotency check
 
+//         let execution_id_exists = sqlx::query_scalar!(
+//             r#"
+//             SELECT EXISTS(
+//                 SELECT 1 FROM relay_host.transaction_intents
+//                 WHERE execution_id = $1
+//             ) AS "exists!"
+//             "#,
+//             execution_id.0.as_bytes().as_slice()
+//         )
+//         .fetch_one(&self.db)
+//         .await
+//         .map_err(|e| RelayHostError::DatabaseError(e))?;
+        
+//         if execution_id_exists {
+//             return Err(RelayHostError::DuplicateExecutionId(execution_id.0))
+//         };
+
+//         // ============================================================
+//         // transaction business logic linting
+
+//         transaction_lint(&txn)?;
+
+//         // ============================================================
 //     }
 // }
