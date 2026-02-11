@@ -13,3 +13,4 @@ alloy = { version = "1.6.0", features = ["full"] }
 async-trait = "0.1.89"
 tokio = { version = "1", features = ["full"] }
 kernel = {path = "../kernel"}
+uuid = { version ="1.19", features = ["v4"] }

@@ -2431,6 +2431,8 @@ dependencies = [
  "dashmap",
  "rlp 0.6.1",
  "serde",
+ "sqlx",
+ "thiserror",
  "tokio",
  "uuid",
 ]
@@ -2570,6 +2572,7 @@ dependencies = [
  "kernel",
  "sqlx",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
