@@ -98,10 +98,28 @@ impl EthRlpEncode for ChainId {
     }
 }
 
+impl TryFrom<i64> for ChainId {
+    type Error = LocalError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value < 0 {
+            return Err(LocalError::Rejected(format!("Invalid chain id: {value}")));
+        }
+
+        Ok(ChainId(U256::from(value as u64)))
+    }
+}
+
 // ============================================================
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct TxNonce(pub U256);
+
+impl EthRlpEncode for TxNonce {
+    fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
+        eth_rlp_append_u256(&self.0, s);
+    }
+}
 
 impl TryFrom<i64> for TxNonce {
     type Error = LocalError;
@@ -112,12 +130,6 @@ impl TryFrom<i64> for TxNonce {
         }
 
         Ok(TxNonce(U256::from(value as u64)))
-    }
-}
-
-impl EthRlpEncode for TxNonce {
-    fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
-        eth_rlp_append_u256(&self.0, s);
     }
 }
 
