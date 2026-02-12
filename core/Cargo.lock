@@ -2582,6 +2582,7 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "async-trait",
+ "dashmap",
  "kernel",
  "serde_json",
  "sqlx",
@@ -4441,6 +4442,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
+ "thiserror",
  "zeroize",
 ]
 

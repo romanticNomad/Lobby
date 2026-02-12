@@ -1,7 +1,4 @@
-use alloy::{
-    primitives::{Address, U256},
-    rlp::Bytes
-};
+use alloy::primitives::{Address, U256, bytes::Bytes};
 
 use kernel::types::{ChainId, Eip1193SendTransactionParams, Eip1559Transaction, TxNonce};
 use thiserror::Error;
@@ -107,13 +104,15 @@ pub fn normalize_eip1193_transaction(
 /// Parse hex string to u64.
 fn parse_hex_u64(s: &str) -> Result<u64, hex::FromHexError> {
     let s = s.strip_prefix("0x").unwrap_or(s);
-    u64::from_str_radix(s, 16).map_err(|_| hex::FromHexError::InvalidHexCharacter { c: '0', index: 0 })
+    u64::from_str_radix(s, 16)
+        .map_err(|_| hex::FromHexError::InvalidHexCharacter { c: '0', index: 0 })
 }
 
 /// Parse hex string to U256.
 fn parse_hex_u256(s: &str) -> Result<U256, hex::FromHexError> {
     let s = s.strip_prefix("0x").unwrap_or(s);
-    U256::from_str_radix(s, 16).map_err(|_| hex::FromHexError::InvalidHexCharacter { c: '0', index: 0 })
+    U256::from_str_radix(s, 16)
+        .map_err(|_| hex::FromHexError::InvalidHexCharacter { c: '0', index: 0 })
 }
 
 /// Parse hex string to Bytes.
