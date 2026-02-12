@@ -58,14 +58,12 @@ pub struct Eip1559Transaction {
 
 // ============================================================
 // Concurrent registry of per-chain RPC providers.
-//
-// Designed for multi-threaded and async environments where
-// providers are shared across broadcast and network execution paths.
 
 pub type RpcProviderRegistry = Arc<DashMap<ChainId, Arc<DynProvider<AnyNetwork>>>>;
 
 // ============================================================
-// Client configuration loaded from environment variables.
+// client configuration loaded from environment variables and
+// extension key for storing authenticated client config in request.
 
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
@@ -73,7 +71,6 @@ pub struct ClientConfig {
     pub from_address: Address,
 }
 
-// Extension key for storing authenticated client config in request.
 #[derive(Clone)]
 pub struct AuthenticatedClient(pub ClientConfig);
 
@@ -83,12 +80,53 @@ pub struct AuthenticatedClient(pub ClientConfig);
 pub type ApiKey = String;
 
 // ============================================================
+// JSON-RPC wrappers for Lobby
+
+#[derive(Debug, Deserialize)]
+pub struct JsonRpcRequest {
+    pub jsonrpc: String,
+    pub method: String,
+    pub params: Vec<Eip1193SendTransactionParams>,
+    pub id: serde_json::Value
+}
+
+#[derive(Debug, Serialize)]
+pub struct JsonRpcSuccessResponse {
+    pub jsonrpc: String,
+    pub result: TransactionAcceptedResult,
+    pub id: serde_json::Value
+
+}
+
+#[derive(Debug, Serialize)]
+pub struct JsonRpcErrorResponse {
+    pub jsonrpc: String,
+    pub error: JsonRpcError,
+    pub id: serde_json::Value
+}
+
+#[derive(Debug, Serialize)]
+pub struct JsonRpcError {
+    pub code: i32,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>
+}
+
+#[derive(Debug, Serialize)]
+pub struct TransactionAcceptedResult {
+    pub execution_id: ExecutionId,
+    pub status: String,
+}
+
+// ============================================================
+// TxHash lobby wrapper for B256
 
 pub type TxHash = B256;
 
 // ============================================================
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Serialize, Hash)]
 pub struct ExecutionId(pub uuid::Uuid);
 
 // ============================================================
