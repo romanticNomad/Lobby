@@ -78,7 +78,7 @@ impl RelayHostEngine {
         };
 
         // ============================================================
-        // transaction business logic linting
+        // transaction business logic linting (from address is already checked in middleware)
 
         transaction_lint(&txn)?;
 
