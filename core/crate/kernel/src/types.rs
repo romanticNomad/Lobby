@@ -6,9 +6,39 @@ use alloy::{
 };
 use core::convert::TryFrom;
 use dashmap::DashMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{hash::Hash, sync::Arc};
 use thiserror::Error;
+
+// ============================================================
+// EIP-1193 eth_sendTransaction request parameters.
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Eip1193SendTransactionParams {
+    pub from: Address,
+    pub to: Option<Address>,
+    #[serde(default)]
+    pub gas: Option<String>, // Hex string
+    #[serde(default)]
+    pub max_fee_per_gas: Option<String>, // Hex string
+    #[serde(default)]
+    pub max_priority_fee_per_gas: Option<String>, // Hex string
+    #[serde(default)]
+    pub value: Option<String>, // Hex string
+    #[serde(default)]
+    pub data: Option<String>, // Hex string
+    pub chain_id: String, // Hex string
+    #[serde(default)]
+    pub access_list: Option<Vec<AccessListItem>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessListItem {
+    pub address: Address,
+    pub storage_keys: Vec<String>, // Hex strings
+}
 
 // ============================================================
 // Struct for eip-1159 rlp encoding.
