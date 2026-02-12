@@ -87,22 +87,21 @@ pub struct JsonRpcRequest {
     pub jsonrpc: String,
     pub method: String,
     pub params: Vec<Eip1193SendTransactionParams>,
-    pub id: serde_json::Value
+    pub id: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
 pub struct JsonRpcSuccessResponse {
     pub jsonrpc: String,
     pub result: TransactionAcceptedResult,
-    pub id: serde_json::Value
-
+    pub id: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
 pub struct JsonRpcErrorResponse {
     pub jsonrpc: String,
     pub error: JsonRpcError,
-    pub id: serde_json::Value
+    pub id: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -110,7 +109,7 @@ pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>
+    pub data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -125,11 +124,13 @@ pub struct TransactionAcceptedResult {
 pub type TxHash = B256;
 
 // ============================================================
+// idempotency key for lobby operations
 
 #[derive(Clone, Copy, Debug, Serialize, Hash)]
 pub struct ExecutionId(pub uuid::Uuid);
 
 // ============================================================
+// ChainID wrapper for lobby and appropriate implimentations
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Hash)]
 pub struct ChainId(pub U256);
@@ -153,6 +154,7 @@ impl TryFrom<i64> for ChainId {
 }
 
 // ============================================================
+// TxNonce wrapper for lobby and appropriate implimentations
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct TxNonce(pub U256);
@@ -183,16 +185,7 @@ pub struct SignedTransaction {
 }
 
 // ============================================================
-
-#[derive(Clone, Debug)]
-pub enum LocalError {
-    DatabaseError(String),
-    Internal(String),
-    Invariant(String),
-    Rejected(String),
-}
-
-// ============================================================
+// Possible outcome response (even if failed)
 
 #[derive(Clone, Debug)]
 pub enum BroadcastOutcome {
@@ -202,6 +195,15 @@ pub enum BroadcastOutcome {
 }
 
 // ============================================================
+// errors for different execution levels
+
+#[derive(Clone, Debug)]
+pub enum LocalError {
+    DatabaseError(String),
+    Internal(String),
+    Invariant(String),
+    Rejected(String),
+}
 
 #[derive(Debug)]
 pub enum BroadcastError {
@@ -210,9 +212,6 @@ pub enum BroadcastError {
     Invariant(String),
     MissingProvider(ChainId),
 }
-
-// ============================================================
-// temporary (for testing)
 
 #[derive(Debug, Error)]
 pub enum RelayHostError {
