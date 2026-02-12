@@ -1,12 +1,17 @@
-use axum::{Extension, Json, extract::State};
+use axum::{
+    Extension, Json,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use kernel::{
     traits::IntentRelay,
     types::{
-        AuthenticatedClient, ExecutionId, JsonRpcRequest, JsonRpcSuccessResponse, RelayHostError,
-        TransactionAcceptedResult,
+        AuthenticatedClient, ExecutionId, JsonRpcError, JsonRpcErrorResponse, JsonRpcRequest,
+        JsonRpcSuccessResponse, RelayHostError, TransactionAcceptedResult,
     },
 };
-use tracing::info;
+use tracing::{error, info};
 use utils::eip1159_normalize::{NormalizationError, normalize_eip1193_transaction};
 use uuid::Uuid;
 
@@ -16,7 +21,7 @@ use crate::server::AppState;
 // txn submission errors.
 
 #[derive(Debug)]
-pub enum TransactionError {
+pub enum TxnSubmitError {
     InvalidJsonRpcVersion,
     UnsupportedMethod(String),
     MissingParams,
@@ -35,15 +40,15 @@ pub async fn submit_transaction(
     State(state): State<AppState>,
     Extension(AuthenticatedClient(client_config)): Extension<AuthenticatedClient>,
     Json(request): Json<JsonRpcRequest>,
-) -> Result<Json<JsonRpcSuccessResponse>, TransactionError> {
+) -> Result<Json<JsonRpcSuccessResponse>, TxnSubmitError> {
     // validate json rpc
     if request.jsonrpc != "2.0" {
-        return Err(TransactionError::InvalidJsonRpcVersion);
+        return Err(TxnSubmitError::InvalidJsonRpcVersion);
     }
 
     // validate method
     if request.method != "eth_sendTransaction" {
-        return Err(TransactionError::UnsupportedMethod(request.method));
+        return Err(TxnSubmitError::UnsupportedMethod(request.method));
     }
 
     // extract params -> first set in case of a Vector of Eip1193SendTransactionParams.
@@ -51,15 +56,15 @@ pub async fn submit_transaction(
         .params
         .into_iter()
         .next()
-        .ok_or(TransactionError::MissingParams)?;
+        .ok_or(TxnSubmitError::MissingParams)?;
 
     // Normalize to lobby Eip1159Transaction
     let (txn, from_address) = normalize_eip1193_transaction(params)
-        .map_err(|e| TransactionError::NormalizationFailed(e))?;
+        .map_err(|e| TxnSubmitError::NormalizationFailed(e))?;
 
     // validate from_address
     if from_address != client_config.from_address {
-        return Err(TransactionError::FromAddressMismatch {
+        return Err(TxnSubmitError::FromAddressMismatch {
             expected: client_config.from_address,
             actual: from_address,
         });
@@ -85,7 +90,7 @@ pub async fn submit_transaction(
         .relayhost_handle
         .send_transaction(execution_id, txn, client_config)
         .await
-        .map_err(|e| TransactionError::RelayHostError(e))?;
+        .map_err(|e| TxnSubmitError::RelayHostError(e))?;
 
     Ok(Json(JsonRpcSuccessResponse {
         jsonrpc: "2.0".to_string(),
@@ -95,6 +100,96 @@ pub async fn submit_transaction(
         },
         id: request.id,
     }))
+}
+
+// ============================================================
+// implimenting IntoResponse for TxnSubmitError
+
+impl IntoResponse for TxnSubmitError {
+    fn into_response(self) -> Response {
+        let (status, error) = match self {
+            TxnSubmitError::InvalidJsonRpcVersion => (
+                StatusCode::BAD_REQUEST,
+                JsonRpcError {
+                    code: -32600,
+                    message: "Invalid JSON-RPC version (must be 2.0)".to_string(),
+                    data: None,
+                },
+            ),
+            TxnSubmitError::UnsupportedMethod(method) => (
+                StatusCode::BAD_REQUEST,
+                JsonRpcError {
+                    code: -32601,
+                    message: format!("Unsupported method: {}", method),
+                    data: None,
+                },
+            ),
+            TxnSubmitError::MissingParams => (
+                StatusCode::BAD_REQUEST,
+                JsonRpcError {
+                    code: -32602,
+                    message: "Missing transaction parameters".to_string(),
+                    data: None,
+                },
+            ),
+            TxnSubmitError::NormalizationFailed(e) => (
+                StatusCode::BAD_REQUEST,
+                JsonRpcError {
+                    code: -32602,
+                    message: format!("Invalid params: {}", e),
+                    data: None,
+                },
+            ),
+            TxnSubmitError::FromAddressMismatch { expected, actual } => (
+                StatusCode::FORBIDDEN,
+                JsonRpcError {
+                    code: -32000,
+                    message: "From address does not match authenticated account".to_string(),
+                    data: Some(serde_json::json!({
+                        "expected": format!("{:?}", expected),
+                        "actual": format!("{:?}", actual),
+                    })),
+                },
+            ),
+            TxnSubmitError::RelayHostError(e) => {
+                error!("RelayHost error: {:?}", e);
+                match e {
+                    RelayHostError::DuplicateExecutionId(id) => (
+                        StatusCode::CONFLICT,
+                        JsonRpcError {
+                            code: -32000,
+                            message: format!("Duplicate execution_id: {}", id),
+                            data: None,
+                        },
+                    ),
+                    RelayHostError::ValidationFailed(msg) => (
+                        StatusCode::BAD_REQUEST,
+                        JsonRpcError {
+                            code: -32602,
+                            message: format!("Transaction validation failed: {}", msg),
+                            data: None,
+                        },
+                    ),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        JsonRpcError {
+                            code: -32603,
+                            message: "Internal server error".to_string(),
+                            data: None,
+                        },
+                    ),
+                }
+            }
+        };
+
+        let response = JsonRpcErrorResponse {
+            jsonrpc: "2.0".to_string(),
+            error,
+            id: serde_json::Value::Null,
+        };
+
+        (status, Json(response)).into_response()
+    }
 }
 
 // ============================================================
