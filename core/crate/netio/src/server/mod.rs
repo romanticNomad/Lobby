@@ -1,36 +1,43 @@
 pub mod auth;
-pub mod txsubmit;
+pub mod txnsubmit;
 
 use crate::relayhost::handle::RelayHostHandle;
+use axum::{Router, middleware, routing::post};
 use dashmap::DashMap;
-use kernel::types::{ApiKey, ClientConfig, RpcProviderRegistry};
+use kernel::types::{ApiKey, ClientConfig};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
 
 // ============================================================
 // middleware - app state
 
 pub struct AppState {
     api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
-    rpc_registry: RpcProviderRegistry,
-    pipeline_pool: Arc<Semaphore>,
     relayhost_handle: RelayHostHandle,
 }
 
 impl AppState {
     pub fn new(
         api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
-        rpc_registry: RpcProviderRegistry,
-        pipeline_pool: Arc<Semaphore>,
         relayhost_handle: RelayHostHandle,
     ) -> Self {
         Self {
             api_registry,
-            rpc_registry,
-            pipeline_pool,
             relayhost_handle,
         }
     }
 }
+
+// ============================================================
+// build axum app router
+
+// pub fn build_app(state: AppState) -> Router {
+//     Router::new()
+//         .route("/v1/transactions", post(txnsubmit::submit_transaction))
+//         .layer(middleware::from_fn_with_state(
+//             state.clone(),
+//             auth::auth_middleware
+//         ))
+//         .layer(TraceL)
+// }
 
 // ============================================================
