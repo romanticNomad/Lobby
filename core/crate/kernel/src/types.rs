@@ -73,6 +73,10 @@ pub struct ClientConfig {
     pub from_address: Address,
 }
 
+// Extension key for storing authenticated client config in request.
+#[derive(Clone)]
+pub struct AuthenticatedClient(pub ClientConfig);
+
 // ============================================================
 // API key type (Bearer token).
 
