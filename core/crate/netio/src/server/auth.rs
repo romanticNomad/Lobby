@@ -1,12 +1,13 @@
-use std::sync::Arc;
-
 use axum::{
     extract::{Request, State},
+    http::StatusCode,
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use dashmap::DashMap;
 use kernel::types::{ApiKey, AuthenticatedClient, ClientConfig};
+use std::sync::Arc;
+use tracing::warn;
 
 // ============================================================
 // middleware - auth state
@@ -42,10 +43,10 @@ pub async fn auth_middleware(
 ) -> Result<Response, AuthError> {
     // extracting header
     let auth_header = req
-    .headers()
-    .get(axum::http::header::AUTHORIZATION)
-    .and_then(|h| h.to_str().ok())
-    .ok_or(AuthError::MissingAuthHeader)?;
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .ok_or(AuthError::MissingAuthHeader)?;
 
     // parse bearer tocken
     let token = auth_header
@@ -62,6 +63,28 @@ pub async fn auth_middleware(
     // attach ClientConfig to the request
     req.extensions_mut()
         .insert(AuthenticatedClient(client_config));
-    
+
     Ok(next.run(req).await)
 }
+
+// ============================================================
+// IntoResponse implintations for the used errors
+
+impl IntoResponse for AuthError {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            AuthError::InvalidApiKey => (StatusCode::UNAUTHORIZED, "missing autherization header"),
+            AuthError::InvalidAuthFormat => (
+                StatusCode::UNAUTHORIZED,
+                "invalid authorization format (expected 'Bearer <token>')",
+            ),
+            AuthError::MissingAuthHeader => (StatusCode::UNAUTHORIZED, "invalid API key"),
+        };
+
+        warn!("authentication failed: {:?}", self);
+
+        (status, message).into_response()
+    }
+}
+
+// ============================================================
