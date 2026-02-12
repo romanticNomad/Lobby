@@ -1,27 +1,12 @@
+use crate::server::AppState;
 use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use dashmap::DashMap;
-use kernel::types::{ApiKey, AuthenticatedClient, ClientConfig};
-use std::sync::Arc;
+use kernel::types::AuthenticatedClient;
 use tracing::warn;
-
-// ============================================================
-// middleware - auth state
-
-#[derive(Clone)]
-pub struct AuthState {
-    api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
-}
-
-impl AuthState {
-    pub fn new(api_registry: Arc<DashMap<ApiKey, ClientConfig>>) -> Self {
-        Self { api_registry }
-    }
-}
 
 // ============================================================
 // authentication errors.
@@ -37,7 +22,7 @@ pub enum AuthError {
 // authentication and responce handeling
 
 pub async fn auth_middleware(
-    State(state): State<AuthState>,
+    State(state): State<AppState>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
