@@ -5,8 +5,9 @@ use crate::relayhost::handle::RelayHostHandle;
 use axum::{Router, middleware, routing::post};
 use dashmap::DashMap;
 use kernel::types::{ApiKey, ClientConfig};
+use std::{net::SocketAddr, sync::Arc};
 use tower_http::trace::TraceLayer;
-use std::sync::Arc;
+use tracing::info;
 
 // ============================================================
 // middleware - app state
@@ -43,6 +44,16 @@ pub fn build_app(state: AppState) -> Router {
         .with_state(state)
 }
 
+// ============================================================
+// start HTTP-server
 
+pub async fn server(app: Router, addr: SocketAddr) -> Result<(), std::io::Error> {
+    info!("starting lobby server on: {}", addr);
+
+    let listner = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listner, app).await?;
+
+    Ok(())
+}
 
 // ============================================================
