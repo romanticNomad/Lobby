@@ -18,7 +18,7 @@ pub enum RelayHostCommand {
 }
 
 // ============================================================
-// entry point for messeges sent to relayhost engine
+// entry point for messeges sent to relayhost engine and for app state in middleware
 
 #[derive(Clone)]
 pub struct RelayHostHandle {
