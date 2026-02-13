@@ -20,6 +20,7 @@ pub enum RelayHostCommand {
 // ============================================================
 // entry point for messeges sent to relayhost engine
 
+#[derive(Clone)]
 pub struct RelayHostHandle {
     tx: mpsc::Sender<RelayHostCommand>,
 }
