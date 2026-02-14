@@ -1,7 +1,7 @@
 # Lobby — Developer Guide: Sending Requests to the Server
 
 > **Lobby** is a low-latency, high-concurrency blockchain transaction signing service.  
-> This guide is for developers who want to send transaction requests to a running Lobby instance.
+> This guide is for developers who want to send transaction requests to a running Lobby instance.  
 > **Lobby** is still in the development phase; some features mentioned here may not work as intended.
 
 ---
