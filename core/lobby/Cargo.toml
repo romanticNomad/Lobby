@@ -1,12 +1,12 @@
 [package]
-name = "main"
+name = "lobby"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-kernel = {path = "../../crate/kernel"}
-netio = {path = "../../crate/netio"}
+kernel = {path = "../crate/kernel"}
+netio = {path = "../crate/netio"}
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
