@@ -24,24 +24,26 @@ pub fn load_api_key_from_env() -> Result<DashMap<ApiKey, ClientConfig>, EnvApiKe
     // Format: LOBBY_API_KEY_<N>=<api_key>:<client_id>:<from_address>
     for (key, value) in env::vars() {
         if let Some(suffix) = key.strip_prefix("LOBBY_API_KEY_") {
-            let parts:Vec<&str> = value.split(":").collect();
+            let parts: Vec<&str> = value.split(":").collect();
             if parts.len() != 3 {
                 return Err(EnvApiKeyError::InvalidApiKey(format!(
                     "Invalid API key format for {}: expected <api_key>:<client_id>:<from_address>",
                     key
                 ))
-                .into())
+                .into());
             }
 
             let api_key = parts[0].to_string();
-            let client_id = Uuid::parse_str(parts[1])
-                .map_err(|_| EnvApiKeyError::InvalidClientId(format!("invalid client id: {}", key)))?;
-            let from_address = Address::from_str(parts[2])
-                .map_err(|_| EnvApiKeyError::InvalidFromAddress(format!("invalid from_address {}", key)))?;
+            let client_id = Uuid::parse_str(parts[1]).map_err(|_| {
+                EnvApiKeyError::InvalidClientId(format!("invalid client id: {}", key))
+            })?;
+            let from_address = Address::from_str(parts[2]).map_err(|_| {
+                EnvApiKeyError::InvalidFromAddress(format!("invalid from_address {}", key))
+            })?;
 
             let client_config = ClientConfig {
                 client_id,
-                from_address
+                from_address,
             };
 
             api_keys.insert(api_key, client_config);
@@ -50,7 +52,7 @@ pub fn load_api_key_from_env() -> Result<DashMap<ApiKey, ClientConfig>, EnvApiKe
                 key = suffix,
                 client_id = %client_id,
                 from_address = ?from_address,
-                "loaded api key"                
+                "loaded api key"
             );
         }
     }

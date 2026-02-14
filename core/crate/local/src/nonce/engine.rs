@@ -14,16 +14,20 @@ pub struct NonceEngine {
 }
 
 impl NonceEngine {
-    pub fn spawn(db: PgPool) -> NonceHandle {
-        let (tx, rx) = mpsc::channel(1024);
-
-        let actor_engine = NonceEngine { db, rx };
-        tokio::spawn(async move {
-            actor_engine.run().await;
-        });
-
-        NonceHandle::new(tx)
+    pub fn new(db: PgPool, rx: mpsc::Receiver<NonceCommand>) -> Self {
+        Self { db, rx }
     }
+}
+
+pub fn spawn_nonce_actor(db: PgPool, buffer_size: usize) -> NonceHandle {
+    let (tx, rx) = mpsc::channel(buffer_size);
+
+    let nonce_engine = NonceEngine::new(db, rx);
+    tokio::spawn(async move {
+        nonce_engine.run().await;
+    });
+
+    NonceHandle::new(tx)
 }
 
 // =========================================================

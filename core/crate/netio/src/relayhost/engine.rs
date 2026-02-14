@@ -14,6 +14,12 @@ pub struct RelayHostEngine {
     rx: mpsc::Receiver<RelayHostCommand>,
 }
 
+impl RelayHostEngine {
+    pub fn new(db: PgPool, rx: mpsc::Receiver<RelayHostCommand>) -> Self {
+        Self { db, rx }
+    }
+}
+
 pub fn spawn_relayhost_actor(db: PgPool, buffer_size: usize) -> RelayHostHandle {
     let (tx, rx) = mpsc::channel(buffer_size);
 

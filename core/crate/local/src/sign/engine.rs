@@ -19,22 +19,27 @@ pub struct SignEngine {
 }
 
 impl SignEngine {
-    pub fn spawm(db: PgPool) -> SignHandle {
-        let (tx, rx) = mpsc::channel(1024);
+    pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
         let json_policy = JsonPolicyEngine::load_file(path.to_str().unwrap());
 
-        let actor_engine = SignEngine {
+        Self {
             db,
             json_policy,
             rx,
-        };
-        tokio::spawn(async move {
-            actor_engine.run().await;
-        });
-
-        SignHandle::new(tx)
+        }
     }
+}
+
+pub fn spawn_sign_actor(db: PgPool, buffer_size: usize) -> SignHandle {
+    let (tx, rx) = mpsc::channel(buffer_size);
+
+    let sign_engine = SignEngine::new(db, rx);
+    tokio::spawn(async move {
+        sign_engine.run().await;
+    });
+
+    SignHandle::new(tx)
 }
 
 // ============================================================

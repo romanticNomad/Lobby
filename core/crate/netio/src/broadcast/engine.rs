@@ -17,16 +17,28 @@ pub struct BroadcastEngine {
 }
 
 impl BroadcastEngine {
-    pub fn spawn(db: PgPool, provider: RpcProviderRegistry) -> BroadcastHandle {
-        let (tx, rx) = mpsc::channel(1024);
-
-        let actor_engine = BroadcastEngine { db, provider, rx };
-        tokio::spawn(async move {
-            actor_engine.run().await;
-        });
-
-        BroadcastHandle::new(tx)
+    pub fn new(
+        db: PgPool,
+        provider: RpcProviderRegistry,
+        rx: mpsc::Receiver<BroadcastCommand>,
+    ) -> Self {
+        Self { db, provider, rx }
     }
+}
+
+pub fn spawn_broadcast_actor(
+    db: PgPool,
+    provider: RpcProviderRegistry,
+    buffer_size: usize,
+) -> BroadcastHandle {
+    let (tx, rx) = mpsc::channel(buffer_size);
+
+    let broadcast_engine = BroadcastEngine::new(db, provider, rx);
+    tokio::spawn(async move {
+        broadcast_engine.run().await;
+    });
+
+    BroadcastHandle::new(tx)
 }
 
 // =========================================================
