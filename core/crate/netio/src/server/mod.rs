@@ -35,7 +35,7 @@ impl AppState {
 
 pub fn build_app(state: AppState) -> Router {
     Router::new()
-        .route("v1/transactions", post(post::submit_transaction))
+        .route("/v1/transactions", post(post::submit_transaction))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,
