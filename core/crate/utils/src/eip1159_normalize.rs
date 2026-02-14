@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use alloy::primitives::{Address, U256, bytes::Bytes};
 
 use kernel::types::{ChainId, Eip1193SendTransactionParams, Eip1559Transaction, TxNonce};
@@ -95,7 +97,12 @@ pub fn normalize_eip1193_transaction(
         access_list,
     };
 
-    Ok((transaction, params.from))
+    let addr_checksum = params.from.to_checksum(None);
+    let addr = Address::from_str(&addr_checksum).map_err(|_| {
+        NormalizationError::InvalidField(format!("invalid address: {}", addr_checksum))
+    })?;
+
+    Ok((transaction, addr))
 }
 
 // ============================================================
