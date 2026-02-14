@@ -713,9 +713,8 @@ Yes. Omit the `to` field entirely. Provide your deployment bytecode in the `data
 
 Lobby is an open-source project. Contributions, issues, and discussions are welcome.
 
-- **Issues:** [GitHub Issues](https://github.com/your-org/lobby/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/your-org/lobby/discussions)
-- **License:** MIT
+- **Issues:** [GitHub Issues](https://github.com/romanticNomad/Lobby/issues)
+- **License:** license = "Apache-2.0"
 
 ---
 
