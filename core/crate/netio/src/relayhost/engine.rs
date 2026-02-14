@@ -14,17 +14,15 @@ pub struct RelayHostEngine {
     rx: mpsc::Receiver<RelayHostCommand>,
 }
 
-impl RelayHostEngine {
-    pub fn spawn(db: PgPool) -> RelayHostHandle {
-        let (tx, rx) = mpsc::channel(1024);
-        let relayhost_actor = RelayHostEngine { db, rx };
+pub fn spawn_relayhost_actor(db: PgPool, buffer_size: usize) -> RelayHostHandle {
+    let (tx, rx) = mpsc::channel(buffer_size);
 
-        tokio::spawn(async move {
-            relayhost_actor.run().await;
-        });
+    let relayhost_engine = RelayHostEngine { db, rx };
+    tokio::spawn(async move {
+        relayhost_engine.run().await;
+    });
 
-        RelayHostHandle::new(tx)
-    }
+    RelayHostHandle::new(tx)
 }
 
 // ============================================================
@@ -78,7 +76,7 @@ impl RelayHostEngine {
         };
 
         // ============================================================
-        // transaction business logic linting (from address is already checked in middleware)
+        // transaction business logic linting (from address is already checked in middleware (normalization of json rpc))
 
         transaction_lint(&txn)?;
 
