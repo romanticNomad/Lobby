@@ -47,10 +47,10 @@ pub fn build_app(state: AppState) -> Router {
 // ============================================================
 // start HTTP-server
 
-pub async fn server(app: Router, addr: SocketAddr) -> Result<(), std::io::Error> {
-    info!("starting lobby server on: {}", addr);
+pub async fn serve(app: Router, server_addr: SocketAddr) -> Result<(), std::io::Error> {
+    info!("starting lobby server on: {}", server_addr);
 
-    let listner = tokio::net::TcpListener::bind(addr).await?;
+    let listner = tokio::net::TcpListener::bind(server_addr).await?;
     axum::serve(listner, app).await?;
 
     Ok(())
