@@ -1,6 +1,6 @@
 ## Architecture Overview
 
-Lobby uses an **actor-based concurrency model** where:
+> Lobby uses an **actor-based concurrency model** where:
 
 - **Actors** are long-lived Tokio tasks that exclusively own mutable, order-sensitive state
 - Each actor processes messages **sequentially** from an async message queue (mpsc channel)
@@ -62,21 +62,25 @@ This achieves:
 
 ## Current State
 We have implemented:
-- Nonce, Broadcast and Sign actors with atomic reserve/resolve operations
-- PostgreSQL schema with revision tracking and partial unique indexes
+- All the actors with atomic reserve/resolve operations
+- PostgreSQL schemas with revision tracking and partial unique indexes
 - TOCTOU-safe query patterns using `INSERT ... SELECT` with `WHERE NOT EXISTS`
 - Idempotency handling via lease-based deduplication
+- axum server with submit_transaction handler and api_key auth middleware.
+- tracing of all server / web relating tasks
+- lobby instance boot sequence in the main function
 
-## Pending implimentations:
-- RelayHost actor
-- A Validator task at the end of the pipeline to validate the block inclusion of the transaction
-- EIP-1559 Gas estimation library
-- Setting up the RpcProviderRegistry Dashmap
+## Pending objectives:
 - Setting up the pipeline for orchestration of all the actors
-- Wiring down all the crates in the main function
+- coordinating retry logic as a part of orchestration
+- building shards and semaphore pool facility for actors and pipeline respectively
+- A Validator task at the end of the pipeline to validate the block inclusion of the transaction
+- EIP-1559 Gas estimation library for json-rpc requests that don't provide gas estimates (or provide inaccuratly)
+- Routing tx status responce to client
+- wiring down all the crates / orchestator and finalizing the main function
 - Unit and Integration tests before launching the prototype
 
-Key constraints:
+## Key constraints:
 - Must maintain ACID properties for state transitions
 - Must handle actor crashes gracefully (lease expiration as recovery mechanism)
 - Must support idempotent retries (same execution_id can be called multiple times)
@@ -89,5 +93,5 @@ This doc:
 2. Explains the pipeline + sharding concurrency model
 3. Provides enough context for any technical person/LLM to understand the architecture
 4. Mentions key constraints and design principles
-
+5. Explains the pending objectives
 ---
