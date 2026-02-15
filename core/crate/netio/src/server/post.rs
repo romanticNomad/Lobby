@@ -1,3 +1,4 @@
+use crate::server::AppState;
 use axum::{
     Extension, Json,
     extract::State,
@@ -14,8 +15,6 @@ use kernel::{
 use tracing::{error, info};
 use utils::eip1159_normalize::{NormalizationError, normalize_eip1193_transaction};
 use uuid::Uuid;
-
-use crate::server::AppState;
 
 // ============================================================
 // txn submission errors.

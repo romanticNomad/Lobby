@@ -1,8 +1,7 @@
-use std::{collections::HashMap, fs::File, io::BufReader};
-
 use alloy::primitives::Address;
 use kernel::{traits::PolicyEngine, types::LocalError};
 use serde::Deserialize;
+use std::{collections::HashMap, fs::File, io::BufReader};
 
 // ============================================================
 

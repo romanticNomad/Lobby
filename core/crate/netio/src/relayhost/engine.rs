@@ -1,10 +1,9 @@
+use crate::relayhost::handle::{RelayHostCommand, RelayHostHandle};
 use kernel::types::{ClientConfig, Eip1559Transaction, ExecutionId, RelayHostError};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 use tracing::info;
 use utils::eip1159_linter::transaction_lint;
-
-use crate::relayhost::handle::{RelayHostCommand, RelayHostHandle};
 
 // ============================================================
 // RelatHostEngine and spawn implimentation

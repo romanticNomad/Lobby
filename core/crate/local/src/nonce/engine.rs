@@ -1,9 +1,8 @@
+use crate::nonce::{NonceCommand, NonceHandle, NonceState};
 use alloy::primitives::Address;
 use kernel::types::{ChainId, ExecutionId, LocalError, TxNonce};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
-
-use crate::nonce::{NonceCommand, NonceHandle, NonceState};
 
 // =========================================================
 // NonceEngine struct declaration
