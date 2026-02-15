@@ -6,6 +6,7 @@ use kernel::types::{
 };
 use sqlx::PgPool;
 use tokio::sync::mpsc;
+use tracing::info;
 
 // =========================================================
 // BroadcastEngine struct declaration with provider details
@@ -46,6 +47,8 @@ pub fn spawn_broadcast_actor(
 
 impl BroadcastEngine {
     pub async fn run(mut self) {
+        info!("BroadcastEngine started");
+
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
                 BroadcastCommand::Broadcast {
@@ -84,7 +87,7 @@ impl BroadcastEngine {
         let from_address_bytes = &from_address.0.0;
 
         // =========================================================
-        // idempotency safe atomic INSERT and lease locking
+        // conccurency safe atomic INSERT and lease locking
 
         let revision = sqlx::query_scalar!(
             r#"
@@ -179,6 +182,8 @@ impl BroadcastEngine {
 
         match send_txn {
             Ok(pending_tx) => {
+                info!("transaction for execution_id: {:?}\nsent successfully -> updating state", execution_id);
+
                 let tx_hash = pending_tx.tx_hash();
                 sqlx::query!(
                     r#"
@@ -199,6 +204,7 @@ impl BroadcastEngine {
                 Ok(BroadcastOutcome::Submitted { txn_hash: *tx_hash })
             }
             Err(err) => {
+                info!("transaction for execution_id: {:?}\nfailed -> logging error in database", execution_id);
                 let err_str = err.to_string();
 
                 let deterministic_error = err_str.contains("nonce")
