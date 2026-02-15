@@ -5,4 +5,4 @@ members = [
     "crate/kernel",
     "crate/utils", 
     "crate/netio"
-, "lobby"]
+, "lobby", "crate/cortex"]
