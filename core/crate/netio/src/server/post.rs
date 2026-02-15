@@ -9,7 +9,7 @@ use kernel::{
     traits::IntentRelay,
     types::{
         AuthenticatedClient, ExecutionId, JsonRpcError, JsonRpcErrorResponse, JsonRpcRequest,
-        JsonRpcSuccessResponse, RelayHostError, TransactionAcceptedResult,
+        JsonRpcSuccessResponse, RelayHostError, TxnAcceptedResult,
     },
 };
 use tracing::{error, info};
@@ -93,7 +93,7 @@ pub async fn submit_transaction(
 
     Ok(Json(JsonRpcSuccessResponse {
         jsonrpc: "2.0".to_string(),
-        result: TransactionAcceptedResult {
+        result: TxnAcceptedResult {
             execution_id,
             status: "accepted".to_string(),
         },

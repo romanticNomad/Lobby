@@ -93,7 +93,7 @@ pub struct JsonRpcRequest {
 #[derive(Debug, Serialize)]
 pub struct JsonRpcSuccessResponse {
     pub jsonrpc: String,
-    pub result: TransactionAcceptedResult,
+    pub result: TxnAcceptedResult,
     pub id: serde_json::Value,
 }
 
@@ -113,7 +113,7 @@ pub struct JsonRpcError {
 }
 
 #[derive(Debug, Serialize)]
-pub struct TransactionAcceptedResult {
+pub struct TxnAcceptedResult {
     pub execution_id: ExecutionId,
     pub status: String,
 }
