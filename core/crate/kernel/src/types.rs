@@ -43,7 +43,7 @@ pub struct AccessListItem {
 // ============================================================
 // Struct for eip-1159 rlp encoding.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Eip1559Transaction {
     pub chain_id: ChainId,
     pub nonce: TxNonce,
