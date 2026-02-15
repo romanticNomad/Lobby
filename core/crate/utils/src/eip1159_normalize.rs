@@ -101,19 +101,17 @@ pub fn normalize_eip1193_transaction(
 // parsing functions.
 
 /// Parse hex string to u64.
-fn parse_hex_u64(s: &str) -> Result<u64, hex::FromHexError> {
+fn parse_hex_u64(s: &str) -> Result<u64, ()> {
     let s = s.strip_prefix("0x").unwrap_or(s);
     u64::from_str_radix(s, 16)
-        // fake error for convinience -> it is later mapped to a correct Nonrmalization::Error
-        .map_err(|_| hex::FromHexError::InvalidHexCharacter { c: '0', index: 0 })
+    .map_err(|_| ()) // error itself is irrelevent, only an indication is required.
 }
 
 /// Parse hex string to U256.
-fn parse_hex_u256(s: &str) -> Result<U256, hex::FromHexError> {
+fn parse_hex_u256(s: &str) -> Result<U256, ()> {
     let s = s.strip_prefix("0x").unwrap_or(s);
     U256::from_str_radix(s, 16)
-        // fake error for convinience -> it is later mapped to a correct Nonrmalization::Error
-        .map_err(|_| hex::FromHexError::InvalidHexCharacter { c: '0', index: 0 })
+    .map_err(|_| ()) // error itself is irrelevent, only an indication is required.
 }
 
 /// Parse hex string to Bytes.
