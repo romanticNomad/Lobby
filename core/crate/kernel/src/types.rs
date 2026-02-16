@@ -252,7 +252,10 @@ pub enum BroadcastError {
 
 #[derive(Debug, Error)]
 pub enum ValidatorError {
-    #[error("validation timed out waiting for tx {tx_hash} on chain {:?}", chain_id)]
+    #[error(
+        "validation timed out waiting for tx {tx_hash} on chain {:?}",
+        chain_id
+    )]
     Timeout { chain_id: ChainId, tx_hash: TxHash },
 
     #[error("rpc error while polling for tx {tx_hash}: {message}")]

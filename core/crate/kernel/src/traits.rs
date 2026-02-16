@@ -62,6 +62,7 @@ pub trait Validator: Send + Sync {
 }
 
 // ============================================================
+// Checks whether a broadcast transaction has been included in a block.
 
 #[async_trait]
 pub trait IntentRelay: Send + Sync {
