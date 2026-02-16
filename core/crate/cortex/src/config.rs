@@ -19,7 +19,7 @@ use thiserror::Error;
 
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
-    pub max_attempt: u32,
+    pub max_attempts: u32,
     pub base_delay: Duration,
     pub max_delay: Duration,
 }
@@ -28,7 +28,7 @@ pub struct RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            max_attempt: 2,
+            max_attempts: 2,
             base_delay: Duration::from_millis(100),
             max_delay: Duration::from_millis(200),
         }
