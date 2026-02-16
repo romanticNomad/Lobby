@@ -218,7 +218,7 @@ pub enum BroadcastError {
     #[error("Invariant error: {0}")]
     Invariant(String),
     #[error("Provider error: {:?}", chain_id)]
-    MissingProvider{ chain_id: ChainId},
+    MissingProvider { chain_id: ChainId },
 }
 
 #[derive(Debug, Error)]

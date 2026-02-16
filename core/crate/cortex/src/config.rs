@@ -60,9 +60,10 @@ impl CortexConfig {
             broadcast_shard: parse_env("BROADCAST_SHARDS", 17)?,
             actor_buffer: parse_env("BROADCAST_SHARDS", 64)?,
             pipeline_concurrency: parse_env("PIPELINE_CONCURRENCY", 17)?,
-            pipeline_semaphore_timeout: Duration::from_millis(
-                parse_env("PIPELINE_SEMAPHORE_TIMEOUT_MS", 5_000u64)?
-            ),
+            pipeline_semaphore_timeout: Duration::from_millis(parse_env(
+                "PIPELINE_SEMAPHORE_TIMEOUT_MS",
+                5_000u64,
+            )?),
             retry: RetryConfig::default(),
         })
     }
@@ -84,16 +85,17 @@ pub enum ConfigError {
 // ============================================================
 // helper function
 
-fn parse_env<T> (key: &'static str, default: T) -> Result<T, ConfigError>
-where 
+fn parse_env<T>(key: &'static str, default: T) -> Result<T, ConfigError>
+where
     T: std::str::FromStr,
     T::Err: std::error::Error + Send + Sync + 'static,
 {
     match std::env::var(key) {
-        Ok(raw) => {
-            raw.parse::<T>().map_err(|e| ConfigError::Parse { key, source: Box::new(e) })
-        }
-        Err(_) => Ok(default)
+        Ok(raw) => raw.parse::<T>().map_err(|e| ConfigError::Parse {
+            key,
+            source: Box::new(e),
+        }),
+        Err(_) => Ok(default),
     }
 }
 

@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 kernel = { path = "../kernel" }
 thiserror = "2.0.18"
+alloy = { version = "1.6.0", features = ["full"] }

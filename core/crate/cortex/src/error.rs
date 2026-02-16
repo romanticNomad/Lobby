@@ -2,7 +2,7 @@ use kernel::types::{BroadcastError, LocalError, RelayHostError};
 use thiserror::Error;
 
 // ============================================================
-// Orchestrator (Cortex) erros 
+// Orchestrator (Cortex) erros
 
 /// Every failure that the orchestrator pipeline can produce.
 ///
@@ -12,23 +12,20 @@ use thiserror::Error;
 pub enum CortexError {
     // ============================================================
     // backpressure
-    
     /// The pipeline semaphore was exhausted and the caller timed out waiting
     /// for a permit.  The caller should back off and retry at the submission
-    /// layer (i.e. return HTTP 429 to the DApp). 
+    /// layer (i.e. return HTTP 429 to the DApp).
     #[error("pipeline semaphore timed out after {timeout_ms}ms — server is overloaded")]
     BackpressureTimeout { timeout_ms: u64 },
 
     // ============================================================
     // RelayHost stage error.
-    
     /// error statement is self explainatory of the purpose
     #[error("relay-host rejected or failed to record the transaction after retries: {0}")]
     RelayHost(#[from] RelayHostError),
 
     // ============================================================
     // Nonce stage error
-
     /// nonce reservation failed after all retries
     /// and no nonce was commited
     #[error("nonce reservation failed after retries: {0}")]
@@ -41,7 +38,6 @@ pub enum CortexError {
 
     // ============================================================
     // Sign stage error
-
     /// signing is failed after all retries. This is a fatal error
     /// nonce must be released before this error surfaces
     #[error("signing failed after retries: {0}")]
@@ -49,7 +45,6 @@ pub enum CortexError {
 
     // ============================================================
     // Broadcast stage error
-
     /// Broadcast failed after all retries. The nonce is explicitly released
     /// before this error is surfaced.
     #[error("broadcast failed after retries: {0}")]
@@ -65,7 +60,6 @@ pub enum CortexError {
 
     // ============================================================
     // internal / unexpected
-
     #[error("internal orchestrator error: {0}")]
     Internal(String),
 }

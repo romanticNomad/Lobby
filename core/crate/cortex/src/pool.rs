@@ -1,4 +1,10 @@
-use std::{hash::{DefaultHasher, Hash, Hasher}, sync::Arc};
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::Arc,
+};
+
+use alloy::primitives::Address;
+use kernel::types::{ChainId, ExecutionId};
 
 // ============================================================
 // building the shard strcut for a generic actor handler
@@ -25,7 +31,7 @@ pub struct ShardPool<T: ?Sized> {
 // ============================================================
 // implimenting shard
 
-impl <T: ?Sized> ShardPool<T> {
+impl<T: ?Sized> ShardPool<T> {
     /// Construct a pool from a pre-built `Vec` of handles.
     ///
     /// The caller is responsible for spawning one actor per shard before
@@ -34,7 +40,10 @@ impl <T: ?Sized> ShardPool<T> {
     /// # Panics
     /// Panics if `handles` is empty.
     pub fn new(handles: Vec<Arc<T>>) -> Self {
-        assert!(!handles.is_empty(), "sharded pool must have at least one shard");
+        assert!(
+            !handles.is_empty(),
+            "sharded pool must have at least one shard"
+        );
         Self { shards: handles }
     }
 
@@ -56,10 +65,54 @@ impl <T: ?Sized> ShardPool<T> {
 // ============================================================
 // helper functions
 
-fn shard_index<K: Hash> (key: &K, n:usize ) -> usize {
+fn shard_index<K: Hash>(key: &K, n: usize) -> usize {
     let mut hasher = DefaultHasher::new();
     key.hash(&mut hasher);
     (hasher.finish() as usize) % n
+}
+
+// ============================================================
+// routing key newtypes
+//
+// These are zero-cost wrappers that let the call-sites be explicit about
+// *which* dimension they're hashing on, without requiring the caller to
+// import hashing internals.
+
+/// Shard nonce actors by the sender's `Address`.
+///
+/// Same address → same nonce actor → sequential nonce assignment (no races).
+pub struct ByAddress<'a>(pub &'a Address);
+
+impl Hash for ByAddress<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.as_slice().hash(state);
+    }
+}
+
+/// Shard sign actors by `ExecutionId`.
+///
+/// Each execution independently chooses a sign shard; because signing is
+/// stateless (private key is fixed) any shard is equally capable, so this
+/// just load-balances.
+pub struct ByExecutionId<'a>(pub &'a ExecutionId);
+
+impl Hash for ByExecutionId<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.0.as_bytes().hash(state);
+    }
+}
+
+/// Shard broadcast actors by `ChainId`.
+///
+/// Transactions for the same chain go to the same actor, which lets the
+/// broadcast actor maintain per-chain RPC state (connection pooling, nonce
+/// tracking on the RPC side, etc.).
+pub struct ByChainId<'a>(pub &'a ChainId);
+
+impl Hash for ByChainId<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.0.hash(state);
+    }
 }
 
 // ============================================================
