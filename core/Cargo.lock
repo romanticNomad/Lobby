@@ -1405,7 +1405,10 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "kernel",
+ "rand 0.8.5",
  "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

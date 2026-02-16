@@ -8,8 +8,8 @@ use thiserror::Error;
 ///
 /// Strategy: **full-jitter exponential backoff**
 /// > for 'nth' attempt
-/// > cap = min(max_delay, base_delay * 2^n)
-/// > delay = random(0, cap)
+/// > window = min(max_delay, base_delay * 2^n)
+/// > delay = random(0, window)
 ///
 /// Rationale: Under load, many pipelines may fail at the same instant
 /// (e.g. RPC node briefly overloaded or DB hiccup).  Full jitter scatters
