@@ -1,0 +1,98 @@
+use kernel::types::{BroadcastError, LocalError, RelayHostError};
+use thiserror::Error;
+
+// ============================================================
+// Orchestrator (Cortex) erros 
+
+/// Every failure that the orchestrator pipeline can produce.
+///
+/// Variants are ordered by pipeline stage so that log aggregation tools can
+/// trivially bucket failures by stage.
+#[derive(Debug, Error)]
+pub enum CortexError {
+    // ============================================================
+    // backpressure
+    
+    /// The pipeline semaphore was exhausted and the caller timed out waiting
+    /// for a permit.  The caller should back off and retry at the submission
+    /// layer (i.e. return HTTP 429 to the DApp). 
+    #[error("pipeline semaphore timed out after {timeout_ms}ms — server is overloaded")]
+    BackpressureTimeout { timeout_ms: u64 },
+
+    // ============================================================
+    // RelayHost stage error.
+    
+    /// error statement is self explainatory of the purpose
+    #[error("relay-host rejected or failed to record the transaction after retries: {0}")]
+    RelayHost(#[from] RelayHostError),
+
+    // ============================================================
+    // Nonce stage error
+
+    /// nonce reservation failed after all retries
+    /// and no nonce was commited
+    #[error("nonce reservation failed after retries: {0}")]
+    NonceReservation(LocalError),
+
+    /// nonce resolve (finalized / released) failed after all retries. This is non fatal
+    /// but logged as an error as it indicated DB issue.
+    #[error("nonce resolve failed (lease will expire): {0}")]
+    NonceResolve(LocalError),
+
+    // ============================================================
+    // Sign stage error
+
+    /// signing is failed after all retries. This is a fatal error
+    /// nonce must be released before this error surfaces
+    #[error("signing failed after retries: {0}")]
+    Sign(LocalError),
+
+    // ============================================================
+    // Broadcast stage error
+
+    /// Broadcast failed after all retries. The nonce is explicitly released
+    /// before this error is surfaced.
+    #[error("broadcast failed after retries: {0}")]
+    Broadcast(#[from] BroadcastError),
+
+    // ============================================================
+    // Validator stage error
+
+    // /// The validator confirmed that the transaction was not included on-chain
+    // /// (chain reorg or persistent underpricing).  The nonce is released.
+    // #[error("transaction not included on-chain: {0}")]
+    // NotIncluded(#[from] ValidatorError),
+
+    // ============================================================
+    // internal / unexpected
+
+    #[error("internal orchestrator error: {0}")]
+    Internal(String),
+}
+
+// ============================================================
+// implimenting transient checks and staging facility for cortex errors
+
+impl CortexError {
+    /// Returns `true` for errors that are *transient* and the caller (HTTP
+    /// layer) may safely surface as HTTP 429 / 503.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::BackpressureTimeout { .. })
+    }
+
+    /// Returns the pipeline stage label for structured log fields.
+    pub fn stage(&self) -> &'static str {
+        match self {
+            Self::BackpressureTimeout { .. } => "backpressure",
+            Self::RelayHost(_) => "relay_host",
+            Self::NonceReservation(_) => "nonce_reserve",
+            Self::NonceResolve(_) => "nonce_resolve",
+            Self::Sign(_) => "sign",
+            Self::Broadcast(_) => "broadcast",
+            // Self::NotIncluded(_) => "validator",
+            Self::Internal(_) => "internal",
+        }
+    }
+}
+
+// ============================================================
