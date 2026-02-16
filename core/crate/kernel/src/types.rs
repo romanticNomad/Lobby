@@ -197,20 +197,28 @@ pub enum BroadcastOutcome {
 // ============================================================
 // errors for different execution levels
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum LocalError {
+    #[error("Db error: {0}")]
     DatabaseError(String),
+    #[error("Internal error: {0}")]
     Internal(String),
+    #[error("Internal error: {0}")]
     Invariant(String),
+    #[error("Rejected: {0}")]
     Rejected(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum BroadcastError {
+    #[error("Internal: {0}")]
     Internal(String),
+    #[error("DB error: {0}")]
     DatabaseError(String),
+    #[error("Invariant error: {0}")]
     Invariant(String),
-    MissingProvider(ChainId),
+    #[error("Provider error: {:?}", chain_id)]
+    MissingProvider{ chain_id: ChainId},
 }
 
 #[derive(Debug, Error)]
