@@ -173,7 +173,7 @@ impl BroadcastEngine {
             .provider
             .get(&chain_id)
             .map(|entry| entry.value().clone())
-            .ok_or(BroadcastError::MissingProvider(chain_id))?;
+            .ok_or(BroadcastError::MissingProvider{chain_id})?;
 
         let send_txn = provider.send_raw_transaction(&txn.rlp).await;
 
