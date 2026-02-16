@@ -53,7 +53,12 @@ pub trait Broadcaster: Send + Sync {
 
 #[async_trait]
 pub trait Validator: Send + Sync {
-    async fn watch(&self, chain_id: ChainId, tx_hash: TxHash) -> Result<bool, LocalError>;
+    async fn validate(
+        &self,
+        chain_id: ChainId,
+        execution_id: ExecutionId,
+        tx_hash: TxHash,
+    ) -> Result<ValidationOutcome, ValidatorError>;
 }
 
 // ============================================================

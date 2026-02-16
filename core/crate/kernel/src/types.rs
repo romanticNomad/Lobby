@@ -195,7 +195,36 @@ pub enum BroadcastOutcome {
 }
 
 // ============================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationOutcome {
+    /// Transaction has >= 1 on-chain confirmations.
+    Included,
+    /// Transaction hash is unknown to the node — likely a chain reorg or the
+    /// tx was evicted from the mempool.  Caller must release the nonce.
+    NotIncluded,
+}
+
+// ============================================================
 // errors for different execution levels
+
+#[derive(Debug, Error)]
+pub enum RelayHostError {
+    #[error("Duplicate execution_id: {0}")]
+    DuplicateExecutionId(uuid::Uuid),
+
+    #[error("Invalid transaction: {0}")]
+    ValidationFailed(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
+
+    #[error("Actor has shut down")]
+    ActorShutdown,
+
+    #[error("From address mismatch: expected {expected}, got {actual}")]
+    FromAddressMismatch { expected: String, actual: String },
+}
 
 #[derive(Clone, Debug, Error)]
 pub enum LocalError {
@@ -222,21 +251,15 @@ pub enum BroadcastError {
 }
 
 #[derive(Debug, Error)]
-pub enum RelayHostError {
-    #[error("Duplicate execution_id: {0}")]
-    DuplicateExecutionId(uuid::Uuid),
+pub enum ValidatorError {
+    #[error("validation timed out waiting for tx {tx_hash} on chain {:?}", chain_id)]
+    Timeout { chain_id: ChainId, tx_hash: TxHash },
 
-    #[error("Invalid transaction: {0}")]
-    ValidationFailed(String),
+    #[error("rpc error while polling for tx {tx_hash}: {message}")]
+    Rpc { tx_hash: TxHash, message: String },
 
-    #[error("Database error: {0}")]
-    DatabaseError(#[from] sqlx::Error),
-
-    #[error("Actor has shut down")]
-    ActorShutdown,
-
-    #[error("From address mismatch: expected {expected}, got {actual}")]
-    FromAddressMismatch { expected: String, actual: String },
+    #[error("transaction not included after max confirmations: {tx_hash}")]
+    NotIncluded { tx_hash: TxHash },
 }
 
 // ============================================================
