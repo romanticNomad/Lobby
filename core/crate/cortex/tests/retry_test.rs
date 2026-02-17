@@ -8,10 +8,13 @@ mod tests {
     use cortex::config::RetryConfig;
 
     use super::*;
-    use std::{sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    }, time::Duration};
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicU32, Ordering},
+        },
+        time::Duration,
+    };
 
     #[tokio::test]
     async fn retries_correct_number_of_times() {
