@@ -6,3 +6,6 @@ pub mod relayhost;
 
 #[allow(dead_code)]
 pub mod server;
+
+#[allow(dead_code)]
+pub mod validator;

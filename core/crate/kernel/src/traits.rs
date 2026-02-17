@@ -76,9 +76,9 @@ pub trait IntentRelay: Send + Sync {
 
 // ============================================================
 // Ethereum-specific RLP encoding.
-//
-// This trait defines how a value is appended to an RLP stream
-// following Ethereum consensus rules (minimal big-endian, zero rules, etc).
+///
+/// This trait defines how a value is appended to an RLP stream
+/// following Ethereum consensus rules (minimal big-endian, zero rules, etc).
 
 pub trait EthRlpEncode {
     fn eth_rlp_append(&self, s: &mut rlp::RlpStream);
