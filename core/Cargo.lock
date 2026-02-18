@@ -1404,8 +1404,11 @@ name = "cortex"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "dashmap",
  "kernel",
  "rand 0.8.5",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",
