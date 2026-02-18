@@ -1,8 +1,13 @@
-use std::sync::Arc;
-
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use dashmap::DashMap;
 use kernel::types::ExecutionId;
 use serde::Serialize;
+use std::sync::Arc;
+use uuid::Uuid;
 
 // ============================================================
 // tracking pipeline status
@@ -23,21 +28,18 @@ pub enum Pipelinestatus {
     /// transaction signed, awaiting broadcaster
     Signed,
     /// transaction broadcasted, awaiting on-chain confirmation
-    Broadcasted{
+    Broadcasted {
         #[serde(rename = "tx_hash")]
-        tx_hash: String
+        tx_hash: String,
     },
     /// Validator confirmed >=1 block confirmation
     Confirmed {
         #[serde(rename = "tx_hash")]
-        tx_hash: String
+        tx_hash: String,
     },
     /// Pipeline failed at the given stage; the nonce has been released where
     /// applicable.
-    Failed {
-        stage: String,
-        reason: String,
-    },
+    Failed { stage: String, reason: String },
 }
 
 // ============================================================
@@ -50,12 +52,14 @@ pub enum Pipelinestatus {
 /// shard (64 by default).  Reads and writes are O(1).
 #[derive(Clone, Debug)]
 pub struct StatusRegistry {
-    status_book: Arc<DashMap<ExecutionId, Pipelinestatus>>, 
+    status_book: Arc<DashMap<ExecutionId, Pipelinestatus>>,
 }
 
 impl StatusRegistry {
     pub fn new() -> Self {
-        Self { status_book: Arc::new(DashMap::new()) }
+        Self {
+            status_book: Arc::new(DashMap::new()),
+        }
     }
 
     /// fn to record or overwrite status of pipeline
@@ -64,16 +68,77 @@ impl StatusRegistry {
     }
 
     /// fn to retrieve pipeline status
-    pub fn get(&self, execution_id: ExecutionId) -> Option<Pipelinestatus> {
+    pub fn get(&self, execution_id: &ExecutionId) -> Option<Pipelinestatus> {
         self.status_book.get(&execution_id).map(|v| v.clone())
     }
 }
 
 impl Default for StatusRegistry {
     fn default() -> Self {
-        Self { status_book: Arc::new(DashMap::new())}
+        Self {
+            status_book: Arc::new(DashMap::new()),
+        }
     }
 }
 
 // ============================================================
 // HTTP response
+
+#[derive(Debug, Serialize)]
+pub struct StatusResponse {
+    pub execution_id: String,
+    #[serde(flatten)]
+    pub status: Pipelinestatus,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StatusErrorResponce {
+    error: String,
+}
+
+// ============================================================
+// axum handler
+
+/// `GET /status/:execution_id`
+///
+/// Returns the current pipeline status for an execution.  Clients should poll
+/// this until status is `confirmed` or `failed`.
+///
+/// # Responses
+/// - `200 OK` — known execution_id, returns `StatusResponse`
+/// - `400 Bad Request` — `execution_id` is not a valid UUID
+/// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
+pub async fn get_transaction_status(
+    State(registry): State<StatusRegistry>,
+    Path(raw_id): Path<String>,
+) -> Result<Json<StatusResponse>, (StatusCode, Json<StatusErrorResponce>)> {
+    // parse execution_id
+    let uuid = Uuid::parse_str(&raw_id).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(StatusErrorResponce {
+                error: format!("{} is not a valid UUID", raw_id),
+            }),
+        )
+    })?;
+
+    let execution_id = ExecutionId(uuid);
+
+    match registry.get(&execution_id) {
+        Some(status) => Ok(Json(StatusResponse {
+            execution_id: raw_id,
+            status,
+        })),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(StatusErrorResponce {
+                error: format!(
+                    "no transaction pipeline found the give execution id: {}",
+                    raw_id
+                ),
+            }),
+        )),
+    }
+}
+
+// ============================================================
