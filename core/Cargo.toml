@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "crate/kernel", 
-    "crate/utils", 
-    "lobby", 
-    "crate/cortex", 
-    "crate/actors"
+    "crate/actors",
+    "crate/cortex",
+    "crate/kernel",
+    "crate/utils",
+    "lobby",
 ]

@@ -16,7 +16,6 @@ use thiserror::Error;
 /// retries across the whole window, preventing a thundering-herd re-spike.
 /// With max_attempts = 2 the worst-case added latency stays well under a
 /// second while still absorbing transient faults.
-
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
     pub max_attempts: u32,
@@ -40,7 +39,6 @@ impl Default for RetryConfig {
 
 /// Top-level config for the orchestrator, loaded entirely from environment
 /// variables so that production tuning never requires a recompile.
-
 #[derive(Debug, Clone)]
 pub struct CortexConfig {
     pub nonce_shard: usize,

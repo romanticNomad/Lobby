@@ -1,10 +1,9 @@
+use alloy::primitives::Address;
+use kernel::types::{ChainId, ExecutionId};
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
 };
-
-use alloy::primitives::Address;
-use kernel::types::{ChainId, ExecutionId};
 
 // ============================================================
 // building the shard strcut for a generic actor handler
@@ -23,7 +22,7 @@ use kernel::types::{ChainId, ExecutionId};
 /// # Type parameter
 /// `T` is the trait object that each actor handle implements.  Handles are
 /// stored as `Arc<T>` so they are cheap to clone into pipeline tasks.
-
+/// not sized (?Sized) so as to be used for actor trait object (dynamic dispatch)
 pub struct ShardPool<T: ?Sized> {
     shards: Vec<Arc<T>>,
 }
