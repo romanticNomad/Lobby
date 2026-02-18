@@ -8,10 +8,11 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "async-trait",
- "dashmap",
  "kernel",
+ "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
  "utils",
 ]
 
@@ -2594,15 +2595,32 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 name = "lobby"
 version = "0.1.0"
 dependencies = [
+ "actors",
+ "alloy",
+ "axum",
  "dashmap",
  "kernel",
- "netio",
+ "serde_json",
  "sqlx",
  "tokio",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "utils",
  "uuid",
+]
+
+[[package]]
+name = "local"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "dashmap",
+ "kernel",
+ "sqlx",
+ "tokio",
+ "utils",
 ]
 
 [[package]]

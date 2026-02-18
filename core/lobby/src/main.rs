@@ -1,7 +1,7 @@
-use netio::{
-    relayhost::engine::spawn_relayhost_actor,
-    server::{AppState, build_app, serve},
-};
+mod server;
+
+use actors::relayhost::engine::spawn_relayhost_actor;
+use server::*;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr, sync::Arc};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
