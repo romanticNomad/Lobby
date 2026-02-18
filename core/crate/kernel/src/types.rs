@@ -126,7 +126,7 @@ pub type TxHash = B256;
 // ============================================================
 // idempotency key for lobby operations
 
-#[derive(Clone, Copy, Debug, Serialize, Hash)]
+#[derive(Clone, Copy, Debug, Serialize, Hash, PartialEq, Eq)]
 pub struct ExecutionId(pub uuid::Uuid);
 
 // ============================================================
