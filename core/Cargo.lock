@@ -2611,19 +2611,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "local"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "async-trait",
- "dashmap",
- "kernel",
- "sqlx",
- "tokio",
- "utils",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2710,24 +2697,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "netio"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "async-trait",
- "axum",
- "dashmap",
- "kernel",
- "serde_json",
- "sqlx",
- "tokio",
- "tower-http",
- "tracing",
- "utils",
- "uuid",
 ]
 
 [[package]]
