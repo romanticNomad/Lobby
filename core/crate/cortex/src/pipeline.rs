@@ -15,7 +15,7 @@ use tracing::Instrument;
 // ============================================================
 // context
 
-/// all the entities that pipeline would need
+/// all the entities that pipeline would need,
 /// wrapped in a cheap-to-clone struct
 #[derive(Clone)]
 pub(crate) struct PipelineContext {
@@ -25,11 +25,13 @@ pub(crate) struct PipelineContext {
     pub txn: Eip1559Transaction,
 
     // actor handles
+    pub relayhost_handle: Arc<dyn IntentRelay>,
+    pub validator_handle: Arc<dyn Validator>,
+
+    // actor pools
     pub broadcast_handle: Arc<ShardPool<dyn Broadcaster>>,
     pub nonce_handle: Arc<ShardPool<dyn NonceManager>>,
-    pub relayhost_handle: Arc<dyn IntentRelay>,
     pub sign_handle: Arc<ShardPool<dyn Signer>>,
-    pub validator_handle: Arc<dyn Validator>,
 
     // retry
     pub retry_config: RetryConfig,
@@ -96,6 +98,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // ============================================================
         // nonce reserve
+
+        // geting the nonce shard (squenced by from_address)
+        
+
     }
     .instrument(span)
     .await;
