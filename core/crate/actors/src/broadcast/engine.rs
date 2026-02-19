@@ -146,23 +146,27 @@ impl BroadcastEngine {
                 .await
                 .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
 
-                return Ok(match row.state.unwrap().as_str() {
-                    "submitted" => BroadcastOutcome::Submitted {
-                        txn_hash: TxHash::from_slice(row.tx_hash.as_ref().ok_or(
-                            BroadcastError::Invariant("Submitted without TxHash".to_string()),
-                        )?),
-                    },
-
-                    "rejected" => BroadcastOutcome::Rejected {
-                        reason: row
-                            .rejection_reason
-                            .unwrap_or_else(|| "unknows rejection reason".to_string()),
-                    },
-
-                    _ => {
-                        BroadcastOutcome::Unexpected{ source: "unknown database inclusion error".to_string() }
+                match row.state.unwrap().as_str() {
+                    "submitted" => {
+                        let txn_hash = TxHash::from_slice(
+                            row.tx_hash.as_ref().ok_or(
+                                BroadcastError::Invariant("Tx hash submitted with invalid format".to_string())
+                            )?
+                        );
+                        return Ok(BroadcastOutcome::Submitted { txn_hash });
                     }
-                });
+                    "rejected" => {
+                        return Err(BroadcastError::Rejected { 
+                            reason: row.rejection_reason
+                            .unwrap_or_else(|| "rejection reason unknown to database".to_string())
+                        });
+                    }
+                    _ => {
+                        return Err(BroadcastError::Unexpected { 
+                            message: "unknown database inclusion error".to_string() 
+                        })
+                    }
+                }
             }
         };
 
@@ -235,9 +239,9 @@ impl BroadcastEngine {
                     .await
                     .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
 
-                    Ok(BroadcastOutcome::Rejected { reason: err_str })
+                    Err(BroadcastError::Rejected { reason: err_str })
                 } else {
-                    Ok(BroadcastOutcome::Unexpected{ source: err_str})
+                    Err(BroadcastError::Unexpected{ message: err_str})
                 }
             }
         }
