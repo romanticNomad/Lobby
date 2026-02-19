@@ -160,7 +160,7 @@ impl BroadcastEngine {
                     },
 
                     _ => {
-                        BroadcastOutcome::Unexpected("unknown database inclusion error".to_string())
+                        BroadcastOutcome::Unexpected{ source: "unknown database inclusion error".to_string() }
                     }
                 });
             }
@@ -237,7 +237,7 @@ impl BroadcastEngine {
 
                     Ok(BroadcastOutcome::Rejected { reason: err_str })
                 } else {
-                    Ok(BroadcastOutcome::Unexpected(err_str))
+                    Ok(BroadcastOutcome::Unexpected{ source: err_str})
                 }
             }
         }
