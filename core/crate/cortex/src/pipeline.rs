@@ -119,7 +119,16 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 return;
             }
         };
-        
+
+        ctx.status.set(execution_id, PipelineStatus::NonceReserved);
+        tracing::info!(%nonce, "nonce reserved");
+
+        // updating the nonce onto txn payload
+        let mut txn = ctx.txn;
+        txn.nonce = nonce;
+
+        // ============================================================
+        // signing
 
         
 
