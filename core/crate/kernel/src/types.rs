@@ -209,7 +209,7 @@ pub struct SignedTransaction {
 pub enum BroadcastOutcome {
     Submitted { txn_hash: TxHash },
     Rejected { reason: String },
-    Unexpected(String),
+    Unexpected{ source: String},
 }
 
 // ============================================================
