@@ -7,7 +7,7 @@ use alloy::{
 use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::{hash::Hash, sync::Arc};
+use std::{fmt, hash::Hash, sync::Arc};
 use thiserror::Error;
 
 // ============================================================
@@ -129,6 +129,12 @@ pub type TxHash = B256;
 #[derive(Clone, Copy, Debug, Serialize, Hash, PartialEq, Eq)]
 pub struct ExecutionId(pub uuid::Uuid);
 
+impl fmt::Display for ExecutionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 // ============================================================
 // ChainID wrapper for lobby and appropriate implimentations
 
@@ -150,6 +156,12 @@ impl TryFrom<i64> for ChainId {
         }
 
         Ok(ChainId(U256::from(value as u64)))
+    }
+}
+
+impl fmt::Display for ChainId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
