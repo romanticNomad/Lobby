@@ -7,7 +7,7 @@ use crate::{
 };
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{BroadcastOutcome, ClientConfig, Eip1559Transaction, ExecutionId},
+    types::{ClientConfig, Eip1559Transaction, ExecutionId},
 };
 use std::sync::Arc;
 use tracing::Instrument;
@@ -83,9 +83,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             let txn = ctx.txn.clone();
             let cc = ctx.client_config.clone();
 
-            async move {
-                rh.send_transaction(execution_id, txn, cc).await
-            }
+            async move { rh.send_transaction(execution_id, txn, cc).await }
         })
         .await;
 
@@ -106,15 +104,13 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         let nonce = match retry_with_backoff(&ctx.retry_config, "nonce_reserve", || {
             let nh = Arc::clone(&nonce_handle);
-            async move {
-                nh.reserve(chain_id, from_address, execution_id).await
-            }
+            async move { nh.reserve(chain_id, from_address, execution_id).await }
         })
         .await
         {
             Ok(n) => n,
             Err(e) => {
-                let err  = CortexError::NonceReservation(e);
+                let err = CortexError::NonceReservation(e);
                 record_faliure(&ctx.status, execution_id, &err);
                 return;
             }
@@ -129,16 +125,14 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // ============================================================
         // signing
-        
+
         // getting the sign handle from shard pool (sequenced by execution_id)
         let sign_handle = ctx.sign_pool.get(&ByExecutionId(&execution_id));
 
         let signed = match retry_with_backoff(&ctx.retry_config, "sign", || {
             let sh = Arc::clone(&sign_handle);
             let t = txn.clone();
-            async move {
-                sh.sign(chain_id, from_address, execution_id, t).await
-            }
+            async move { sh.sign(chain_id, from_address, execution_id, t).await }
         })
         .await
         {
@@ -167,7 +161,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             let signed_hash = signed.clone();
 
             async move {
-                bh.broadcast(chain_id, from_address, execution_id, signed_hash).await
+                bh.broadcast(chain_id, from_address, execution_id, signed_hash)
+                    .await
             }
         })
         .await
@@ -184,17 +179,25 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         };
 
         let tx_hash = outcome.txn_hash;
-        ctx.status.set(execution_id, PipelineStatus::Broadcasted { tx_hash: format!("{tx_hash:#x}") });
+        ctx.status.set(
+            execution_id,
+            PipelineStatus::Broadcasted {
+                tx_hash: format!("{tx_hash:#x}"),
+            },
+        );
         tracing::info!(
             %tx_hash,
             "transaction broadcasted"
-        )
+        );
 
         // ============================================================
         // validator
-        
 
+        // will be drafted after validator actor is built
 
+        // ============================================================
+
+        tracing::info!("pipeline completed");
     }
     .instrument(span)
     .await;
@@ -208,12 +211,14 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 /// Called on any hard-fail *after* a nonce has been reserved.
 /// Retries are attempted because a transient DB error here would leave a
 /// dangling 'reserved' nonce; the 5-minute lease is the last-resort safety net.
-async fn release_nonce(handle: &Arc<dyn NonceManager>, execution_id: ExecutionId, retry_config: &RetryConfig) {
+async fn release_nonce(
+    handle: &Arc<dyn NonceManager>,
+    execution_id: ExecutionId,
+    retry_config: &RetryConfig,
+) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
         let nh = Arc::clone(handle);
-        async move {
-            nh.resolve(execution_id, false).await
-        }
+        async move { nh.resolve(execution_id, false).await }
     })
     .await;
 
@@ -230,12 +235,14 @@ async fn release_nonce(handle: &Arc<dyn NonceManager>, execution_id: ExecutionId
 }
 
 /// Finalize (consume) a reserved nonce after on-chain inclusion.
-async fn finalise_nonce(handle: &Arc<dyn NonceManager>, execution_id: ExecutionId, retry_config: &RetryConfig) {
+async fn finalise_nonce(
+    handle: &Arc<dyn NonceManager>,
+    execution_id: ExecutionId,
+    retry_config: &RetryConfig,
+) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_finalise", || {
         let nh = Arc::clone(handle);
-        async move {
-            nh.resolve(execution_id, true).await
-        }
+        async move { nh.resolve(execution_id, true).await }
     })
     .await;
 
