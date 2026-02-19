@@ -206,10 +206,8 @@ pub struct SignedTransaction {
 // Possible outcome response (even if failed)
 
 #[derive(Clone, Debug)]
-pub enum BroadcastOutcome {
-    Submitted { txn_hash: TxHash },
-    Rejected { reason: String },
-    Unexpected{ source: String},
+pub struct BroadcastOutcome {
+    pub txn_hash: TxHash,
 }
 
 // ============================================================
@@ -266,6 +264,10 @@ pub enum BroadcastError {
     Invariant(String),
     #[error("Provider error: {:?}", chain_id)]
     MissingProvider { chain_id: ChainId },
+    #[error("Tx request rejected by provider: {}", reason)]
+    Rejected { reason: String },
+    #[error("Unexpected error: {}", message)]
+    Unexpected { message: String },
 }
 
 #[derive(Debug, Error)]
