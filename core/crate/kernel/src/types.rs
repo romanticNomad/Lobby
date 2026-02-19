@@ -189,6 +189,12 @@ impl TryFrom<i64> for TxNonce {
     }
 }
 
+impl fmt::Display for TxNonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 // ============================================================
 
 #[derive(Clone, Debug)]

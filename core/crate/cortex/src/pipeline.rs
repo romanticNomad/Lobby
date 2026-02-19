@@ -1,7 +1,7 @@
 use crate::{
     config::RetryConfig,
     error::CortexError,
-    pool::ShardPool,
+    pool::{ByAddress, ShardPool},
     retry::retry_with_backoff,
     state::{PipelineStatus, StatusRegistry},
 };
@@ -29,9 +29,9 @@ pub(crate) struct PipelineContext {
     pub validator_handle: Arc<dyn Validator>,
 
     // actor pools
-    pub broadcast_handle: Arc<ShardPool<dyn Broadcaster>>,
-    pub nonce_handle: Arc<ShardPool<dyn NonceManager>>,
-    pub sign_handle: Arc<ShardPool<dyn Signer>>,
+    pub broadcast_pool: Arc<ShardPool<dyn Broadcaster>>,
+    pub nonce_pool: Arc<ShardPool<dyn NonceManager>>,
+    pub sign_pool: Arc<ShardPool<dyn Signer>>,
 
     // retry
     pub retry_config: RetryConfig,
@@ -83,7 +83,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             let txn = ctx.txn.clone();
             let cc = ctx.client_config.clone();
 
-            async move { rh.send_transaction(execution_id, txn, cc).await }
+            async move {
+                rh.send_transaction(execution_id, txn, cc).await
+            }
         })
         .await;
 
@@ -100,6 +102,25 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // nonce reserve
 
         // geting the nonce shard (squenced by from_address)
+        let nonce_handle = ctx.nonce_pool.get(&ByAddress(&from_address));
+
+        let nonce = match retry_with_backoff(&ctx.retry_config, "nonce_reserve", || {
+            let nh = Arc::clone(&nonce_handle);
+            async move {
+                nh.reserve(chain_id, from_address, execution_id).await
+            }
+        })
+        .await
+        {
+            Ok(n) => n,
+            Err(e) => {
+                let err  = CortexError::NonceReservation(e);
+                record_faliure(&ctx.status, execution_id, &err);
+                return;
+            }
+        };
+        
+
         
 
     }
