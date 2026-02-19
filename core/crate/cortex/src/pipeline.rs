@@ -1,7 +1,7 @@
 use crate::{
     config::RetryConfig,
     error::CortexError,
-    pool::{ByAddress, ByExecutionId, ShardPool},
+    pool::{ByAddress, ByChainId, ByExecutionId, ShardPool},
     retry::retry_with_backoff,
     state::{PipelineStatus, StatusRegistry},
 };
@@ -130,7 +130,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // signing
         
-        //getting the sign handle from shard pool (sequenced by execution_id)
+        // getting the sign handle from shard pool (sequenced by execution_id)
         let sign_handle = ctx.sign_pool.get(&ByExecutionId(&execution_id));
 
         let signed = match retry_with_backoff(&ctx.retry_config, "signing", || {
@@ -144,6 +144,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         {
             Ok(tx_hash) => tx_hash,
             Err(e) => {
+                // signing error -> hard fail
+                
+
                 let err = CortexError::Sign(e);
                 record_faliure(&ctx.status, execution_id, &err);
                 return;
@@ -156,7 +159,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // broadcast
 
-        
+        // getting the bradcast handle from shard pool (sequenced by chain_id))
+        let bradcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
+
+
 
     }
     .instrument(span)
@@ -166,6 +172,55 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 // ============================================================
 // helper
 
+/// Release (invalidate) a reserved nonce so it can be re-used.
+///
+/// Called on any hard-fail *after* a nonce has been reserved.
+/// Retries are attempted because a transient DB error here would leave a
+/// dangling 'reserved' nonce; the 5-minute lease is the last-resort safety net.
+async fn release_nonce(handle: &Arc<dyn NonceManager>, execution_id: ExecutionId, retry_config: RetryConfig) {
+    let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
+        let nh = Arc::clone(handle);
+        async move {
+            nh.resolve(execution_id, false).await
+        }
+    })
+    .await;
+
+    if let Err(e) = resolve_result {
+        // not fatal -> lease will expire in 5 minutes
+        tracing::error!(
+            %execution_id,
+            %e,
+            "nonce release failed after retries, lease will expire in 5 min"
+        );
+    } else {
+        tracing::debug!(%execution_id, "nonce release");
+    }
+}
+
+/// Finalize (consume) a reserved nonce after on-chain inclusion.
+async fn finalise_nonce(handle: &Arc<dyn NonceManager>, execution_id: ExecutionId, retry_config: RetryConfig) {
+    let resolve_result = retry_with_backoff(&retry_config, "nonce_finalise", || {
+        let nh = Arc::clone(handle);
+        async move {
+            nh.resolve(execution_id, true).await
+        }
+    })
+    .await;
+
+    if let Err(e) = resolve_result {
+        // not fatal -> dangling nonce lease expires in 5 min
+        tracing::error!(
+            %execution_id,
+            %e,
+            "nonce finalising failed -> state remains 'reserved' lease will expire in 5 minutes"
+        );
+    } else {
+        tracing::debug!(%execution_id, "nonce finalised");
+    }
+}
+
+/// helper to record fatal errors.
 fn record_faliure(registry: &StatusRegistry, execution_id: ExecutionId, err: &CortexError) {
     tracing::error!(
         %execution_id,
