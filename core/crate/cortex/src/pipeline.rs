@@ -1,7 +1,7 @@
 use crate::{
     config::RetryConfig,
     error::CortexError,
-    pool::{ByAddress, ShardPool},
+    pool::{ByAddress, ByExecutionId, ShardPool},
     retry::retry_with_backoff,
     state::{PipelineStatus, StatusRegistry},
 };
@@ -101,7 +101,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // nonce reserve
 
-        // geting the nonce shard (squenced by from_address)
+        // geting the nonce handle from shard pool (squenced by from_address)
         let nonce_handle = ctx.nonce_pool.get(&ByAddress(&from_address));
 
         let nonce = match retry_with_backoff(&ctx.retry_config, "nonce_reserve", || {
@@ -129,6 +129,32 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // ============================================================
         // signing
+        
+        //getting the sign handle from shard pool (sequenced by execution_id)
+        let sign_handle = ctx.sign_pool.get(&ByExecutionId(&execution_id));
+
+        let signed = match retry_with_backoff(&ctx.retry_config, "signing", || {
+            let sh = Arc::clone(&sign_handle);
+            let t = txn.clone();
+            async move {
+                sh.sign(chain_id, from_address, execution_id, t).await
+            }
+        })
+        .await
+        {
+            Ok(tx_hash) => tx_hash,
+            Err(e) => {
+                let err = CortexError::Sign(e);
+                record_faliure(&ctx.status, execution_id, &err);
+                return;
+            }
+        };
+
+        ctx.status.set(execution_id, PipelineStatus::Signed);
+        tracing::info!("transaction signed");
+
+        // ============================================================
+        // broadcast
 
         
 
