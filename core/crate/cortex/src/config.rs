@@ -7,9 +7,9 @@ use thiserror::Error;
 /// Retry policy applied uniformly to every pipeline stage.
 ///
 /// Strategy: **full-jitter exponential backoff**
-/// > for 'nth' attempt
-/// > window = min(max_delay, base_delay * 2^n)
-/// > delay = random(0, window)
+/// `for 'nth' attempt`
+/// * window = min(max_delay, base_delay * 2^n)
+/// * delay = random(0, window)
 ///
 /// Rationale: Under load, many pipelines may fail at the same instant
 /// (e.g. RPC node briefly overloaded or DB hiccup).  Full jitter scatters

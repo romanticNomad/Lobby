@@ -20,7 +20,7 @@ use uuid::Uuid;
 /// monotonic (states only advance forward or to Failed).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "status")]
-pub enum Pipelinestatus {
+pub enum PipelineStatus {
     /// request has been accepted and persisted by RelayHost
     Accepted,
     /// nonce successfully reserved, awaiting signer
@@ -52,7 +52,7 @@ pub enum Pipelinestatus {
 /// shard (64 by default).  Reads and writes are O(1).
 #[derive(Clone, Debug)]
 pub struct StatusRegistry {
-    status_book: Arc<DashMap<ExecutionId, Pipelinestatus>>,
+    status_book: Arc<DashMap<ExecutionId, PipelineStatus>>,
 }
 
 impl StatusRegistry {
@@ -63,12 +63,12 @@ impl StatusRegistry {
     }
 
     /// fn to record or overwrite status of pipeline
-    pub fn set(&self, execution_id: ExecutionId, status: Pipelinestatus) {
+    pub fn set(&self, execution_id: ExecutionId, status: PipelineStatus) {
         self.status_book.insert(execution_id, status);
     }
 
     /// fn to retrieve pipeline status
-    pub fn get(&self, execution_id: &ExecutionId) -> Option<Pipelinestatus> {
+    pub fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus> {
         self.status_book.get(&execution_id).map(|v| v.clone())
     }
 }
@@ -88,7 +88,7 @@ impl Default for StatusRegistry {
 pub struct StatusResponse {
     pub execution_id: String,
     #[serde(flatten)]
-    pub status: Pipelinestatus,
+    pub status: PipelineStatus,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,10 +132,7 @@ pub async fn get_transaction_status(
         None => Err((
             StatusCode::NOT_FOUND,
             Json(StatusErrorResponce {
-                error: format!(
-                    "no transaction pipeline found the give execution id: {}",
-                    raw_id
-                ),
+                error: format!("no pipeline record found the give execution id: {}", raw_id),
             }),
         )),
     }
