@@ -1,4 +1,4 @@
-use crate::nonce::{NonceCommand, NonceHandle, NonceState};
+use crate::nonce::{NonceCommand, NonceState};
 use alloy::primitives::Address;
 use kernel::types::{ChainId, ExecutionId, LocalError, TxNonce};
 use sqlx::PgPool;
@@ -16,17 +16,6 @@ impl NonceEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<NonceCommand>) -> Self {
         Self { db, rx }
     }
-}
-
-pub fn spawn_nonce_actor(db: PgPool, buffer_size: usize) -> NonceHandle {
-    let (tx, rx) = mpsc::channel(buffer_size);
-
-    let nonce_engine = NonceEngine::new(db, rx);
-    tokio::spawn(async move {
-        nonce_engine.run().await;
-    });
-
-    NonceHandle::new(tx)
 }
 
 // =========================================================

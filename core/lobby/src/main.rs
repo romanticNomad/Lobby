@@ -1,6 +1,6 @@
 mod server;
 
-use actors::relayhost::engine::spawn_relayhost_actor;
+use actors::relayhost::spawn_relayhost_actor;
 use server::*;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr, sync::Arc};
