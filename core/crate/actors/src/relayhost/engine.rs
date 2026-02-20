@@ -77,7 +77,7 @@ impl RelayHostEngine {
         .map_err(|e| RelayHostError::DatabaseError(e))?;
 
         if execution_id_exists {
-            return Err(RelayHostError::DuplicateExecutionId(execution_id.0));
+            return Ok(());
         };
 
         // ============================================================

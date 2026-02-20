@@ -226,9 +226,6 @@ pub enum ValidationOutcome {
 
 #[derive(Debug, Error)]
 pub enum RelayHostError {
-    #[error("Duplicate execution_id: {0}")]
-    DuplicateExecutionId(uuid::Uuid),
-
     #[error("Invalid transaction: {0}")]
     ValidationFailed(String),
 

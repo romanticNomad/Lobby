@@ -153,14 +153,6 @@ impl IntoResponse for TxnSubmitError {
             TxnSubmitError::RelayHostError(e) => {
                 error!("RelayHost error: {:?}", e);
                 match e {
-                    RelayHostError::DuplicateExecutionId(id) => (
-                        StatusCode::CONFLICT,
-                        JsonRpcError {
-                            code: -32000,
-                            message: format!("Duplicate execution_id: {}", id),
-                            data: None,
-                        },
-                    ),
                     RelayHostError::ValidationFailed(msg) => (
                         StatusCode::BAD_REQUEST,
                         JsonRpcError {
