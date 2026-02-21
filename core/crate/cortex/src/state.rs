@@ -21,6 +21,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "status")]
 pub enum PipelineStatus {
+    /// pipeline semaphore permit aquired
+    PermitAquired,
     /// request has been accepted and persisted by RelayHost
     Accepted,
     /// nonce successfully reserved, awaiting signer

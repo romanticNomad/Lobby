@@ -15,12 +15,19 @@
 //! The `OrchestratorHandle` is a cheap `Arc`-backed clone that can be placed
 //! in Axum's `AppState`.
 
+use crate::{
+    config::CortexConfig,
+    error::CortexError,
+    pipeline::{PipelineContext, run_pipeline},
+    pool::ShardPool,
+    state::StatusRegistry,
+};
+use kernel::{
+    traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
+    types::{ClientConfig, Eip1559Transaction, ExecutionId},
+};
 use std::sync::Arc;
-
-use kernel::{traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator}, types::{ClientConfig, Eip1559Transaction, ExecutionId}};
 use tokio::sync::Semaphore;
-
-use crate::{config::CortexConfig, error::CortexError, pool::ShardPool, state::StatusRegistry};
 
 pub mod config;
 pub mod error;
@@ -34,7 +41,7 @@ pub mod state;
 
 struct Cortex {
     // state metadata
-    cortex_congif: CortexConfig,
+    cortex_config: CortexConfig,
     status_registry: Arc<StatusRegistry>,
     semaphore: Arc<Semaphore>,
 
@@ -43,7 +50,7 @@ struct Cortex {
     nonce: Arc<ShardPool<dyn NonceManager>>,
     sign: Arc<ShardPool<dyn Signer>>,
     broadcast: Arc<ShardPool<dyn Broadcaster>>,
-    validate: Arc<dyn Validator>
+    validate: Arc<dyn Validator>,
 }
 
 // ============================================================
@@ -52,9 +59,8 @@ struct Cortex {
 ///cheap to clone handle to the orchestrator.
 #[derive(Clone)]
 pub struct CortextHandle {
-    inner: Arc<Cortex>
+    inner: Arc<Cortex>,
 }
-
 
 impl CortextHandle {
     /// Accept a validated, normalized transaction and start the background
@@ -71,12 +77,62 @@ impl CortextHandle {
     /// # Errors
     /// Returns `OrchestratorError::BackpressureTimeout` if the semaphore is
     /// exhausted and the timeout expires before a permit becomes available.
-    pub async fn submit (
+    pub async fn submit(
         &self,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
         client_config: ClientConfig,
     ) -> Result<(), CortexError> {
+        let orch = Arc::clone(&self.inner);
+
+        // ============================================================
+        // Semaphore: bound how many pipelines run concurrently
+
+        let permit = tokio::time::timeout(
+            orch.cortex_config.pipeline_semaphore_timeout,
+            Arc::clone(&orch.semaphore).acquire_owned(),
+        )
+        .await
+        .map_err(|_| CortexError::BackpressureTimeout {
+            timeout_ms: orch.cortex_config.pipeline_semaphore_timeout.as_millis() as u64,
+        })?
+        .expect("semaphore should never be closed");
+
+        tracing::debug!(
+            execution_id = ?execution_id,
+            available_permits = orch.semaphore.available_permits(),
+            "pipeline semaphore permit aquired"
+        );
+
+        orch.status_registry
+            .set(execution_id, state::PipelineStatus::PermitAquired);
+
+        // ============================================================
+        // building the pipeline context
+
+        let ctx = PipelineContext {
+            execution_id,
+            client_config,
+            txn,
+            relayhost_handle: Arc::clone(&orch.relayhost),
+            validator_handle: Arc::clone(&orch.validate),
+            broadcast_pool: Arc::clone(&orch.broadcast),
+            nonce_pool: Arc::clone(&orch.nonce),
+            sign_pool: Arc::clone(&orch.sign),
+            retry_config: orch.cortex_config.retry.clone(),
+            status: Arc::clone(&orch.status_registry),
+        };
+
+        // ============================================================
+        // Spawn the pipeline task
+        // The semaphore permit is moved into the task and dropped when the
+        // task completes, automatically freeing a slot.
+
+        tokio::spawn(async move {
+            let _permit = permit;
+            run_pipeline(ctx).await;
+        });
+
         Ok(())
     }
 }
