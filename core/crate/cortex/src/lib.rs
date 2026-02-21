@@ -148,7 +148,7 @@ impl CortextHandle {
 pub fn spawn_cortex(
     db: PgPool,
     provider: RpcProviderRegistry,
-    config: CortexConfig
+    config: CortexConfig,
 ) -> CortextHandle {
     tracing::info!(
         nonce_shards = config.nonce_shard,
@@ -177,13 +177,13 @@ pub fn spawn_cortex(
 
     let sign_pool = {
         let shards: Vec<Arc<dyn Signer>> = (0..config.sign_shard)
-        .map(|i| {
-            let handle = sign::spawn_sign_actor(db.clone(), config.actor_buffer);
-            tracing::debug!(shard = i, "sign actor spawned");
-            Arc::new(handle) as Arc<dyn Signer>
-        })
-        .collect();
-    Arc::new(ShardPool::new(shards))
+            .map(|i| {
+                let handle = sign::spawn_sign_actor(db.clone(), config.actor_buffer);
+                tracing::debug!(shard = i, "sign actor spawned");
+                Arc::new(handle) as Arc<dyn Signer>
+            })
+            .collect();
+        Arc::new(ShardPool::new(shards))
     };
 
     // ============================================================
@@ -191,13 +191,17 @@ pub fn spawn_cortex(
 
     let broadcast_pool = {
         let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shard)
-        .map(|i| {
-            let handle = broadcast::spawn_broadcast_actor(db.clone(), Arc::clone(&provider), config.actor_buffer);
-            tracing::debug!(shard = i, "broadcast actor spawned");
-            Arc::new(handle) as Arc<dyn Broadcaster>
-        })
-        .collect();
-    Arc::new(ShardPool::new(shards))
+            .map(|i| {
+                let handle = broadcast::spawn_broadcast_actor(
+                    db.clone(),
+                    Arc::clone(&provider),
+                    config.actor_buffer,
+                );
+                tracing::debug!(shard = i, "broadcast actor spawned");
+                Arc::new(handle) as Arc<dyn Broadcaster>
+            })
+            .collect();
+        Arc::new(ShardPool::new(shards))
     };
 
     // ============================================================
@@ -231,7 +235,7 @@ pub fn spawn_cortex(
         nonce: nonce_pool,
         sign: sign_pool,
         broadcast: broadcast_pool,
-        validator: validator_handle
+        validator: validator_handle,
     });
 
     tracing::info!("orchestrator ready");
