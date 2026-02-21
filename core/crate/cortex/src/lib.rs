@@ -22,10 +22,12 @@ use crate::{
     pool::ShardPool,
     state::StatusRegistry,
 };
+use actors::nonce;
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
     types::{ClientConfig, Eip1559Transaction, ExecutionId},
 };
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -135,4 +137,39 @@ impl CortextHandle {
 
         Ok(())
     }
+}
+
+// ============================================================
+// Cortex (orchestrator) boot function
+
+/// Spawn all actor shards and assemble the `OrchestratorHandle`.
+/// panics if number of shards in cofig = 0.
+
+pub fn spawn_cortex(
+    pg: PgPool,
+    config: CortexConfig
+) -> CortextHandle {
+    tracing::info!(
+        nonce_shards = config.nonce_shard,
+        sign_shards = config.sign_shard,
+        broadcast_shards = config.broadcast_shard,
+        pipeline = config.pipeline_concurrency,
+        "spawning cortex actor pools"
+    );
+
+    // ============================================================
+    // nonce pool - keyed by from address.
+
+    let nonce_pool = {
+        let shards: Vec<Arc<dyn NonceManager>> = (0..config.nonce_shard)
+            .map(|i| {
+                let handle = nonce::spawn_nonce_actor(db, config.actor_buffer);
+                tracing::debug!(shard = i, "nonce actor spawned");
+                Arc::new(handle) as Arc<dyn NonceManager>
+            })
+            .collect();
+        Arc::new(ShardPool::new(shards))
+    };
+
+    
 }
