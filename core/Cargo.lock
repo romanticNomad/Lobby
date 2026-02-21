@@ -2600,6 +2600,7 @@ dependencies = [
  "actors",
  "alloy",
  "axum",
+ "cortex",
  "dashmap",
  "kernel",
  "serde_json",

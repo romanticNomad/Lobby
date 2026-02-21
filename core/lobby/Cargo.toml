@@ -8,6 +8,7 @@ license = "Apache-2.0"
 kernel = { path = "../crate/kernel" }
 utils = { path = "../crate/utils" }
 actors = { path = "../crate/actors" }
+cortex = { path = "../crate/cortex" }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["trace"] }
 alloy = { version = "1.6.0", features = ["full"] }
