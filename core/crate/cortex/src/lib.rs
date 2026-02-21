@@ -22,10 +22,10 @@ use crate::{
     pool::ShardPool,
     state::StatusRegistry,
 };
-use actors::{nonce, sign};
+use actors::{broadcast, nonce, relayhost, sign, validator::ValidatorStub};
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{ClientConfig, Eip1559Transaction, ExecutionId},
+    types::{ClientConfig, Eip1559Transaction, ExecutionId, RpcProviderRegistry},
 };
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -52,7 +52,7 @@ struct Cortex {
     nonce: Arc<ShardPool<dyn NonceManager>>,
     sign: Arc<ShardPool<dyn Signer>>,
     broadcast: Arc<ShardPool<dyn Broadcaster>>,
-    validate: Arc<dyn Validator>,
+    validator: Arc<dyn Validator>,
 }
 
 // ============================================================
@@ -117,7 +117,7 @@ impl CortextHandle {
             client_config,
             txn,
             relayhost_handle: Arc::clone(&orch.relayhost),
-            validator_handle: Arc::clone(&orch.validate),
+            validator_handle: Arc::clone(&orch.validator),
             broadcast_pool: Arc::clone(&orch.broadcast),
             nonce_pool: Arc::clone(&orch.nonce),
             sign_pool: Arc::clone(&orch.sign),
@@ -147,6 +147,7 @@ impl CortextHandle {
 
 pub fn spawn_cortex(
     db: PgPool,
+    provider: RpcProviderRegistry,
     config: CortexConfig
 ) -> CortextHandle {
     tracing::info!(
@@ -177,13 +178,64 @@ pub fn spawn_cortex(
     let sign_pool = {
         let shards: Vec<Arc<dyn Signer>> = (0..config.sign_shard)
         .map(|i| {
-            let handle = sign::spawn_sign_actor(db, config.actor_buffer);
-            tracing::debug!(shaird = i, "nonce actor spawned");
+            let handle = sign::spawn_sign_actor(db.clone(), config.actor_buffer);
+            tracing::debug!(shard = i, "sign actor spawned");
             Arc::new(handle) as Arc<dyn Signer>
         })
         .collect();
     Arc::new(ShardPool::new(shards))
     };
 
-    
+    // ============================================================
+    // broadcast pool - keyed by chain_id.
+
+    let broadcast_pool = {
+        let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shard)
+        .map(|i| {
+            let handle = broadcast::spawn_broadcast_actor(db.clone(), Arc::clone(&provider), config.actor_buffer);
+            tracing::debug!(shard = i, "broadcast actor spawned");
+            Arc::new(handle) as Arc<dyn Broadcaster>
+        })
+        .collect();
+    Arc::new(ShardPool::new(shards))
+    };
+
+    // ============================================================
+    // relayhost handle
+
+    let relayhost_handle = {
+        let handle = relayhost::spawn_relayhost_actor(db.clone(), config.actor_buffer);
+        tracing::debug!("relay_host actor spawned");
+        Arc::new(handle) as Arc<dyn IntentRelay>
+    };
+
+    // ============================================================
+    // validator handle (stub -> needs to be completed)
+
+    let validator_handle = Arc::new(ValidatorStub) as Arc<dyn Validator>;
+    tracing::warn!("validator is running as a stub — block inclusion is NOT verified");
+
+    // ============================================================
+    // pipeline semaphore
+
+    let pipeline_semaphore = Arc::new(Semaphore::new(config.pipeline_concurrency));
+
+    // ============================================================
+    // returning final cortex handle.
+
+    let inner = Arc::new(Cortex {
+        cortex_config: config,
+        status_registry: Arc::new(StatusRegistry::new()),
+        semaphore: pipeline_semaphore,
+        relayhost: relayhost_handle,
+        nonce: nonce_pool,
+        sign: sign_pool,
+        broadcast: broadcast_pool,
+        validator: validator_handle
+    });
+
+    tracing::info!("orchestrator ready");
+    CortextHandle { inner }
 }
+
+// ============================================================
