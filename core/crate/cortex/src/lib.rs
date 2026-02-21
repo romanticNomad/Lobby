@@ -22,7 +22,7 @@ use crate::{
     pool::ShardPool,
     state::StatusRegistry,
 };
-use actors::nonce;
+use actors::{nonce, sign};
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
     types::{ClientConfig, Eip1559Transaction, ExecutionId},
@@ -146,7 +146,7 @@ impl CortextHandle {
 /// panics if number of shards in cofig = 0.
 
 pub fn spawn_cortex(
-    pg: PgPool,
+    db: PgPool,
     config: CortexConfig
 ) -> CortextHandle {
     tracing::info!(
@@ -163,12 +163,26 @@ pub fn spawn_cortex(
     let nonce_pool = {
         let shards: Vec<Arc<dyn NonceManager>> = (0..config.nonce_shard)
             .map(|i| {
-                let handle = nonce::spawn_nonce_actor(db, config.actor_buffer);
+                let handle = nonce::spawn_nonce_actor(db.clone(), config.actor_buffer);
                 tracing::debug!(shard = i, "nonce actor spawned");
                 Arc::new(handle) as Arc<dyn NonceManager>
             })
             .collect();
         Arc::new(ShardPool::new(shards))
+    };
+
+    // ============================================================
+    // sign pool - keyed by execution_id.
+
+    let sign_pool = {
+        let shards: Vec<Arc<dyn Signer>> = (0..config.sign_shard)
+        .map(|i| {
+            let handle = sign::spawn_sign_actor(db, config.actor_buffer);
+            tracing::debug!(shaird = i, "nonce actor spawned");
+            Arc::new(handle) as Arc<dyn Signer>
+        })
+        .collect();
+    Arc::new(ShardPool::new(shards))
     };
 
     
