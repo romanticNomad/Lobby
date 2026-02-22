@@ -35,7 +35,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .expect("SERVER_ADDR is not a valid socket address");
 
-    
     // ============================================================
     // load database
 
@@ -46,7 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("database connection estabilished");
 
-    sqlx::migrate!("../database/migrations").run(&db_pool).await?;
+    sqlx::migrate!("../database/migrations")
+        .run(&db_pool)
+        .await?;
     tracing::info!("database migrations applied");
 
     // ============================================================
@@ -63,7 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _config = CortexConfig::from_env()?;
     // let orchestrator = spawn_cortex(db_pool.clone(), provider, config);
-    
 
     Ok(())
 }

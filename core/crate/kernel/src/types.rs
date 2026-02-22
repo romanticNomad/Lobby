@@ -203,7 +203,6 @@ pub struct SignedTransaction {
 }
 
 // ============================================================
-// Possible outcome response (even if failed)
 
 #[derive(Clone, Debug)]
 pub struct BroadcastOutcome {
@@ -214,10 +213,7 @@ pub struct BroadcastOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationOutcome {
-    /// Transaction has >= 1 on-chain confirmations.
     Included,
-    /// Transaction hash is unknown to the node — likely a chain reorg or the
-    /// tx was evicted from the mempool.  Caller must release the nonce.
     NotIncluded,
 }
 
