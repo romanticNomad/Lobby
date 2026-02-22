@@ -1,5 +1,5 @@
 use crate::broadcast::BroadcastCommand;
-use alloy::{primitives::Address, providers::Provider};
+use alloy::primitives::Address;
 use kernel::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
     TxHash,
