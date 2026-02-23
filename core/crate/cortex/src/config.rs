@@ -1,5 +1,6 @@
 use std::time::Duration;
 use thiserror::Error;
+use utils::directory::parse_env;
 
 // ============================================================
 //  # Retry
@@ -53,15 +54,36 @@ pub struct CortexConfig {
 impl CortexConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
-            nonce_shard: parse_env("NONCE_SHARDS", 17)?,
-            sign_shard: parse_env("SIGN_SHARDS", 17)?,
-            broadcast_shard: parse_env("BROADCAST_SHARDS", 17)?,
-            actor_buffer: parse_env("BROADCAST_SHARDS", 64)?,
-            pipeline_concurrency: parse_env("PIPELINE_CONCURRENCY", 17)?,
-            pipeline_semaphore_timeout: Duration::from_millis(parse_env(
-                "PIPELINE_SEMAPHORE_TIMEOUT_MS",
-                5_000u64,
-            )?),
+            nonce_shard: parse_env("NONCE_SHARDS", 17).map_err(|e| ConfigError::Parse {
+                key: "NONCE_SHARDS",
+                source: Box::new(e),
+            })?,
+            sign_shard: parse_env("SIGN_SHARDS", 17).map_err(|e| ConfigError::Parse {
+                key: "SIGN_SHARDS",
+                source: Box::new(e),
+            })?,
+            broadcast_shard: parse_env("BROADCAST_SHARDS", 17).map_err(|e| ConfigError::Parse {
+                key: "BROADCAST_SHARDS",
+                source: Box::new(e),
+            })?,
+            actor_buffer: parse_env("BROADCAST_SHARDS", 64).map_err(|e| ConfigError::Parse {
+                key: "BROADCAST_SHARDS",
+                source: Box::new(e),
+            })?,
+            pipeline_concurrency: parse_env("PIPELINE_CONCURRENCY", 17).map_err(|e| {
+                ConfigError::Parse {
+                    key: "PIPELINE_CONCURRENCY",
+                    source: Box::new(e),
+                }
+            })?,
+            pipeline_semaphore_timeout: Duration::from_millis(
+                parse_env("PIPELINE_SEMAPHORE_TIMEOUT_MS", 5_000u64).map_err(|e| {
+                    ConfigError::Parse {
+                        key: "PIPELINE_SEMAPHORE_TIMEOUT_MS",
+                        source: Box::new(e),
+                    }
+                })?,
+            ),
             retry: RetryConfig::default(),
         })
     }
@@ -78,23 +100,6 @@ pub enum ConfigError {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
-}
-
-// ============================================================
-// helper function
-
-fn parse_env<T>(key: &'static str, default: T) -> Result<T, ConfigError>
-where
-    T: std::str::FromStr,
-    T::Err: std::error::Error + Send + Sync + 'static,
-{
-    match std::env::var(key) {
-        Ok(raw) => raw.parse::<T>().map_err(|e| ConfigError::Parse {
-            key,
-            source: Box::new(e),
-        }),
-        Err(_) => Ok(default),
-    }
 }
 
 // ============================================================

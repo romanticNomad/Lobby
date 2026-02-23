@@ -3,7 +3,7 @@ use std::{env, net::SocketAddr};
 use cortex::config::CortexConfig;
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use utils::api_keys_load::load_api_key_from_env;
+use utils::directory::load_api_key_from_env;
 
 #[allow(dead_code)]
 mod server;
