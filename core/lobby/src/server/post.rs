@@ -13,7 +13,7 @@ use kernel::{
     },
 };
 use tracing::{error, info};
-use utils::eip1159_normalize::{NormalizationError, normalize_eip1193_transaction};
+use utils::eip1559::{NormalizationError, normalize_eip1193_transaction};
 use uuid::Uuid;
 
 // ============================================================

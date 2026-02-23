@@ -3,7 +3,7 @@ use kernel::types::{ClientConfig, Eip1559Transaction, ExecutionId, RelayHostErro
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 use tracing::info;
-use utils::eip1159_linter::transaction_lint;
+use utils::eip1559::transaction_lint;
 
 // ============================================================
 // RelatHostEngine and spawn implimentation
