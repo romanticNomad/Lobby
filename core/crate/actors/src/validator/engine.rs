@@ -72,6 +72,7 @@ impl ValidatorEngine {
 
     // ============================================================
 
+    /// validator engine handler function
     async fn handle_validation(
         &self,
         chain_id: ChainId,
@@ -87,7 +88,7 @@ impl ValidatorEngine {
         // record validation request to db
         self.record_validation_request(chain_id, execution_id, tx_hash)
             .await?;
-        
+
         // polling rpc node until timeout or confirmation
         let start = Instant::now();
 
@@ -100,7 +101,11 @@ impl ValidatorEngine {
                 );
                 self.record_outcome(execution_id, ValidatorOutcome::NotIncluded)
                     .await?;
-                return Err(ValidatorError::Timeout { chain_id, tx_hash, timeout_sec: start.elapsed().as_secs() });
+                return Err(ValidatorError::Timeout {
+                    chain_id,
+                    tx_hash,
+                    timeout_sec: start.elapsed().as_secs(),
+                });
             }
 
             // fetch receipt
@@ -116,7 +121,8 @@ impl ValidatorEngine {
                     }
 
                     // confirmation
-                    let current_block = rpc::get_block_number(&self.rpc_registry, chain_id, tx_hash).await?;
+                    let current_block =
+                        rpc::get_block_number(&self.rpc_registry, chain_id, tx_hash).await?;
                     let tx_block = receipt.block_number.unwrap_or(0);
                     let confirmations = current_block.saturating_sub(tx_block);
 
@@ -126,7 +132,10 @@ impl ValidatorEngine {
                             confirmations,
                             "transaction confirmed"
                         );
-                        let outcome = ValidatorOutcome::Included { block_number: tx_block, confirmations };
+                        let outcome = ValidatorOutcome::Included {
+                            block_number: tx_block,
+                            confirmations,
+                        };
                         self.record_outcome(execution_id, outcome.clone()).await?;
                         return Ok(outcome);
                     } else {
@@ -158,7 +167,7 @@ impl ValidatorEngine {
     /// Check if this execution_id has already been validated (idempotency).
     async fn check_cached_result(
         &self,
-        execution_id: ExecutionId
+        execution_id: ExecutionId,
     ) -> Result<Option<ValidatorOutcome>, ValidatorError> {
         let row = sqlx::query!(
             r#"
@@ -190,14 +199,14 @@ impl ValidatorEngine {
         &self,
         chain_id: ChainId,
         execution_id: ExecutionId,
-        tx_hash: TxHash
+        tx_hash: TxHash,
     ) -> Result<(), ValidatorError> {
         let tx_hash_bytes = tx_hash.as_slice();
         let chain_id_i64: i64 = chain_id
-        .0
-        .try_into()
-        .map_err(|_| ValidatorError::Internal("chain_id does not fit in i64".to_string()))?;
-        
+            .0
+            .try_into()
+            .map_err(|_| ValidatorError::Internal("chain_id does not fit in i64".to_string()))?;
+
         sqlx::query!(
             r#"
             INSERT INTO validator.validation_requests
@@ -237,4 +246,41 @@ impl ValidatorEngine {
         Ok(())
     }
 
+    /// recording validation outcome
+    async fn record_outcome(
+        &self,
+        execution_id: ExecutionId,
+        outcome: ValidatorOutcome,
+    ) -> Result<(), ValidatorError> {
+        let outcome_str = match outcome {
+            ValidatorOutcome::Included { .. } => "included",
+            ValidatorOutcome::NotIncluded => "not_included",
+        };
+
+        sqlx::query!(
+            r#"
+            INSERT INTO validator.validation_requests
+                (execution_id, revision, chain_id, tx_hash, state, outcome)
+            SELECT
+                execution_id,
+                MAX(revision) + 1,
+                chain_id,
+                tx_hash,
+                $2,
+                $2
+            FROM validator.validation_requests
+            WHERE execution_id = $1
+            GROUP BY execution_id, chain_id, tx_hash
+            "#,
+            execution_id.0.as_bytes().as_slice(),
+            outcome_str,
+        )
+        .execute(&self.db)
+        .await?;
+
+        tracing::debug!(%outcome_str, "validation outcome recorded");
+        Ok(())
+    }
 }
+
+// ============================================================
