@@ -18,6 +18,7 @@ pub enum ValidatorCommand {
 
 // ============================================================
 
+#[derive(Clone)]
 pub struct ValidatorHandle {
     tx: mpsc::Sender<ValidatorCommand>,
 }
@@ -49,11 +50,11 @@ impl Validator for ValidatorHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| ValidatorError::Internal("actor shut down".to_string()))?;
+            .map_err(|_| ValidatorError::Internal("validator actor shutdown".to_owned()))?;
 
         reply_rx
             .await
-            .map_err(|_| ValidatorError::Internal("actor shut down".to_string()))?
+            .map_err(|_| ValidatorError::Internal("validator actor has droped the reply channel".to_owned()))?
     }
 }
 
