@@ -1,14 +1,11 @@
 pub mod engine;
 pub mod handle;
-// pub mod rpc;
 
+use crate::validator::{engine::ValidatorEngine, handle::ValidatorHandle};
+use kernel::types::RpcProviderRegistry;
+use sqlx::PgPool;
 use std::time::Duration;
-
-use async_trait::async_trait;
-use kernel::{
-    traits::Validator,
-    types::{ChainId, ExecutionId, TxHash, ValidatorError, ValidatorOutcome},
-};
+use tokio::sync::mpsc;
 
 // ============================================================
 
@@ -39,26 +36,24 @@ impl Default for ValidatorConfig {
 
 // ============================================================
 
-pub struct ValidatorStub;
+/// Spawn a new `ValidatorEngine` actor and return a handle to it.
+///
+/// The actor runs in a background Tokio task and processes validation requests
+/// until the last handle is dropped (which closes the mpsc channel).
+pub fn spawn_validator_actor(
+    db: PgPool,
+    rpc_registry: RpcProviderRegistry,
+    config: ValidatorConfig,
+    buffer: usize,
+) -> ValidatorHandle {
+    let (tx, rx) = mpsc::channel(buffer);
+    let engine = ValidatorEngine::new(db, config, rpc_registry, rx);
 
-#[async_trait]
-impl Validator for ValidatorStub {
-    async fn validate(
-        &self,
-        _chain_id: ChainId,
-        execution_id: ExecutionId,
-        tx_hash: TxHash,
-    ) -> Result<ValidatorOutcome, ValidatorError> {
-        tracing::info!(
-            "[STUB] temp implementation: execution_id = {:?}, tx_hash = {:?}",
-            execution_id.0,
-            tx_hash
-        );
-        Ok(ValidatorOutcome::Included {
-            block_number: 10,
-            confirmations: 3,
-        })
-    }
+    tokio::spawn(async move {
+        engine.run().await;
+    });
+
+    ValidatorHandle::new(tx)
 }
 
 // ============================================================

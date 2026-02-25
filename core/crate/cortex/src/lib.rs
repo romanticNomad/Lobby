@@ -215,7 +215,7 @@ pub fn spawn_cortex(
     };
 
     // ============================================================
-    // validator handle 
+    // validator handle
 
     let validator_handle = {
         let handle = validator::spawn_validator_actor(
