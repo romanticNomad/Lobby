@@ -14,7 +14,7 @@ use kernel::{
 
 #[derive(Debug, Clone)]
 /// Configuration for the transaction validation process.
-pub struct ValidationConfig {
+pub struct ValidatorConfig {
     /// How often to poll the RPC node for a transaction receipt.
     pub poll_interval: Duration,
 
@@ -27,7 +27,7 @@ pub struct ValidationConfig {
     pub required_confirmation: u64, // default value '3' for rerorg safety.
 }
 
-impl Default for ValidationConfig {
+impl Default for ValidatorConfig {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_secs(3),
@@ -54,7 +54,10 @@ impl Validator for ValidatorStub {
             execution_id.0,
             tx_hash
         );
-        Ok(ValidatorOutcome::Included { block_number: 10, confirmations: 3 })
+        Ok(ValidatorOutcome::Included {
+            block_number: 10,
+            confirmations: 3,
+        })
     }
 }
 

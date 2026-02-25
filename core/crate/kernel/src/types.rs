@@ -216,9 +216,9 @@ pub struct BroadcastOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatorOutcome {
-    Included{
+    Included {
         block_number: u64,
-        confirmations: u64
+        confirmations: u64,
     },
     NotIncluded,
 }
