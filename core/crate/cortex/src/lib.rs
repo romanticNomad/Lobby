@@ -22,7 +22,7 @@ use crate::{
     pool::ShardPool,
     state::StatusRegistry,
 };
-use actors::{broadcast, nonce, relayhost, sign, validator::ValidatorStub};
+use actors::{broadcast, nonce, relayhost, sign, validator};
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
     types::{ClientConfig, Eip1559Transaction, ExecutionId, RpcProviderRegistry},
@@ -215,10 +215,18 @@ pub fn spawn_cortex(
     };
 
     // ============================================================
-    // validator handle (stub -> needs to be completed)
+    // validator handle 
 
-    let validator_handle = Arc::new(ValidatorStub) as Arc<dyn Validator>;
-    tracing::warn!("validator is running as a stub — block inclusion is NOT verified");
+    let validator_handle = {
+        let handle = validator::spawn_validator_actor(
+            db.clone(),
+            provider,
+            validator::ValidatorConfig::default(),
+            config.actor_buffer,
+        );
+        tracing::debug!("validate actor spawned");
+        Arc::new(handle) as Arc<dyn Validator>
+    };
 
     // ============================================================
     // pipeline semaphore
