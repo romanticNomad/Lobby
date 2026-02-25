@@ -24,7 +24,7 @@ pub struct ValidatorConfig {
 
     /// Number of block confirmations required before a transaction is
     /// considered definitively included (protection against shallow reorgs).
-    pub required_confirmation: u64, // default value '3' for rerorg safety.
+    pub required_confirmations: u64, // default value '3' for rerorg safety.
 }
 
 impl Default for ValidatorConfig {
@@ -32,7 +32,7 @@ impl Default for ValidatorConfig {
         Self {
             poll_interval: Duration::from_secs(3),
             timeout: Duration::from_secs(300),
-            required_confirmation: 3,
+            required_confirmations: 3,
         }
     }
 }
