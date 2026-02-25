@@ -186,55 +186,55 @@ impl ValidatorEngine {
     }
 
     /// Record a new validation request
-    // async fn record_validation_request(
-    //     &self,
-    //     chain_id: ChainId,
-    //     execution_id: ExecutionId,
-    //     tx_hash: TxHash
-    // ) -> Result<(), ValidatorError> {
-    //     let tx_hash_bytes = tx_hash.as_slice();
-    //     let chain_id_i64: i64 = chain_id
-    //     .0
-    //     .try_into()
-    //     .map_err(|_| ValidatorError::Internal("chain_id does not fit in i64".to_string()))?;
+    async fn record_validation_request(
+        &self,
+        chain_id: ChainId,
+        execution_id: ExecutionId,
+        tx_hash: TxHash
+    ) -> Result<(), ValidatorError> {
+        let tx_hash_bytes = tx_hash.as_slice();
+        let chain_id_i64: i64 = chain_id
+        .0
+        .try_into()
+        .map_err(|_| ValidatorError::Internal("chain_id does not fit in i64".to_string()))?;
         
-    //     sqlx::query!(
-    //         r#"
-    //         INSERT INTO validator.validation_requests
-    //             (execution_id, revision, chain_id, tx_hash, state)
-    //         SELECT
-    //             $1,
-    //             COALESCE(
-    //                 (SELECT MAX(revision)
-    //                  FROM validator.validation_requests
-    //                  WHERE execution_id = $1),
-    //                 0
-    //             ) + 1,
-    //             $2,
-    //             $3,
-    //             'pending'
-    //         WHERE NOT EXISTS (
-    //             SELECT 1
-    //             FROM validator.validation_requests
-    //             WHERE execution_id = $1
-    //               AND (
-    //                   state IN ('included', 'not_included')
-    //                   OR (
-    //                       state = 'pending'
-    //                       AND updated_at > now() - interval '5 minutes'
-    //                   )
-    //               )
-    //         )
-    //         "#,
-    //         execution_id.0.as_bytes().as_slice(),
-    //         chain_id_i64,
-    //         tx_hash_bytes,
-    //     )
-    //     .execute(&self.db)
-    //     .await?;
+        sqlx::query!(
+            r#"
+            INSERT INTO validator.validation_requests
+                (execution_id, revision, chain_id, tx_hash, state)
+            SELECT
+                $1,
+                COALESCE(
+                    (SELECT MAX(revision)
+                     FROM validator.validation_requests
+                     WHERE execution_id = $1),
+                    0
+                ) + 1,
+                $2,
+                $3,
+                'pending'
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM validator.validation_requests
+                WHERE execution_id = $1
+                  AND (
+                      state IN ('included', 'not_included')
+                      OR (
+                          state = 'pending'
+                          AND updated_at > now() - interval '5 minutes'
+                      )
+                  )
+            )
+            "#,
+            execution_id.0.as_bytes().as_slice(),
+            chain_id_i64,
+            tx_hash_bytes,
+        )
+        .execute(&self.db)
+        .await?;
 
-    //     tracing::debug!("validation request recorded");
-    //     Ok(())
-    // }
+        tracing::debug!("validation request recorded");
+        Ok(())
+    }
 
 }
