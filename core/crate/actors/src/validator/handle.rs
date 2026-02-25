@@ -52,9 +52,9 @@ impl Validator for ValidatorHandle {
             .await
             .map_err(|_| ValidatorError::Internal("validator actor shutdown".to_owned()))?;
 
-        reply_rx
-            .await
-            .map_err(|_| ValidatorError::Internal("validator actor has droped the reply channel".to_owned()))?
+        reply_rx.await.map_err(|_| {
+            ValidatorError::Internal("validator actor has droped the reply channel".to_owned())
+        })?
     }
 }
 

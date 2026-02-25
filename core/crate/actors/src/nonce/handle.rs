@@ -70,11 +70,11 @@ impl NonceManager for NonceHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| LocalError::Internal("NonceActor not available".to_string()))?;
+            .map_err(|_| LocalError::Internal("nonce actor has shut down".to_owned()))?;
 
-        reply_rx
-            .await
-            .map_err(|_| LocalError::Internal("NonceActor response corrupted".to_string()))?
+        reply_rx.await.map_err(|_| {
+            LocalError::Internal("nonce actor has dropped the reply channel".to_owned())
+        })?
     }
 
     async fn resolve(&self, execution_id: ExecutionId, outcome: bool) -> Result<(), LocalError> {
@@ -88,11 +88,11 @@ impl NonceManager for NonceHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| LocalError::Internal("NonceActor unavailable".into()))?;
+            .map_err(|_| LocalError::Internal("nonce actor has shut down".to_owned()))?;
 
-        reply_rx
-            .await
-            .map_err(|_| LocalError::Internal("NonceActor dropped response".into()))?
+        reply_rx.await.map_err(|_| {
+            LocalError::Internal("nonce actor has dropped the reply channel".to_owned())
+        })?
     }
 }
 

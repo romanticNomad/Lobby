@@ -56,11 +56,11 @@ impl Signer for SignHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| LocalError::Internal("SignEngine not available".to_string()))?;
+            .map_err(|_| LocalError::Internal("sign actor has shut down".to_owned()))?;
 
-        reply_rx
-            .await
-            .map_err(|_| LocalError::Internal("SignEngine response corrupted".to_string()))?
+        reply_rx.await.map_err(|_| {
+            LocalError::Internal("sign actor has dropped its reply channel".to_owned())
+        })?
     }
 }
 

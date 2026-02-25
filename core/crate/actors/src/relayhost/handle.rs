@@ -54,9 +54,11 @@ impl IntentRelay for RelayHostHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| RelayHostError::ActorShutdown)?;
+            .map_err(|_| RelayHostError::Internal("relayhost actor shutdown".to_owned()))?;
 
-        reply_rx.await.map_err(|_| RelayHostError::ActorShutdown)?
+        reply_rx.await.map_err(|_| {
+            RelayHostError::Internal("relayhost actor has dropped the reply channel".to_owned())
+        })?
     }
 }
 

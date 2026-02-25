@@ -227,18 +227,15 @@ pub enum ValidatorOutcome {
 pub enum RelayHostError {
     #[error("Invalid transaction: {0}")]
     ValidationFailed(String),
-
     #[error("Database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
-
-    #[error("Actor has shut down")]
-    ActorShutdown,
-
+    #[error("Internal error: {0}")]
+    Internal(String),
     #[error("From address mismatch: expected {expected}, got {actual}")]
     FromAddressMismatch { expected: String, actual: String },
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum LocalError {
     #[error("Db error: {0}")]
     DatabaseError(String),
@@ -268,18 +265,12 @@ pub enum BroadcastError {
 
 #[derive(Debug, Error)]
 pub enum ValidatorError {
-    #[error(
-        "validation timed out waiting for tx {tx_hash} on chain {:?}",
-        chain_id
-    )]
+    #[error("validation timed out: {tx_hash}, on chain {:?}", chain_id)]
     Timeout { chain_id: ChainId, tx_hash: TxHash },
-
     #[error("rpc error while polling for tx {tx_hash}: {message}")]
     Rpc { tx_hash: TxHash, message: String },
-
     #[error("transaction not included after max confirmations: {tx_hash}")]
     NotIncluded { tx_hash: TxHash },
-
     #[error("internal error: {0}")]
     Internal(String),
 }

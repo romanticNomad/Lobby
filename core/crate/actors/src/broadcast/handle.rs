@@ -56,10 +56,10 @@ impl Broadcaster for BroadcastHandle {
         self.tx
             .send(cmd)
             .await
-            .map_err(|_| BroadcastError::Internal("BroadcastEngine not available".to_string()))?;
+            .map_err(|_| BroadcastError::Internal("broadcast actor has shut down".to_owned()))?;
 
         reply_rx.await.map_err(|_| {
-            BroadcastError::Internal("BroadcastEngine response corrupted".to_string())
+            BroadcastError::Internal("broadcast actor has dropped its reply channel".to_owned())
         })?
     }
 }
