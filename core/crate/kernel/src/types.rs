@@ -215,7 +215,7 @@ pub struct BroadcastOutcome {
 // ============================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ValidationOutcome {
+pub enum ValidatorOutcome {
     Included,
     NotIncluded,
 }
@@ -279,6 +279,9 @@ pub enum ValidatorError {
 
     #[error("transaction not included after max confirmations: {tx_hash}")]
     NotIncluded { tx_hash: TxHash },
+
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 // ============================================================

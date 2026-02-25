@@ -58,7 +58,7 @@ pub trait Validator: Send + Sync {
         chain_id: ChainId,
         execution_id: ExecutionId,
         tx_hash: TxHash,
-    ) -> Result<ValidationOutcome, ValidatorError>;
+    ) -> Result<ValidatorOutcome, ValidatorError>;
 }
 
 // ============================================================

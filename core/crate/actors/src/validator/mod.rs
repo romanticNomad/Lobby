@@ -5,7 +5,7 @@ pub mod handle;
 use async_trait::async_trait;
 use kernel::{
     traits::Validator,
-    types::{ChainId, ExecutionId, TxHash, ValidationOutcome, ValidatorError},
+    types::{ChainId, ExecutionId, TxHash, ValidatorError, ValidatorOutcome},
 };
 
 // ============================================================
@@ -19,13 +19,13 @@ impl Validator for ValidatorStub {
         _chain_id: ChainId,
         execution_id: ExecutionId,
         tx_hash: TxHash,
-    ) -> Result<ValidationOutcome, ValidatorError> {
+    ) -> Result<ValidatorOutcome, ValidatorError> {
         tracing::info!(
             "[STUB] temp implementation: execution_id = {:?}, tx_hash = {:?}",
             execution_id.0,
             tx_hash
         );
-        Ok(ValidationOutcome::Included)
+        Ok(ValidatorOutcome::Included)
     }
 }
 
