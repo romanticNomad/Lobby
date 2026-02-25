@@ -70,6 +70,8 @@ impl ValidatorEngine {
         tracing::info!("validator engine stopped");
     }
 
+    // ============================================================
+
     async fn handle_validation(
         &self,
         chain_id: ChainId,
@@ -107,7 +109,7 @@ impl ValidatorEngine {
                     // transaction is mined -> check status
                     // status=0
                     if !receipt.status() {
-                        tracing::warn!("transaction reverted on-chain {status=0}");
+                        tracing::warn!("transaction reverted on-chain status=0");
                         let outcome = ValidatorOutcome::NotIncluded;
                         self.record_outcome(execution_id, outcome.clone()).await?;
                         return Err(ValidatorError::Reverted { tx_hash });
@@ -124,7 +126,7 @@ impl ValidatorEngine {
                             confirmations,
                             "transaction confirmed"
                         );
-                        let outcome = ValidatorOutcome::Included { block_number: tx_bloxk, confirmations };
+                        let outcome = ValidatorOutcome::Included { block_number: tx_block, confirmations };
                         self.record_outcome(execution_id, outcome.clone()).await?;
                         return Ok(outcome);
                     } else {
@@ -136,12 +138,103 @@ impl ValidatorEngine {
                     }
                 }
                 Ok(None) => {
-
+                    // transaction not yet mined
+                    tracing::debug!("receipt not found, polling rpc");
                 }
                 Err(e) => {
-
+                    // RPC error — log and retry (caller will handle timeout)
+                    tracing::warn!(%e, "rpc error while fetching receipt, will retry");
                 }
             }
+
+            // sleep before next poll
+            tokio::time::sleep(self.config.poll_interval).await;
         }
     }
+
+    // ============================================================
+    // Db operations;
+
+    /// Check if this execution_id has already been validated (idempotency).
+    async fn check_cached_result(
+        &self,
+        execution_id: ExecutionId
+    ) -> Result<Option<ValidatorOutcome>, ValidatorError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT outcome
+            FROM validator.validation_requests
+            WHERE execution_id = $1
+                AND outcome IS NOT NULL
+                AND updated_at > now() - interval '5 minutes'
+            ORDER BY revision DESC
+            LIMIT 1
+            "#,
+            execution_id.0.as_bytes().as_slice()
+        )
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(row.and_then(|r| match r.outcome.as_deref() {
+            Some("included") => Some(ValidatorOutcome::Included {
+                block_number: 0, // needs to be added to db
+                confirmations: 0,
+            }),
+            Some("not_included") => Some(ValidatorOutcome::NotIncluded),
+            _ => None,
+        }))
+    }
+
+    /// Record a new validation request
+    // async fn record_validation_request(
+    //     &self,
+    //     chain_id: ChainId,
+    //     execution_id: ExecutionId,
+    //     tx_hash: TxHash
+    // ) -> Result<(), ValidatorError> {
+    //     let tx_hash_bytes = tx_hash.as_slice();
+    //     let chain_id_i64: i64 = chain_id
+    //     .0
+    //     .try_into()
+    //     .map_err(|_| ValidatorError::Internal("chain_id does not fit in i64".to_string()))?;
+        
+    //     sqlx::query!(
+    //         r#"
+    //         INSERT INTO validator.validation_requests
+    //             (execution_id, revision, chain_id, tx_hash, state)
+    //         SELECT
+    //             $1,
+    //             COALESCE(
+    //                 (SELECT MAX(revision)
+    //                  FROM validator.validation_requests
+    //                  WHERE execution_id = $1),
+    //                 0
+    //             ) + 1,
+    //             $2,
+    //             $3,
+    //             'pending'
+    //         WHERE NOT EXISTS (
+    //             SELECT 1
+    //             FROM validator.validation_requests
+    //             WHERE execution_id = $1
+    //               AND (
+    //                   state IN ('included', 'not_included')
+    //                   OR (
+    //                       state = 'pending'
+    //                       AND updated_at > now() - interval '5 minutes'
+    //                   )
+    //               )
+    //         )
+    //         "#,
+    //         execution_id.0.as_bytes().as_slice(),
+    //         chain_id_i64,
+    //         tx_hash_bytes,
+    //     )
+    //     .execute(&self.db)
+    //     .await?;
+
+    //     tracing::debug!("validation request recorded");
+    //     Ok(())
+    // }
+
 }
