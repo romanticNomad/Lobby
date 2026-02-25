@@ -216,7 +216,10 @@ pub struct BroadcastOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatorOutcome {
-    Included,
+    Included{
+        block_number: u64,
+        confirmations: u64
+    },
     NotIncluded,
 }
 
@@ -225,52 +228,82 @@ pub enum ValidatorOutcome {
 
 #[derive(Debug, Error)]
 pub enum RelayHostError {
+    /// Transaction was rejected by RelayHost validation (client-facing failure).
     #[error("Invalid transaction: {0}")]
     ValidationFailed(String),
+    /// Database failure while recording RelayHost state.
     #[error("Database error: {0}")]
     DatabaseError(#[from] sqlx::Error),
+    /// Catch-all for unexpected internal failures (bugs / integration issues).
     #[error("Internal error: {0}")]
     Internal(String),
+    /// Authenticated `from` address did not match the transaction `from`.
     #[error("From address mismatch: expected {expected}, got {actual}")]
     FromAddressMismatch { expected: String, actual: String },
 }
 
+/// Errors for local (non-RPC) pipeline stages such as Nonce reservation and Sign.
 #[derive(Debug, Error)]
 pub enum LocalError {
+    /// Database query/execute failure represented as a string for easy surfacing.
     #[error("Db error: {0}")]
     DatabaseError(String),
+    /// Catch-all for unexpected internal failures (including actor shutdown).
     #[error("Internal error: {0}")]
     Internal(String),
+    /// An internal consistency invariant was violated (usually a bug or bad state).
     #[error("Internal error: {0}")]
     Invariant(String),
+    /// Request was rejected due to invalid inputs or policy.
     #[error("Rejected: {0}")]
     Rejected(String),
 }
 
 #[derive(Debug, Error)]
 pub enum BroadcastError {
+    /// Catch-all for unexpected internal failures (including actor shutdown).
     #[error("Internal: {0}")]
     Internal(String),
+    /// Database failure while recording broadcast state.
     #[error("DB error: {0}")]
     DatabaseError(String),
+    /// An internal consistency invariant was violated (usually a bug or bad state).
     #[error("Invariant error: {0}")]
     Invariant(String),
+    /// No RPC provider was configured for the given chain.
     #[error("Provider error: {:?}", chain_id)]
     MissingProvider { chain_id: ChainId },
+    /// Provider deterministically rejected the transaction (nonce/funds/etc).
     #[error("Tx request rejected by provider: {}", reason)]
     Rejected { reason: String },
+    /// Provider failed in a non-deterministic / unexpected way.
     #[error("Unexpected error: {}", message)]
     Unexpected { message: String },
 }
 
 #[derive(Debug, Error)]
 pub enum ValidatorError {
-    #[error("validation timed out: {tx_hash}, on chain {:?}", chain_id)]
-    Timeout { chain_id: ChainId, tx_hash: TxHash },
+    /// Validation timed out waiting for the transaction to be included.
+    /// The transaction may still be pending in the mempool, or it was dropped.
+    #[error(
+        "validation timed out: {tx_hash}, after: {timeout_sec}, on chain {:?}",
+        chain_id
+    )]
+    Timeout {
+        chain_id: ChainId,
+        tx_hash: TxHash,
+        timeout_sec: u64,
+    },
+    /// RPC node returned an error while polling for the transaction receipt.
     #[error("rpc error while polling for tx {tx_hash}: {message}")]
     Rpc { tx_hash: TxHash, message: String },
-    #[error("transaction not included after max confirmations: {tx_hash}")]
-    NotIncluded { tx_hash: TxHash },
+    /// Transaction was mined but with status=0 (execution reverted).
+    #[error("transaction {tx_hash:#x} reverted on-chain (status=0)")]
+    Reverted { tx_hash: TxHash },
+    /// Database error while recording validation state.
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+    /// fallback internal code error
     #[error("internal error: {0}")]
     Internal(String),
 }
