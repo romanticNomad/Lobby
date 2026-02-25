@@ -1,3 +1,39 @@
+
+//! Actor that validates whether broadcast transactions have been included on-chain.
+//!
+//! ## Responsibilities
+//! - Poll RPC nodes for transaction receipts
+//! - Track confirmation depth (protection against shallow reorgs)
+//! - Timeout and return `NotIncluded` if the transaction is never mined
+//! - Detect reverted transactions (status=0)
+//!
+//! ## State tracking
+//! - PostgreSQL schema: `validator.validation_requests`
+//! - Revision-based audit trail: `(execution_id, revision)` composite PK
+//! - Lease-based idempotency: 5-minute window for duplicate requests
+//!
+//! ## Usage
+//! ```rust
+//! use validator::{spawn_validator_actor, ValidationConfig, RpcProviderRegistry};
+//! use sqlx::PgPool;
+//! use std::sync::Arc;
+//! use dashmap::DashMap;
+//!
+//! let db_pool: PgPool = /* ... */;
+//! let rpc_registry: RpcProviderRegistry = /* shared with broadcast actor */;
+//! let config = ValidationConfig::default();
+//!
+//! let handle = spawn_validator_actor(
+//!     db_pool,
+//!     rpc_registry,
+//!     config,
+//!     64, // mpsc buffer size
+//! );
+//!
+//! // Use the handle (it implements the Validator trait)
+//! let outcome = handle.validate(chain_id, execution_id, tx_hash).await?;
+//! ```
+
 pub mod engine;
 pub mod handle;
 
