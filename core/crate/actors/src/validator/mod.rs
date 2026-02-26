@@ -1,4 +1,3 @@
-
 //! Actor that validates whether broadcast transactions have been included on-chain.
 //!
 //! ## Responsibilities

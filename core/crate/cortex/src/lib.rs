@@ -33,7 +33,6 @@ use tokio::sync::Semaphore;
 
 pub mod config;
 pub mod error;
-#[allow(dead_code)]
 pub mod pipeline;
 pub mod pool;
 pub mod retry;
@@ -46,7 +45,6 @@ struct Cortex {
     // state metadata
     cortex_config: CortexConfig,
     status_registry: Arc<StatusRegistry>,
-    semaphore: Arc<Semaphore>,
 
     // actor artifacts
     relayhost: Arc<dyn IntentRelay>,
@@ -54,12 +52,13 @@ struct Cortex {
     sign: Arc<ShardPool<dyn Signer>>,
     broadcast: Arc<ShardPool<dyn Broadcaster>>,
     validator: Arc<dyn Validator>,
+    semaphore: Arc<Semaphore>,
 }
 
 // ============================================================
 // handle
 
-///cheap to clone handle to the orchestrator.
+/// cheap to clone handle to the orchestrator.
 #[derive(Clone)]
 pub struct CortextHandle {
     inner: Arc<Cortex>,
@@ -126,13 +125,13 @@ impl CortextHandle {
             status: Arc::clone(&orch.status_registry),
         };
 
-        // ============================================================
+        // ===========================================================
+
         // Spawn the pipeline task
         // The semaphore permit is moved into the task and dropped when the
         // task completes, automatically freeing a slot.
-
         tokio::spawn(async move {
-            let _permit = permit;
+            let permit = permit;
             run_pipeline(ctx).await;
         });
 
