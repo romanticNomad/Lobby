@@ -137,6 +137,12 @@ impl CortextHandle {
 
         Ok(())
     }
+
+    // ===========================================================
+    /// simple helper for obtaining StatusRegistry clone
+    pub fn status_registry(&self) -> Arc<StatusRegistry> {
+        Arc::clone(&self.inner.status_registry)
+    }
 }
 
 // ============================================================
@@ -151,9 +157,9 @@ pub fn spawn_cortex(
     config: CortexConfig,
 ) -> CortextHandle {
     tracing::info!(
-        nonce_shards = config.nonce_shard,
-        sign_shards = config.sign_shard,
-        broadcast_shards = config.broadcast_shard,
+        nonce_shards = config.nonce_shards,
+        sign_shards = config.sign_shards,
+        broadcast_shards = config.broadcast_shards,
         pipeline = config.pipeline_concurrency,
         "spawning cortex actor pools"
     );
@@ -162,7 +168,7 @@ pub fn spawn_cortex(
     // nonce pool - keyed by from address.
 
     let nonce_pool = {
-        let shards: Vec<Arc<dyn NonceManager>> = (0..config.nonce_shard)
+        let shards: Vec<Arc<dyn NonceManager>> = (0..config.nonce_shards)
             .map(|i| {
                 let handle = nonce::spawn_nonce_actor(db.clone(), config.actor_buffer);
                 tracing::debug!(shard = i, "nonce actor spawned");
@@ -176,7 +182,7 @@ pub fn spawn_cortex(
     // sign pool - keyed by execution_id.
 
     let sign_pool = {
-        let shards: Vec<Arc<dyn Signer>> = (0..config.sign_shard)
+        let shards: Vec<Arc<dyn Signer>> = (0..config.sign_shards)
             .map(|i| {
                 let handle = sign::spawn_sign_actor(db.clone(), config.actor_buffer);
                 tracing::debug!(shard = i, "sign actor spawned");
@@ -190,7 +196,7 @@ pub fn spawn_cortex(
     // broadcast pool - keyed by chain_id.
 
     let broadcast_pool = {
-        let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shard)
+        let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shards)
             .map(|i| {
                 let handle = broadcast::spawn_broadcast_actor(
                     db.clone(),

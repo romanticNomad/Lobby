@@ -110,7 +110,7 @@ pub struct StatusErrorResponce {
 /// - `400 Bad Request` — `execution_id` is not a valid UUID
 /// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
 pub async fn get_transaction_status(
-    State(registry): State<StatusRegistry>,
+    State(registry): State<Arc<StatusRegistry>>,
     Path(raw_id): Path<String>,
 ) -> Result<Json<StatusUpdateResponse>, (StatusCode, Json<StatusErrorResponce>)> {
     // parse execution_id
