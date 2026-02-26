@@ -12,7 +12,7 @@ use thiserror::Error;
 // ============================================================
 // EIP-1193 eth_sendTransaction request parameters.
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Eip1193SendTransactionParams {
     pub from: Address,
@@ -32,7 +32,7 @@ pub struct Eip1193SendTransactionParams {
     pub access_list: Option<Vec<AccessListItem>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessListItem {
     pub address: Address,
