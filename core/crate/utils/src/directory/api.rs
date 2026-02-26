@@ -1,7 +1,7 @@
 use alloy::primitives::Address;
 use dashmap::DashMap;
 use kernel::types::{ApiKey, ClientConfig};
-use std::{env, str::FromStr};
+use std::{env, str::FromStr, sync::Arc};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -22,7 +22,7 @@ pub enum EnvApiKeyError {
 // ============================================================
 // function for loading api keys from the env (for dev testing only)
 
-pub fn load_api_key_from_env() -> Result<DashMap<ApiKey, ClientConfig>, EnvApiKeyError> {
+pub fn load_api_key_from_env() -> Result<Arc<DashMap<ApiKey, ClientConfig>>, EnvApiKeyError> {
     let api_keys = DashMap::new();
 
     // Format: LOBBY_API_KEY_<N>=<api_key>:<client_id>:<from_address>
@@ -59,7 +59,7 @@ pub fn load_api_key_from_env() -> Result<DashMap<ApiKey, ClientConfig>, EnvApiKe
         return Err(EnvApiKeyError::ApiKeyUnavailable);
     }
 
-    Ok(api_keys)
+    Ok(Arc::new(api_keys))
 }
 
 // ============================================================
