@@ -162,6 +162,18 @@ impl TryFrom<i64> for ChainId {
     }
 }
 
+impl std::str::FromStr for ChainId {
+    type Err = LocalError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value: i64 = s
+            .parse()
+            .map_err(|e| LocalError::Rejected(format!("Invalid chain id string `{s}`: {e}")))?;
+
+        ChainId::try_from(value)
+    }
+}
+
 impl fmt::Display for ChainId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
