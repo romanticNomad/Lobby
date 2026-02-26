@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr, sync::Arc};
+pub mod server;
 
 use crate::server::{AppState, auth::auth_middleware, handler::submit_transaction};
 use axum::{
@@ -7,10 +7,9 @@ use axum::{
 };
 use cortex::{config::CortexConfig, spawn_cortex, state::get_transaction_status};
 use sqlx::postgres::PgPoolOptions;
+use std::{env, net::SocketAddr};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utils::directory::{load_api_key_from_env, load_rpc_endpoints_from_env};
-
-pub mod server;
 
 // ============================================================
 // lobby boot sequence
@@ -93,14 +92,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // axum app
 
     let status_registry = cortex_handler.status_registry();
-    let state = AppState::new(api_registry, cortex_handler);
+    let state = AppState::new(api_registry, cortex_handler, status_registry);
 
     let app = Router::new()
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
         .route("/", post(submit_transaction))
         // Status polling — clients poll until `confirmed` or `failed`
         .route("/status/:execution_id", get(get_transaction_status))
-        .with_state(status_registry)
         // Auth middleware applied to all routes
         .layer(middleware::from_fn_with_state(
             state.clone(),
