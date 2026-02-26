@@ -58,17 +58,16 @@ pub struct StatusRegistry {
 }
 
 impl StatusRegistry {
+    /// return cortex state book (cheap to clone Dashmap)
     pub fn new() -> Self {
         Self {
             status_book: Arc::new(DashMap::new()),
         }
     }
-
     /// fn to record or overwrite status of pipeline
     pub fn set(&self, execution_id: ExecutionId, status: PipelineStatus) {
         self.status_book.insert(execution_id, status);
     }
-
     /// fn to retrieve pipeline status
     pub fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus> {
         self.status_book.get(&execution_id).map(|v| v.clone())
@@ -87,7 +86,7 @@ impl Default for StatusRegistry {
 // HTTP response
 
 #[derive(Debug, Serialize)]
-pub struct StatusResponse {
+pub struct StatusUpdateResponse {
     pub execution_id: String,
     #[serde(flatten)]
     pub status: PipelineStatus,
@@ -107,13 +106,13 @@ pub struct StatusErrorResponce {
 /// this until status is `confirmed` or `failed`.
 ///
 /// # Responses
-/// - `200 OK` — known execution_id, returns `StatusResponse`
+/// - `200 OK` — known execution_id, returns `StatusUpdateResponse`
 /// - `400 Bad Request` — `execution_id` is not a valid UUID
 /// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
 pub async fn get_transaction_status(
     State(registry): State<StatusRegistry>,
     Path(raw_id): Path<String>,
-) -> Result<Json<StatusResponse>, (StatusCode, Json<StatusErrorResponce>)> {
+) -> Result<Json<StatusUpdateResponse>, (StatusCode, Json<StatusErrorResponce>)> {
     // parse execution_id
     let uuid = Uuid::parse_str(&raw_id).map_err(|_| {
         (
@@ -127,7 +126,7 @@ pub async fn get_transaction_status(
     let execution_id = ExecutionId(uuid);
 
     match registry.get(&execution_id) {
-        Some(status) => Ok(Json(StatusResponse {
+        Some(status) => Ok(Json(StatusUpdateResponse {
             execution_id: raw_id,
             status,
         })),

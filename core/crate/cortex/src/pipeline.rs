@@ -7,14 +7,13 @@ use crate::{
 };
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{ClientConfig, Eip1559Transaction, ExecutionId},
+    types::{ClientConfig, Eip1559Transaction, ExecutionId, ValidatorOutcome},
 };
 use std::sync::Arc;
 use tracing::Instrument;
 
 // ============================================================
 // context
-
 /// all the entities that pipeline would need,
 /// wrapped in a cheap-to-clone struct
 #[derive(Clone)]
@@ -29,9 +28,9 @@ pub(crate) struct PipelineContext {
     pub validator_handle: Arc<dyn Validator>,
 
     // actor pools
-    pub broadcast_pool: Arc<ShardPool<dyn Broadcaster>>,
     pub nonce_pool: Arc<ShardPool<dyn NonceManager>>,
     pub sign_pool: Arc<ShardPool<dyn Signer>>,
+    pub broadcast_pool: Arc<ShardPool<dyn Broadcaster>>,
 
     // retry
     pub retry_config: RetryConfig,
@@ -76,7 +75,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         tracing::info!("Pipeline started");
 
         // ============================================================
-        // RelayHost
+        // relay host
 
         let rh_result = retry_with_backoff(&ctx.retry_config, "relay_host", || {
             let rh = Arc::clone(&ctx.relayhost_handle);
@@ -193,7 +192,54 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // validator
 
-        // will be drafted after validator actor is built
+        let validation = match retry_with_backoff(&ctx.retry_config, "validator", || {
+            let v = Arc::clone(&ctx.validator_handle);
+            async move { v.validate(chain_id, execution_id, tx_hash).await }
+        })
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                let err = CortexError::NotIncluded(e);
+                record_faliure(&ctx.status, execution_id, &err);
+                return;
+            }
+        };
+
+        match validation {
+            ValidatorOutcome::Included {
+                block_number,
+                confirmations,
+            } => {
+                finalise_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+
+                ctx.status.set(
+                    execution_id,
+                    PipelineStatus::Confirmed {
+                        tx_hash: format!("{tx_hash:#x}"),
+                    },
+                );
+                tracing::info!(
+                    %tx_hash,
+                    block_number,
+                    confirmations,
+                    "transaction confirmed on-chain"
+                );
+            }
+            ValidatorOutcome::NotIncluded => {
+                tracing::warn!(%tx_hash, "transaction not included (reorg or eviction)");
+                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+
+                ctx.status.set(
+                    execution_id,
+                    PipelineStatus::Failed {
+                        stage: "validator".to_owned(),
+                        reason: format!("tx {tx_hash:#x} not included on-chain"),
+                    },
+                );
+            }
+        }
 
         // ============================================================
 
@@ -266,7 +312,6 @@ fn record_faliure(registry: &StatusRegistry, execution_id: ExecutionId, err: &Co
         %err,
         "pipeline hard fail",
     );
-
     registry.set(
         execution_id,
         PipelineStatus::Failed {

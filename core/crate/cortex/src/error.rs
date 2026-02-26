@@ -1,4 +1,4 @@
-use kernel::types::{BroadcastError, LocalError, RelayHostError};
+use kernel::types::{BroadcastError, LocalError, RelayHostError, ValidatorError};
 use thiserror::Error;
 
 // ============================================================
@@ -10,22 +10,16 @@ use thiserror::Error;
 /// trivially bucket failures by stage.
 #[derive(Debug, Error)]
 pub enum CortexError {
-    // ============================================================
-    // backpressure
     /// The pipeline semaphore was exhausted and the caller timed out waiting
     /// for a permit.  The caller should back off and retry at the submission
     /// layer (i.e. return HTTP 429 to the DApp).
     #[error("pipeline semaphore timed out after {timeout_ms}ms — server is overloaded")]
     BackpressureTimeout { timeout_ms: u64 },
 
-    // ============================================================
-    // RelayHost stage error.
     /// error statement is self explainatory of the purpose
     #[error("relay-host rejected or failed to record the transaction after retries: {0}")]
     RelayHost(#[from] RelayHostError),
 
-    // ============================================================
-    // Nonce stage error
     /// nonce reservation failed after all retries
     /// and no nonce was commited
     #[error("nonce reservation failed after retries: {0}")]
@@ -36,30 +30,22 @@ pub enum CortexError {
     #[error("nonce resolve failed (lease will expire): {0}")]
     NonceResolve(LocalError),
 
-    // ============================================================
-    // Sign stage error
     /// signing is failed after all retries. This is a fatal error
     /// nonce must be released before this error surfaces
     #[error("signing failed after retries: {0}")]
     Sign(LocalError),
 
-    // ============================================================
-    // Broadcast stage error
     /// Broadcast failed after all retries. The nonce is explicitly released
     /// before this error is surfaced.
     #[error("broadcast failed after retries: {0}")]
     Broadcast(#[from] BroadcastError),
 
-    // ============================================================
-    // Validator stage error
+    /// The validator confirmed that the transaction was not included on-chain
+    /// (chain reorg or persistent underpricing).  The nonce is released.
+    #[error("transaction not included on-chain: {0}")]
+    NotIncluded(#[from] ValidatorError),
 
-    // /// The validator confirmed that the transaction was not included on-chain
-    // /// (chain reorg or persistent underpricing).  The nonce is released.
-    // #[error("transaction not included on-chain: {0}")]
-    // NotIncluded(#[from] ValidatorError),
-
-    // ============================================================
-    // internal / unexpected
+    /// internal system error
     #[error("internal orchestrator error: {0}")]
     Internal(String),
 }
@@ -83,7 +69,7 @@ impl CortexError {
             Self::NonceResolve(_) => "nonce_resolve",
             Self::Sign(_) => "sign",
             Self::Broadcast(_) => "broadcast",
-            // Self::NotIncluded(_) => "validator",
+            Self::NotIncluded(_) => "validator",
             Self::Internal(_) => "internal",
         }
     }

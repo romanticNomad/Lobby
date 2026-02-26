@@ -42,7 +42,7 @@ pub mod state;
 // Cortex (orchestrator) struct.
 
 struct Cortex {
-    // state metadata
+    // state artifacts
     cortex_config: CortexConfig,
     status_registry: Arc<StatusRegistry>,
 
@@ -118,9 +118,9 @@ impl CortextHandle {
             txn,
             relayhost_handle: Arc::clone(&orch.relayhost),
             validator_handle: Arc::clone(&orch.validator),
-            broadcast_pool: Arc::clone(&orch.broadcast),
             nonce_pool: Arc::clone(&orch.nonce),
             sign_pool: Arc::clone(&orch.sign),
+            broadcast_pool: Arc::clone(&orch.broadcast),
             retry_config: orch.cortex_config.retry.clone(),
             status: Arc::clone(&orch.status_registry),
         };
@@ -131,7 +131,7 @@ impl CortextHandle {
         // The semaphore permit is moved into the task and dropped when the
         // task completes, automatically freeing a slot.
         tokio::spawn(async move {
-            let permit = permit;
+            let _permit = permit;
             run_pipeline(ctx).await;
         });
 
@@ -140,11 +140,11 @@ impl CortextHandle {
 }
 
 // ============================================================
+
 // Cortex (orchestrator) boot function
 
 /// Spawn all actor shards and assemble the `OrchestratorHandle`.
-/// panics if number of shards in cofig = 0.
-
+/// panics if number of shards in config = 0.
 pub fn spawn_cortex(
     db: PgPool,
     provider: RpcProviderRegistry,
