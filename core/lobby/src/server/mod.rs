@@ -1,7 +1,7 @@
 pub mod auth;
 pub mod handler;
 
-use cortex::{CortextHandle, state::StatusRegistry};
+use cortex::{CortextHandle, artifacts::state::StatusRegistry};
 use dashmap::DashMap;
 use kernel::types::{ApiKey, ClientConfig};
 use std::sync::Arc;

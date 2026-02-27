@@ -36,7 +36,7 @@ impl RelayHostHandle {
 
 #[async_trait]
 impl IntentRelay for RelayHostHandle {
-    async fn send_transaction(
+    async fn register_transaction(
         &self,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,

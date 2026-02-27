@@ -3,6 +3,45 @@ use kernel::types::ExecutionId;
 use serde::Serialize;
 use std::sync::Arc;
 
+
+// ============================================================
+// registry
+
+/// Shared, cheaply-cloneable registry of in-flight and recently-completed
+/// pipeline statuses.
+///
+/// Backed by `DashMap` (concurrent HashMap) — no global lock, one lock per
+/// shard (64 by default).  Reads and writes are O(1).
+#[derive(Clone, Debug)]
+pub struct StatusRegistry {
+    status_book: Arc<DashMap<ExecutionId, PipelineStatus>>,
+}
+
+impl StatusRegistry {
+    /// return cortex state book (cheap to clone Dashmap)
+    pub fn new() -> Self {
+        Self {
+            status_book: Arc::new(DashMap::new()),
+        }
+    }
+    /// fn to record or overwrite status of pipeline
+    pub fn set(&self, execution_id: ExecutionId, status: PipelineStatus) {
+        self.status_book.insert(execution_id, status);
+    }
+    /// fn to retrieve pipeline status
+    pub fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus> {
+        self.status_book.get(&execution_id).map(|v| v.clone())
+    }
+}
+
+impl Default for StatusRegistry {
+    fn default() -> Self {
+        Self {
+            status_book: Arc::new(DashMap::new()),
+        }
+    }
+}
+
 // ============================================================
 // tracking pipeline status
 
@@ -46,44 +85,6 @@ pub struct JsonStatusResponse {
     pub execution_id: String,
     #[serde(flatten)]
     pub status: PipelineStatus,
-}
-
-// ============================================================
-// registry
-
-/// Shared, cheaply-cloneable registry of in-flight and recently-completed
-/// pipeline statuses.
-///
-/// Backed by `DashMap` (concurrent HashMap) — no global lock, one lock per
-/// shard (64 by default).  Reads and writes are O(1).
-#[derive(Clone, Debug)]
-pub struct StatusRegistry {
-    status_book: Arc<DashMap<ExecutionId, PipelineStatus>>,
-}
-
-impl StatusRegistry {
-    /// return cortex state book (cheap to clone Dashmap)
-    pub fn new() -> Self {
-        Self {
-            status_book: Arc::new(DashMap::new()),
-        }
-    }
-    /// fn to record or overwrite status of pipeline
-    pub fn set(&self, execution_id: ExecutionId, status: PipelineStatus) {
-        self.status_book.insert(execution_id, status);
-    }
-    /// fn to retrieve pipeline status
-    pub fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus> {
-        self.status_book.get(&execution_id).map(|v| v.clone())
-    }
-}
-
-impl Default for StatusRegistry {
-    fn default() -> Self {
-        Self {
-            status_book: Arc::new(DashMap::new()),
-        }
-    }
 }
 
 // ============================================================

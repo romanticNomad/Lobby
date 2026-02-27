@@ -1,11 +1,11 @@
-use cortex::retry::*;
+use cortex::artifacts::retry::*;
 
 // ============================================================
 // testing of the generic retry function:
 
 #[cfg(test)]
 mod tests {
-    use cortex::config::RetryConfig;
+    use cortex::artifacts::config::RetryConfig;
 
     use super::*;
     use std::{

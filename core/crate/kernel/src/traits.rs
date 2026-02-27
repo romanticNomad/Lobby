@@ -66,7 +66,7 @@ pub trait Validator: Send + Sync {
 
 #[async_trait]
 pub trait IntentRelay: Send + Sync {
-    async fn send_transaction(
+    async fn register_transaction(
         &self,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,

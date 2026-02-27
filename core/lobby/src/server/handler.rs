@@ -6,8 +6,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use cortex::{
-    error::CortexError,
-    state::{JsonStatusResponse, StatusRegistry},
+    artifacts::error::CortexError,
+    artifacts::state::{JsonStatusResponse, StatusRegistry},
 };
 use kernel::types::{
     AuthenticatedClient, Eip1193SendTransactionParams, ExecutionId, JsonRpcError,

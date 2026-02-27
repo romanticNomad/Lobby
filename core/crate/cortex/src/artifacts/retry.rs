@@ -1,7 +1,7 @@
-use crate::config::RetryConfig;
 use rand::Rng;
 use std::time::Duration;
 use tracing::Instrument;
+use crate::artifacts::RetryConfig;
 
 // ============================================================
 // setting up retry facility

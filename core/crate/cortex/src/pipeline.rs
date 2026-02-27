@@ -1,8 +1,8 @@
 use crate::{
-    config::RetryConfig,
-    error::CortexError,
-    pool::{ByAddress, ByChainId, ByExecutionId, ShardPool},
-    retry::retry_with_backoff,
+    artifacts::config::RetryConfig,
+    artifacts::error::CortexError,
+    artifacts::pool::{ByAddress, ByChainId, ByExecutionId, ShardPool},
+    artifacts::retry::retry_with_backoff,
     state::{PipelineStatus, StatusRegistry},
 };
 use kernel::{
@@ -82,7 +82,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             let txn = ctx.txn.clone();
             let cc = ctx.client_config.clone();
 
-            async move { rh.send_transaction(execution_id, txn, cc).await }
+            async move { rh.register_transaction(execution_id, txn, cc).await }
         })
         .await;
 

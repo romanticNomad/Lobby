@@ -3,24 +3,24 @@
 //! Wires together all Lobby actors into a single pipeline:
 //!
 //! ```text
-//! submit()
-//!   └─ RelayHost.send_transaction()   [retried, idempotent]
-//!        └─ spawn pipeline task (semaphore-gated)
-//!              ├─ Nonce.reserve()     [retried]
-//!              ├─ Sign.sign()         [retried; releases nonce on hard-fail]
-//!              ├─ Broadcast.broadcast()[retried; releases nonce on hard-fail]
-//!              └─ Validator.validate()[retried; releases nonce on hard-fail]
+//! send_transaction
+//!   └─ cortex_handler.submit(..)
+//!        └─ spawn pipeline task (semaphore-gated)  [hard fail on backpressrue timeup or internal error]
+//!              ├─ RelayHost.register_transaction() [retried, idempotent]
+//!              ├─ Nonce.reserve()                  [retried]
+//!              ├─ Sign.sign()                      [retried; releases nonce on hard-fail]
+//!              ├─ Broadcast.broadcast()            [retried; releases nonce on hard-fail]
+//!              └─ Validator.validate()             [retried; releases nonce on hard-fail]
 //! ```
 //!
 //! The `OrchestratorHandle` is a cheap `Arc`-backed clone that can be placed
 //! in Axum's `AppState`.
 
+pub mod artifacts;
+pub mod pipeline;
+
 use crate::{
-    config::CortexConfig,
-    error::CortexError,
-    pipeline::{PipelineContext, run_pipeline},
-    pool::ShardPool,
-    state::StatusRegistry,
+    artifacts::state, artifacts::config::CortexConfig, artifacts::error::CortexError, pipeline::{PipelineContext, run_pipeline}, artifacts::pool::ShardPool, state::StatusRegistry
 };
 use actors::{broadcast, nonce, relayhost, sign, validator};
 use kernel::{
@@ -31,22 +31,15 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
-pub mod config;
-pub mod error;
-pub mod pipeline;
-pub mod pool;
-pub mod retry;
-pub mod state;
-
 // ============================================================
 // Cortex (orchestrator) struct.
 
 struct Cortex {
-    // state artifacts
+    // state handles
     cortex_config: CortexConfig,
     status_registry: Arc<StatusRegistry>,
 
-    // actor artifacts
+    // actor handles
     relayhost: Arc<dyn IntentRelay>,
     nonce: Arc<ShardPool<dyn NonceManager>>,
     sign: Arc<ShardPool<dyn Signer>>,

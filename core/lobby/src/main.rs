@@ -9,7 +9,7 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use cortex::{config::CortexConfig, spawn_cortex};
+use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
