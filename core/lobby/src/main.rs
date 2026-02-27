@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ============================================================
-    // orchestrator inti
+    // orchestrator init
 
     let config = CortexConfig::from_env()?;
     let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry, config);

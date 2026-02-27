@@ -50,7 +50,7 @@ pub enum HandlerError {
 /// - `400 Bad Request` — invalid JSON-RPC version, unsupported method, or malformed params
 /// - `403 Forbidden` — from_address does not match authenticated account
 /// - `500 Internal Server Error` — internal pipeline error
-pub async fn submit_transaction(
+pub(crate) async fn submit_transaction(
     State(state): State<AppState>,
     Extension(AuthenticatedClient(client_config)): Extension<AuthenticatedClient>,
     Json(request): Json<JsonRpcRequest>,
@@ -61,7 +61,7 @@ pub async fn submit_transaction(
         return Err(HandlerError::UnsupportedMethod(request.method.clone()));
     }
 
-    // Deserialize and validate EIP-1193 params
+    // validate deserialized EIP-1193 params
 
     let params: Eip1193SendTransactionParams = request
         .params
@@ -69,7 +69,7 @@ pub async fn submit_transaction(
         .cloned()
         .ok_or(HandlerError::CorruptedParams)?;
 
-    // Normalize to lobby Eip1159Transaction
+    // normalize to lobby Eip1159Transaction
 
     let (txn, from_address) =
         normalize_eip1193_transaction(params).map_err(|e| HandlerError::NormalizationFailed(e))?;
@@ -131,7 +131,7 @@ pub async fn submit_transaction(
 /// - `200 OK` — known execution_id, returns `JsonStatusResponse`
 /// - `400 Bad Request` — `execution_id` is not a valid UUID
 /// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
-pub async fn get_transaction_status(
+pub(crate) async fn get_transaction_status(
     State(registry): State<Arc<StatusRegistry>>,
     Path(raw_id): Path<String>,
 ) -> Result<Json<JsonStatusResponse>, HandlerError> {
@@ -232,7 +232,10 @@ impl IntoResponse for HandlerError {
                 StatusCode::NOT_FOUND,
                 JsonRpcError {
                     code: -32001,
-                    message: format!("no pipeline record found the give execution id: {}", raw_id),
+                    message: format!(
+                        "no pipeline record found for the give execution id: {}",
+                        raw_id
+                    ),
                     data: None,
                 },
             ),

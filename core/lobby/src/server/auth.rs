@@ -21,7 +21,7 @@ pub enum AuthError {
 // ============================================================
 // authentication and responce handeling
 
-pub async fn auth_middleware(
+pub(crate) async fn auth_middleware(
     State(state): State<AppState>,
     mut req: Request,
     next: Next,

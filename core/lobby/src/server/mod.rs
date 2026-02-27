@@ -10,10 +10,10 @@ use std::sync::Arc;
 // middleware - app state
 
 #[derive(Clone)]
-pub struct AppState {
-    api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
-    pub cortex_handler: CortextHandle,
-    pub status_registry: Arc<StatusRegistry>,
+pub(crate) struct AppState {
+    pub(crate) api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
+    pub(crate) cortex_handler: CortextHandle,
+    pub(crate) status_registry: Arc<StatusRegistry>,
 }
 
 impl AppState {
