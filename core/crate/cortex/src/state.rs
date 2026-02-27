@@ -1,13 +1,7 @@
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-};
 use dashmap::DashMap;
 use kernel::types::ExecutionId;
 use serde::Serialize;
 use std::sync::Arc;
-use uuid::Uuid;
 
 // ============================================================
 // tracking pipeline status
@@ -45,6 +39,16 @@ pub enum PipelineStatus {
 }
 
 // ============================================================
+// json status reponse
+
+#[derive(Debug, Serialize)]
+pub struct JsonStatusResponse {
+    pub execution_id: String,
+    #[serde(flatten)]
+    pub status: PipelineStatus,
+}
+
+// ============================================================
 // registry
 
 /// Shared, cheaply-cloneable registry of in-flight and recently-completed
@@ -79,63 +83,6 @@ impl Default for StatusRegistry {
         Self {
             status_book: Arc::new(DashMap::new()),
         }
-    }
-}
-
-// ============================================================
-// HTTP response
-
-#[derive(Debug, Serialize)]
-pub struct StatusUpdateResponse {
-    pub execution_id: String,
-    #[serde(flatten)]
-    pub status: PipelineStatus,
-}
-
-#[derive(Debug, Serialize)]
-pub struct StatusErrorResponce {
-    error: String,
-}
-
-// ============================================================
-// axum handler
-
-/// `GET /status/:execution_id`
-///
-/// Returns the current pipeline status for an execution.  Clients should poll
-/// this until status is `confirmed` or `failed`.
-///
-/// # Responses
-/// - `200 OK` — known execution_id, returns `StatusUpdateResponse`
-/// - `400 Bad Request` — `execution_id` is not a valid UUID
-/// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
-pub async fn get_transaction_status(
-    State(registry): State<Arc<StatusRegistry>>,
-    Path(raw_id): Path<String>,
-) -> Result<Json<StatusUpdateResponse>, (StatusCode, Json<StatusErrorResponce>)> {
-    // parse execution_id
-    let uuid = Uuid::parse_str(&raw_id).map_err(|_| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(StatusErrorResponce {
-                error: format!("{} is not a valid UUID", raw_id),
-            }),
-        )
-    })?;
-
-    let execution_id = ExecutionId(uuid);
-
-    match registry.get(&execution_id) {
-        Some(status) => Ok(Json(StatusUpdateResponse {
-            execution_id: raw_id,
-            status,
-        })),
-        None => Err((
-            StatusCode::NOT_FOUND,
-            Json(StatusErrorResponce {
-                error: format!("no pipeline record found the give execution id: {}", raw_id),
-            }),
-        )),
     }
 }
 

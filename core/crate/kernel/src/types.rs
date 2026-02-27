@@ -83,7 +83,7 @@ pub struct AuthenticatedClient(pub ClientConfig);
 pub type ApiKey = String;
 
 // ============================================================
-// JSON-RPC wrappers for Lobby (eip1193)
+// JSON-RPC wrappers for Lobby handlers
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcRequest {

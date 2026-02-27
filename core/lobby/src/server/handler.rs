@@ -1,26 +1,29 @@
+use crate::server::AppState;
 use axum::{
     Extension, Json,
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use cortex::error::CortexError;
+use cortex::{
+    error::CortexError,
+    state::{JsonStatusResponse, StatusRegistry},
+};
 use kernel::types::{
     AuthenticatedClient, Eip1193SendTransactionParams, ExecutionId, JsonRpcError,
     JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse, TxnAcceptedResult,
 };
+use std::sync::Arc;
 use tracing::{error, info};
 use utils::eip1559::NormalizationError;
 use utils::eip1559::normalize_eip1193_transaction;
 use uuid::Uuid;
 
-use crate::server::AppState;
-
 // ============================================================
 // txn submission errors.
 
 #[derive(Debug)]
-pub enum TxnSubmitError {
+pub enum HandlerError {
     InvalidJsonRpcVersion,
     UnsupportedMethod(String),
     CorruptedParams,
@@ -30,19 +33,32 @@ pub enum TxnSubmitError {
         actual: alloy::primitives::Address,
     },
     CortexError(CortexError),
+    IdParsingError(String),
+    RecordNotFound(String),
 }
 
 // ============================================================
 
+/// `POST /submit`
+///
+/// Submits an EIP-1193 transaction for processing through the Cortex pipeline.
+/// The transaction is validated, normalized, and handed off to the orchestrator
+/// for nonce assignment, signing, broadcasting, and confirmation.
+///
+/// # Responses
+/// - `200 OK` — transaction accepted, returns execution_id and "accepted" status
+/// - `400 Bad Request` — invalid JSON-RPC version, unsupported method, or malformed params
+/// - `403 Forbidden` — from_address does not match authenticated account
+/// - `500 Internal Server Error` — internal pipeline error
 pub async fn submit_transaction(
     State(state): State<AppState>,
     Extension(AuthenticatedClient(client_config)): Extension<AuthenticatedClient>,
     Json(request): Json<JsonRpcRequest>,
-) -> Result<Json<JsonRpcSuccessResponse>, TxnSubmitError> {
+) -> Result<Json<JsonRpcSuccessResponse>, HandlerError> {
     // Parse and validate the JSON-RPC method
 
     if request.method != "eth_sendTransaction" {
-        return Err(TxnSubmitError::UnsupportedMethod(request.method.clone()));
+        return Err(HandlerError::UnsupportedMethod(request.method.clone()));
     }
 
     // Deserialize and validate EIP-1193 params
@@ -51,17 +67,17 @@ pub async fn submit_transaction(
         .params
         .get(0)
         .cloned()
-        .ok_or(TxnSubmitError::CorruptedParams)?;
+        .ok_or(HandlerError::CorruptedParams)?;
 
     // Normalize to lobby Eip1159Transaction
 
-    let (txn, from_address) = normalize_eip1193_transaction(params)
-        .map_err(|e| TxnSubmitError::NormalizationFailed(e))?;
+    let (txn, from_address) =
+        normalize_eip1193_transaction(params).map_err(|e| HandlerError::NormalizationFailed(e))?;
 
     // validate from_address
 
     if from_address != client_config.from_address {
-        return Err(TxnSubmitError::FromAddressMismatch {
+        return Err(HandlerError::FromAddressMismatch {
             expected: client_config.from_address,
             actual: from_address,
         });
@@ -90,7 +106,7 @@ pub async fn submit_transaction(
         .cortex_handler
         .submit(execution_id, txn, client_config)
         .await
-        .map_err(|e| TxnSubmitError::CortexError(e))?;
+        .map_err(|e| HandlerError::CortexError(e))?;
 
     // respond immidiately
 
@@ -105,12 +121,42 @@ pub async fn submit_transaction(
 }
 
 // ============================================================
-// implimenting IntoResponse for TxnSubmitError
 
-impl IntoResponse for TxnSubmitError {
+/// `GET /status/:execution_id`
+///
+/// Returns the current pipeline status for an execution. Clients should poll
+/// this until status is `confirmed` or `failed`.
+///
+/// # Responses
+/// - `200 OK` — known execution_id, returns `JsonStatusResponse`
+/// - `400 Bad Request` — `execution_id` is not a valid UUID
+/// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
+pub async fn get_transaction_status(
+    State(registry): State<Arc<StatusRegistry>>,
+    Path(raw_id): Path<String>,
+) -> Result<Json<JsonStatusResponse>, HandlerError> {
+    // parse execution_id
+    let uuid =
+        Uuid::parse_str(&raw_id).map_err(|_| HandlerError::IdParsingError(raw_id.clone()))?;
+
+    let execution_id = ExecutionId(uuid);
+
+    match registry.get(&execution_id) {
+        Some(status) => Ok(Json(JsonStatusResponse {
+            execution_id: raw_id,
+            status,
+        })),
+        None => Err(HandlerError::RecordNotFound(raw_id)),
+    }
+}
+
+// ============================================================
+// implimenting IntoResponse for HandlerError
+
+impl IntoResponse for HandlerError {
     fn into_response(self) -> Response {
         let (status, error) = match self {
-            TxnSubmitError::InvalidJsonRpcVersion => (
+            HandlerError::InvalidJsonRpcVersion => (
                 StatusCode::BAD_REQUEST,
                 JsonRpcError {
                     code: -32600,
@@ -118,7 +164,7 @@ impl IntoResponse for TxnSubmitError {
                     data: None,
                 },
             ),
-            TxnSubmitError::UnsupportedMethod(method) => (
+            HandlerError::UnsupportedMethod(method) => (
                 StatusCode::BAD_REQUEST,
                 JsonRpcError {
                     code: -32601,
@@ -126,7 +172,7 @@ impl IntoResponse for TxnSubmitError {
                     data: None,
                 },
             ),
-            TxnSubmitError::CorruptedParams => (
+            HandlerError::CorruptedParams => (
                 StatusCode::BAD_REQUEST,
                 JsonRpcError {
                     code: -32602,
@@ -134,7 +180,7 @@ impl IntoResponse for TxnSubmitError {
                     data: None,
                 },
             ),
-            TxnSubmitError::NormalizationFailed(e) => (
+            HandlerError::NormalizationFailed(e) => (
                 StatusCode::BAD_REQUEST,
                 JsonRpcError {
                     code: -32602,
@@ -142,7 +188,7 @@ impl IntoResponse for TxnSubmitError {
                     data: None,
                 },
             ),
-            TxnSubmitError::FromAddressMismatch { expected, actual } => (
+            HandlerError::FromAddressMismatch { expected, actual } => (
                 StatusCode::FORBIDDEN,
                 JsonRpcError {
                     code: -32000,
@@ -153,8 +199,8 @@ impl IntoResponse for TxnSubmitError {
                     })),
                 },
             ),
-            TxnSubmitError::CortexError(e) => {
-                error!("RelayHost error: {:?}", e);
+            HandlerError::CortexError(e) => {
+                error!("orchestration: {:?}", e);
                 match e {
                     CortexError::RelayHost(err) => (
                         StatusCode::BAD_REQUEST,
@@ -168,12 +214,28 @@ impl IntoResponse for TxnSubmitError {
                         StatusCode::INTERNAL_SERVER_ERROR,
                         JsonRpcError {
                             code: -32603,
-                            message: "Internal server error".to_string(),
+                            message: "Internal pipeline error".to_string(),
                             data: None,
                         },
                     ),
                 }
             }
+            HandlerError::IdParsingError(raw_id) => (
+                StatusCode::BAD_REQUEST,
+                JsonRpcError {
+                    code: -32602,
+                    message: format!("{} is not a valid UUID", raw_id),
+                    data: None,
+                },
+            ),
+            HandlerError::RecordNotFound(raw_id) => (
+                StatusCode::NOT_FOUND,
+                JsonRpcError {
+                    code: -32001,
+                    message: format!("no pipeline record found the give execution id: {}", raw_id),
+                    data: None,
+                },
+            ),
         };
 
         let response = JsonRpcErrorResponse {

@@ -1,11 +1,15 @@
 pub mod server;
 
-use crate::server::{AppState, auth::auth_middleware, handler::submit_transaction};
+use crate::server::{
+    AppState,
+    auth::auth_middleware,
+    handler::{get_transaction_status, submit_transaction},
+};
 use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use cortex::{config::CortexConfig, spawn_cortex, state::get_transaction_status};
+use cortex::{config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -98,13 +102,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
         .route("/", post(submit_transaction))
         // Status polling — clients poll until `confirmed` or `failed`
-        .route("/status/:execution_id", get(get_transaction_status))
+        .route("/status/{execution_id}", get(get_transaction_status))
         // Auth middleware applied to all routes
+        .with_state(state.clone())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
-        ))
-        .with_state(state);
+        ));
 
     tracing::info!(%server_addr, "lobby listening");
     let listner = tokio::net::TcpListener::bind(server_addr).await?;

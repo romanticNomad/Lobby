@@ -32,8 +32,6 @@ impl BroadcastEngine {
 
 impl BroadcastEngine {
     pub async fn run(mut self) {
-        info!("BroadcastEngine started");
-
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
                 BroadcastCommand::Broadcast {
