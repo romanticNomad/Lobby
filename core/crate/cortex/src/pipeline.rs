@@ -36,7 +36,7 @@ pub(crate) struct PipelineContext {
     pub retry_config: RetryConfig,
 
     // tracing
-    pub status: Arc<StatusRegistry>,
+    pub status: StatusRegistry,
 }
 
 // ============================================================

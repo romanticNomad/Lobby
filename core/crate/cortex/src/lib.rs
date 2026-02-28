@@ -42,7 +42,7 @@ use tokio::sync::Semaphore;
 struct Cortex {
     // state handles
     cortex_config: CortexConfig,
-    status_registry: Arc<StatusRegistry>,
+    status_registry: StatusRegistry,
 
     // actor handles
     relayhost: Arc<dyn IntentRelay>,
@@ -120,7 +120,7 @@ impl CortextHandle {
             sign_pool: Arc::clone(&orch.sign),
             broadcast_pool: Arc::clone(&orch.broadcast),
             retry_config: orch.cortex_config.retry.clone(),
-            status: Arc::clone(&orch.status_registry),
+            status: orch.status_registry.clone(),
         };
 
         // ===========================================================
@@ -138,8 +138,8 @@ impl CortextHandle {
 
     // ===========================================================
     /// simple helper for obtaining StatusRegistry clone
-    pub fn status_registry(&self) -> Arc<StatusRegistry> {
-        Arc::clone(&self.inner.status_registry)
+    pub fn status_registry(&self) -> StatusRegistry {
+        self.inner.status_registry.clone()
     }
 }
 
@@ -223,7 +223,7 @@ pub fn spawn_cortex(
     let validator_handle = {
         let handle = validator::spawn_validator_actor(
             db.clone(),
-            provider,
+            Arc::clone(&provider),
             validator::ValidatorConfig::default(),
             config.actor_buffer,
         );
@@ -241,7 +241,7 @@ pub fn spawn_cortex(
 
     let inner = Arc::new(Cortex {
         cortex_config: config,
-        status_registry: Arc::new(StatusRegistry::new()),
+        status_registry: StatusRegistry::new(),
         semaphore: pipeline_semaphore,
         relayhost: relayhost_handle,
         nonce: nonce_pool,

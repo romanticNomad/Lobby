@@ -51,7 +51,7 @@ impl<T: ?Sized> ShardPool<T> {
     /// Uses `DefaultHasher` (SipHash 1-3) which is good enough for routing;
     /// it is not used for anything security-sensitive here.
     pub fn get<K: Hash>(&self, key: &K) -> Arc<T> {
-        Arc::clone(&self.shards[shard_index(key, self.shards.len())])
+        Arc::clone(&self.shards[shard_index(key, self.shard_count())])
     }
 
     /// number of shards in this pool
