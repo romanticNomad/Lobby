@@ -13,14 +13,14 @@ use std::sync::Arc;
 pub(crate) struct AppState {
     pub(crate) api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
     pub(crate) cortex_handler: CortextHandle,
-    pub(crate) status_registry: Arc<StatusRegistry>,
+    pub(crate) status_registry: StatusRegistry,
 }
 
 impl AppState {
     pub fn new(
         api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
         cortex_handler: CortextHandle,
-        status_registry: Arc<StatusRegistry>,
+        status_registry: StatusRegistry,
     ) -> Self {
         Self {
             api_registry,
@@ -33,9 +33,9 @@ impl AppState {
 // ============================================================
 
 // allowing status_registry to be a sub_state used for get_transaction_status
-impl axum::extract::FromRef<AppState> for Arc<StatusRegistry> {
+impl axum::extract::FromRef<AppState> for StatusRegistry {
     fn from_ref(state: &AppState) -> Self {
-        Arc::clone(&state.status_registry)
+        state.status_registry.clone()
     }
 }
 

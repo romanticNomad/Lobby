@@ -13,7 +13,6 @@ use kernel::types::{
     AuthenticatedClient, Eip1193SendTransactionParams, ExecutionId, JsonRpcError,
     JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse, TxnAcceptedResult,
 };
-use std::sync::Arc;
 use tracing::{error, info};
 use utils::eip1559::NormalizationError;
 use utils::eip1559::normalize_eip1193_transaction;
@@ -132,7 +131,7 @@ pub(crate) async fn submit_transaction(
 /// - `400 Bad Request` — `execution_id` is not a valid UUID
 /// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
 pub(crate) async fn get_transaction_status(
-    State(registry): State<Arc<StatusRegistry>>,
+    State(registry): State<StatusRegistry>,
     Path(raw_id): Path<String>,
 ) -> Result<Json<JsonStatusResponse>, HandlerError> {
     // parse execution_id
