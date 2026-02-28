@@ -33,23 +33,23 @@ pub(crate) async fn auth_middleware(
         .and_then(|h| h.to_str().ok())
         .ok_or(AuthError::MissingAuthHeader)?;
 
-    // parse bearer token
-    let token: Vec<&str> = auth_header
+    // parse bearer payload
+    let api_key_elements: Vec<&str> = auth_header
         .strip_prefix("Bearer ")
         .ok_or(AuthError::InvalidAuthFormat)?
         .split(":")
         .collect();
 
-    let client_id = if token.len() != 3 {
-        return Err(AuthError::InvalidAuthFormat)
+    let api_token = if api_key_elements.len() != 3 {
+        return Err(AuthError::InvalidAuthFormat);
     } else {
-        token[1]
+        api_key_elements[0]
     };
-    
+
     // lookup api key in DashMap (api_registry) and authenticate
     let client_config = state
         .api_registry
-        .get(client_id)
+        .get(api_token)
         .map(|entry| entry.value().clone())
         .ok_or(AuthError::InvalidApiKey)?;
 
@@ -69,7 +69,7 @@ impl IntoResponse for AuthError {
             AuthError::InvalidApiKey => (StatusCode::UNAUTHORIZED, "missing autherization header"),
             AuthError::InvalidAuthFormat => (
                 StatusCode::UNAUTHORIZED,
-                "invalid authorization format (expected 'Bearer lobby_live_<random_string>:<client_id>:<from_address>')",
+                "invalid authorization format (expected 'Bearer lobby_live_<random_string>:<api_token>:<from_address>')",
             ),
             AuthError::MissingAuthHeader => (StatusCode::UNAUTHORIZED, "invalid API key"),
         };

@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use dashmap::DashMap;
-use kernel::types::{ApiKey, ClientConfig};
+use kernel::types::{ApiRegistry, ClientConfig};
 use std::{env, str::FromStr, sync::Arc};
 use thiserror::Error;
 use uuid::Uuid;
@@ -13,7 +13,7 @@ pub enum EnvApiKeyError {
     InvalidClientId(String),
     #[error("invalid from_address {0}")]
     InvalidFromAddress(String),
-    #[error("Invalid API key format for {0}: expected <api_key>:<client_id>:<from_address>")]
+    #[error("Invalid API key format for {0}: expected <api_token>:<client_id>:<from_address>")]
     InvalidApiKey(String),
     #[error("could not find api_keys of valid format in env")]
     ApiKeyUnavailable,
@@ -22,10 +22,10 @@ pub enum EnvApiKeyError {
 // ============================================================
 // function for loading api keys from the env (for dev testing only)
 
-pub fn load_api_key_from_env() -> Result<Arc<DashMap<ApiKey, ClientConfig>>, EnvApiKeyError> {
+pub fn load_api_key_from_env() -> Result<ApiRegistry, EnvApiKeyError> {
     let api_keys = DashMap::new();
 
-    // Format: LOBBY_API_KEY_<N>=<api_key>:<client_id>:<from_address>
+    // Format: LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>
     for (key, value) in env::vars() {
         if let Some(suffix) = key.strip_prefix("LOBBY_API_KEY_") {
             let parts: Vec<&str> = value.split(":").collect();
@@ -33,7 +33,7 @@ pub fn load_api_key_from_env() -> Result<Arc<DashMap<ApiKey, ClientConfig>>, Env
                 return Err(EnvApiKeyError::InvalidApiKey(key));
             }
 
-            let api_key = parts[0].to_string();
+            let api_token = parts[0].to_string();
             let client_id = Uuid::parse_str(parts[1])
                 .map_err(|_| EnvApiKeyError::InvalidClientId(format!("{}", &key)))?;
             let from_address = Address::from_str(parts[2])
@@ -44,7 +44,7 @@ pub fn load_api_key_from_env() -> Result<Arc<DashMap<ApiKey, ClientConfig>>, Env
                 from_address,
             };
 
-            api_keys.insert(api_key, client_config);
+            api_keys.insert(api_token, client_config);
 
             tracing::debug!(
                 key = suffix,

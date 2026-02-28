@@ -2,23 +2,21 @@ pub mod auth;
 pub mod handler;
 
 use cortex::{CortextHandle, artifacts::state::StatusRegistry};
-use dashmap::DashMap;
-use kernel::types::{ApiKey, ClientConfig};
-use std::sync::Arc;
+use kernel::types::ApiRegistry;
 
 // ============================================================
 // middleware - app state
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub(crate) api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
+    pub(crate) api_registry: ApiRegistry,
     pub(crate) cortex_handler: CortextHandle,
     pub(crate) status_registry: StatusRegistry,
 }
 
 impl AppState {
     pub fn new(
-        api_registry: Arc<DashMap<ApiKey, ClientConfig>>,
+        api_registry: ApiRegistry,
         cortex_handler: CortextHandle,
         status_registry: StatusRegistry,
     ) -> Self {
@@ -32,7 +30,7 @@ impl AppState {
 
 // ============================================================
 
-// allowing status_registry to be a sub_state used for get_transaction_status
+// allowing status_registry to be a sub_state used for get_transaction_status handler
 impl axum::extract::FromRef<AppState> for StatusRegistry {
     fn from_ref(state: &AppState) -> Self {
         state.status_registry.clone()

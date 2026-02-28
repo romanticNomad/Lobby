@@ -82,9 +82,9 @@ pub struct AuthenticatedClient(pub ClientConfig);
 /// A type alias for concurrent HashMap (DashMap) that maps
 /// api keys to corresponding client configurations (captured from envirment variables),
 /// wrapped in `Arc` so it can be cheaply cloned.
-pub type ApiRegistry = Arc<DashMap<ApiKey, ClientConfig>>;
+pub type ApiRegistry = Arc<DashMap<ApiToken, ClientConfig>>;
 
-pub type ApiKey = String;
+pub type ApiToken = String;
 
 // ============================================================
 // JSON-RPC wrappers for Lobby handlers
