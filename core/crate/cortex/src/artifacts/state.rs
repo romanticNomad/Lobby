@@ -3,7 +3,6 @@ use kernel::types::ExecutionId;
 use serde::Serialize;
 use std::sync::Arc;
 
-
 // ============================================================
 // registry
 

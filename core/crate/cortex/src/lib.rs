@@ -20,7 +20,12 @@ pub mod artifacts;
 pub mod pipeline;
 
 use crate::{
-    artifacts::state, artifacts::config::CortexConfig, artifacts::error::CortexError, pipeline::{PipelineContext, run_pipeline}, artifacts::pool::ShardPool, state::StatusRegistry
+    artifacts::config::CortexConfig,
+    artifacts::error::CortexError,
+    artifacts::pool::ShardPool,
+    artifacts::state,
+    pipeline::{PipelineContext, run_pipeline},
+    state::StatusRegistry,
 };
 use actors::{broadcast, nonce, relayhost, sign, validator};
 use kernel::{

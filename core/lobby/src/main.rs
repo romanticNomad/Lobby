@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain_count = rpc_registry.len();
     if chain_count == 0 {
         tracing::warn!(
-            "no RPC endpoints found in environment (expected RPC_ENDPOINT_1=https://...). \
+            "no RPC endpoints found in environment, \
              broadcast and validator will fail for all chains."
         );
     } else {
