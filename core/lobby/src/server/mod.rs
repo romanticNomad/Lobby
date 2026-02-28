@@ -5,7 +5,7 @@ use cortex::{CortextHandle, artifacts::state::StatusRegistry};
 use kernel::types::ApiRegistry;
 
 // ============================================================
-// middleware - app state
+// app state
 
 #[derive(Clone)]
 pub(crate) struct AppState {

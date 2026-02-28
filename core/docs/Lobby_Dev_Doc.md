@@ -764,15 +764,15 @@ Every table uses a `(execution_id, revision)` composite primary key for full aud
 **Example: `nonce.nonce_assignments`**
 ```sql
 CREATE TABLE nonce.nonce_assignments (
-    execution_id UUID NOT NULL,
-    revision INT NOT NULL,
-    chain_id BIGINT NOT NULL,
-    from_address BYTEA NOT NULL,
-    nonce BIGINT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('reserved', 'finalized', 'released')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    
+    execution_id      BYTEA NOT NULL,
+    revision          BIGINT NOT NULL,
+    chain_id          BIGINT NOT NULL,
+    from_address      BYTEA NOT NULL,
+    nonce             BIGINT NOT NULL,
+    state             nonce.nonce_state NOT NULL, -- state in (reserved, finalized, released)
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
     PRIMARY KEY (execution_id, revision)
 );
 ```
@@ -848,18 +848,21 @@ This executes as a **single database round-trip**, eliminating the possibility o
 All tables have `updated_at` triggers to track when state last changed:
 
 ```sql
-CREATE OR REPLACE FUNCTION nonce.update_updated_at()
+-- Ensure updated_at is always called on state change
+CREATE OR REPLACE FUNCTION nonce.touch_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = now();
+    IF NEW.state IS DISTINCT FROM OLD.state THEN
+        NEW.updated_at = now();
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_nonce_updated_at
-    BEFORE UPDATE ON nonce.nonce_assignments
-    FOR EACH ROW
-    EXECUTE FUNCTION nonce.update_updated_at();
+CREATE TRIGGER trg_nonce_touch_updated_at
+BEFORE UPDATE ON nonce.nonce_assignments
+FOR EACH ROW
+EXECUTE FUNCTION nonce.touch_updated_at();
 ```
 
 This ensures `updated_at` is always accurate for lease expiration logic.
@@ -1391,20 +1394,25 @@ The current prototype is a **single binary** with PostgreSQL as the only externa
 
 **Lobby:**
 ```dockerfile
-FROM rust:1.75 AS builder
+FROM rust:1.80 AS builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --package lobby
 
 FROM debian:bookworm-slim
-COPY --from=builder /app/target/release/lobby /usr/local/bin/lobby
-CMD ["lobby"]
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /app/target/release/lobby /app/lobby
+CMD ["/app/lobby"]
 ```
 
 **PostgreSQL:**
 ```bash
 docker run -d \
-  --name lobby-db \
+  --name lobby-postgres \
   -e POSTGRES_PASSWORD=secret \
   -e POSTGRES_DB=lobby \
   -p 5432:5432 \
@@ -1445,8 +1453,19 @@ RPC_PROVIDER_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
 ```
 
 **Private Keys (PROTOTYPE ONLY):**
-```bash
-PRIVATE_KEY_0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb=<hex>
+```json
+{
+  "account1": {
+    "pvt_key": "0xe74176dc8bcf2e5e6500a8f117a665ed44bcf448206c0cd23cb1228e61a2729c",
+    "pub_key": "0x045ae5fcf5e6e9fafbec1155a363467bdea7eeb453bf1e68944b873f81871344dc38209d99d4af74dcbcba7da410353cbd45241cc9e91b863c170a8b1bda7e78a3",
+    "address": "0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92"
+  },
+  "account2": {
+    "pvt_key": "0x25bf69fff0829179e3b4fcc1691c766b3126d78b8d80fe48f1322f074404ac5f",
+    "pub_key": "0x040d382e58ebef374d9fe943891c11cbf0164ff9204370aaf1a6e8d8100773a8bfaf5342f2edee33263565c078c1babbf7ceed4c6dea9456dd72534e6803e105fa",
+    "address": "0x5b35c4571b935076c853e9c3aab59b60d7b32daf"
+  }
+}
 ```
 
 ### Production Deployment (Planned)
@@ -1583,17 +1602,6 @@ Lobby is a **working prototype**. The following features are planned but not yet
 
 ---
 
-### 10. Client-Provided Execution IDs
-
-**Current:** Lobby generates `execution_id` (UUID v4) server-side.
-
-**Future:**
-- Allow clients to provide `execution_id` in the request (idempotency key)
-- If client retries with same `execution_id` → return cached result, don't re-process
-- This enables safe retries without risk of duplicate transactions
-
----
-
 ## Appendix: Key Terms
 
 - **Actor:** A long-lived Tokio task that exclusively owns mutable state and processes messages sequentially.
@@ -1614,6 +1622,4 @@ Lobby is a **working prototype**. The following features are planned but not yet
 
 **End of Architecture Guide**
 
-For API-specific documentation (request formats, error codes, rate limits), see `API.md` (to be written).
-
-For contributor onboarding (local setup, testing, adding new actors), see `CONTRIBUTING.md` (to be written).
+For API-specific documentation (request formats, error codes, rate limits), see `Client_API_Doc`.
