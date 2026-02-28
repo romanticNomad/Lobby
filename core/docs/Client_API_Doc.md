@@ -58,10 +58,10 @@ API keys are provisioned by the Lobby operator (the person running the server). 
 Lobby API keys follow this format:
 
 ```
-lobby_live_<random_string>
+lobby_live_<random_string>:<client_id>:<from_address>
 ```
 
-Example: `lobby_live_abc123xyz789`
+Example: `lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92789`
 
 ---
 
@@ -275,7 +275,7 @@ This is NOT an error — your transaction is already in the pipeline.
 **Minimal ETH transfer:**
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
-  -H "Authorization: Bearer lobby_live_abc123xyz" \
+  -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -293,7 +293,7 @@ curl -X POST http://localhost:3000/v1/transactions \
 **With explicit gas parameters:**
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
-  -H "Authorization: Bearer lobby_live_abc123xyz" \
+  -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -314,7 +314,7 @@ curl -X POST http://localhost:3000/v1/transactions \
 **ERC-20 token transfer (with calldata):**
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
-  -H "Authorization: Bearer lobby_live_abc123xyz" \
+  -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -338,7 +338,7 @@ curl -X POST http://localhost:3000/v1/transactions \
 import requests
 
 LOBBY_URL  = "http://localhost:3000"
-API_KEY    = "lobby_live_abc123xyz"
+API_KEY    = "lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92"
 FROM_ADDR  = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
 
 def submit_transaction(to: str, value_wei: int, data: str = "0x", chain_id: int = 1) -> str:
@@ -398,7 +398,7 @@ execution_id = submit_transaction(
 
 ```typescript
 const LOBBY_URL = "http://localhost:3000";
-const API_KEY   = "lobby_live_abc123xyz";
+const API_KEY   = "lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92";
 const FROM_ADDR = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
 
 async function submitTransaction(params: {
@@ -455,7 +455,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 const LOBBY_URL: &str = "http://localhost:3000";
-const API_KEY:   &str = "lobby_live_abc123xyz";
+const API_KEY:   &str = "lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92";
 const FROM_ADDR: &str = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
 
 #[derive(Serialize)]
@@ -631,7 +631,7 @@ SERVER_ADDR=0.0.0.0:3000
 # API Keys — format: LOBBY_API_KEY_<N>=<api_key>:<client_id>:<from_address>
 # client_id must be a valid UUID v4
 # from_address must be an Ethereum address (checksummed or lowercase)
-LOBBY_API_KEY_1=lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+LOBBY_API_KEY_1=lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92:550e8400-e29b-41d4-a716-446655440000:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
 
 # Logging
 RUST_LOG=info
@@ -656,7 +656,7 @@ INFO lobby: Starting Lobby server on 0.0.0.0:3000
 
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
-  -H "Authorization: Bearer lobby_live_abc123xyz" \
+  -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
