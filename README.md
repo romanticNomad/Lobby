@@ -1,5 +1,8 @@
 # Lobby
 An open-source low-latency evm signer
 
-## core
-core is a rust based workspace that forms the foundational codebase of Lobby.
+## ensemble
+ensemble is the workspace that forms the foundational codebase of Lobby.
+
+## forge
+forge is planned to be a collective testing + branchmarking directory of lobby.
