@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
-        .route("/", post(submit_transaction))
+        .route("/v1/transactions", post(submit_transaction))
         // Status polling — clients poll until `confirmed` or `failed`
         .route("/status/{execution_id}", get(get_transaction_status))
         // Auth middleware applied to all routes

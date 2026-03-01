@@ -170,21 +170,40 @@ CREATE UNIQUE INDEX idx_nonce_no_concurrent
 
 **Example (nonce reservation):**
 ```sql
-INSERT INTO nonce.nonce_assignments (execution_id, revision, nonce, state)
+INSERT INTO nonce.nonce_assignments
+    (execution_id, revision, chain_id, from_address, nonce, state)
 SELECT
-  $1,                     -- execution_id
-  MAX(revision) + 1,       -- next revision
-  MAX(nonce) + 1,          -- next nonce
-  'reserved'
-FROM nonce.nonce_assignments
-WHERE chain_id = $2 AND from_address = $3
-  AND NOT EXISTS (
-    SELECT 1 FROM nonce.nonce_assignments
-    WHERE execution_id = $1
-      AND state IN ('reserved', 'finalized')
-      AND updated_at > now() - interval '5 minutes'
-  )
-RETURNING nonce;
+    $1,
+    COALESCE(
+        (SELECT MAX(revision)
+        FROM nonce.nonce_assignments
+        WHERE execution_id = $1),
+        0
+    ) + 1,
+    $2,
+    $3,
+    COALESCE(
+        (SELECT MAX(nonce)
+        FROM nonce.nonce_assignments
+        WHERE chain_id = $2
+        AND from_address = $3
+        AND state IN ('reserved', 'released')),
+        -1
+    ) + 1,
+    'reserved'
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM nonce.nonce_assignments
+        WHERE execution_id = $1
+            AND (
+                state = 'finalized'
+                OR (
+                    state = 'reserved'
+                    AND updated_at > now() - interval '5 minutes'
+                )
+            )
+    )
+RETURNING nonce, revision
 ```
 
 ---
@@ -802,9 +821,9 @@ All actors use **5-minute leases** to prevent duplicate processing and enable au
 
 **Partial Unique Index (prevents concurrent processing):**
 ```sql
-CREATE UNIQUE INDEX idx_nonce_no_concurrent
-  ON nonce.nonce_assignments (execution_id)
-  WHERE state = 'reserved' AND updated_at > now() - interval '5 minutes';
+CREATE UNIQUE INDEX uniq_active_nonce
+ON nonce.nonce_assignments (chain_id, from_address, nonce)
+WHERE state IN ('reserved', 'finalized');
 ```
 
 **Effect:**
@@ -1165,7 +1184,7 @@ Lobby exposes a minimal JSON-RPC API over HTTP.
 
 ### Endpoint: Submit Transaction
 
-**Method:** `POST /`  
+**Method:** `POST /v1/transactions`  
 **Auth:** `Authorization: Bearer <api_key>`  
 **Content-Type:** `application/json`
 
@@ -1451,8 +1470,10 @@ LOBBY_API_KEY_1=lobby_live_abc:550e8400-e29b-41d4-a716-446655440000:0x742d35Cc66
 RPC_PROVIDER_1=https://eth-mainnet.g.alchemy.com/v2/KEY
 RPC_PROVIDER_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
 ```
+### EVM Account Details
 
-**Private Keys (PROTOTYPE ONLY):**
+Lobby loads private keys from a `test_keys.json` file in the project root. Create this file with your test accounts:
+
 ```json
 {
   "account1": {
@@ -1467,6 +1488,8 @@ RPC_PROVIDER_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
   }
 }
 ```
+
+> **Security Warning:** The `test_keys.json` file contains **unencrypted private keys**. This is **only suitable for local testing with testnet accounts**. Never use this approach in production or with real funds.
 
 ### Production Deployment (Planned)
 

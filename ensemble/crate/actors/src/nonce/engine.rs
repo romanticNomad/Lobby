@@ -102,7 +102,7 @@ impl NonceEngine {
                             )
                         )
                 )
-                RETURNING nonce, revision
+            RETURNING nonce, revision
             "#,
             execution_id.0.as_bytes().as_slice(),
             chain_id_i64,
