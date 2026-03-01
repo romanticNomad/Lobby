@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "testnet"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Import Lobby crates
+lobby = { path = "../ensemble/lobby" }
+actors = { path = "../ensemble/crate/actors" }
+cortex = { path = "../ensemble/crate/cortex" }
+kernel = { path = "../ensemble/crate/kernel" }
+utils = { path = "../ensemble/crate/utils" }
