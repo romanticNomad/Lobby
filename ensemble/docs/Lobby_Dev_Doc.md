@@ -937,8 +937,8 @@ In the current prototype, the registry is built from environment variables at bo
 
 ```bash
 # Example (you may use a separate module in production)
-export RPC_PROVIDER_1=https://eth-mainnet.g.alchemy.com/v2/KEY
-export RPC_PROVIDER_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
+export RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/KEY
+export RPC_ENDPOINT_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
 ```
 
 Future versions will use a dedicated initialization module with:
@@ -1467,8 +1467,8 @@ LOBBY_API_KEY_1=lobby_live_abc:550e8400-e29b-41d4-a716-446655440000:0x742d35Cc66
 
 **RPC Providers:**
 ```bash
-RPC_PROVIDER_1=https://eth-mainnet.g.alchemy.com/v2/KEY
-RPC_PROVIDER_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
+RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/KEY
+RPC_ENDPOINT_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
 ```
 ### EVM Account Details
 

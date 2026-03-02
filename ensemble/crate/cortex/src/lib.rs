@@ -159,7 +159,7 @@ pub fn spawn_cortex(
         sign_shards = config.sign_shards,
         broadcast_shards = config.broadcast_shards,
         pipeline = config.pipeline_concurrency,
-        "spawning cortex actor pools"
+        "spawning cortex actor pools: "
     );
 
     // ============================================================

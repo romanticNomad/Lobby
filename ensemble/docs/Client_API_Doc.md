@@ -1092,11 +1092,11 @@ PIPELINE_SEMAPHORE_TIMEOUT_MS=5000
 LOBBY_API_KEY_1=lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92
 
 # RPC Providers
-# Format: RPC_PROVIDER_<chain_id>=<https_url>
-RPC_PROVIDER_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
-RPC_PROVIDER_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
-RPC_PROVIDER_137=https://polygon-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
-RPC_PROVIDER_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+# Format: RPC_ENDPOINT_<chain_id>=<https_url>
+RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+RPC_ENDPOINT_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+RPC_ENDPOINT_137=https://polygon-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+RPC_ENDPOINT_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
 
 # Logging
 RUST_LOG=info
@@ -1104,7 +1104,7 @@ RUST_LOG=info
 
 **Important notes:**
 - The `from_address` in your API key must match one of the addresses in `test_keys.json`
-- Each `RPC_PROVIDER_<chain_id>` must correspond to a supported chain
+- Each `RPC_ENDPOINT_<chain_id>` must correspond to a supported chain
 - Replace `YOUR_ALCHEMY_KEY` with your actual Alchemy API key (or use Infura/other providers)
 
 ---
@@ -1121,15 +1121,15 @@ You should see:
 INFO lobby: lobby starting
 INFO lobby: database connection estabilished
 INFO sqlx::postgres::notice: relation "_sqlx_migrations" already exists, skipping
-NFO lobby: database migrations applied
+INFO lobby: database migrations applied
 INFO lobby: api keys loaded count=1
 INFO lobby: RPC provider registry initialized chains=[ChainId(1)] count=1
 INFO cortex: spawning cortex actor pools nonce_shards=17 sign_shards=17 broadcast_shards=17 pipeline=17
-NFO cortex: orchestrator ready
-NFO lobby: cortex ready
-NFO actors::relayhost::engine: RelayHostEngine started
-NFO actors::validator::engine: validator engine started
-NFO lobby: lobby listening server_addr=0.0.0.0:3000
+INFO cortex: orchestrator ready
+INFO lobby: cortex ready
+INFO actors::relayhost::engine: RelayHostEngine started
+INFO actors::validator::engine: validator engine started
+INFO lobby: lobby listening server_addr=0.0.0.0:3000
 ```
 
 ---
