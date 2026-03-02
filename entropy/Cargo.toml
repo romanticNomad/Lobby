@@ -1,13 +1,9 @@
 [workspace]
+resolver = "3"
 
-[package]
-name = "testnet"
-version = "0.1.0"
-edition = "2024"
-publish = false
+members = ["client"]
 
-[dependencies]
-# Import Lobby crates
+[workspace.dependencies]
 lobby = { path = "../ensemble/lobby" }
 actors = { path = "../ensemble/crate/actors" }
 cortex = { path = "../ensemble/crate/cortex" }

@@ -2,7 +2,7 @@
 An open-source low-latency evm signer
 
 ## ensemble
-ensemble is the workspace that forms the foundational codebase of Lobby with relevent tests and benchmarks.
+The foundational codebase of Lobby.
 
-## testnet
-a foundry project that provided on-chain testing facility for lobby.
+## entropy
+A testing + benchmarking playground for lobby.
