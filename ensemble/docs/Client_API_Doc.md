@@ -981,11 +981,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 11. Supported Chains
 
 Lobby currently supports the following blockchain networks:
-
+<!-- Sepolia testnet will lose support by end of 2026, so we will migrate to Hoodi instead. -->
 | Chain | Chain ID (decimal) | Chain ID (hex) |
 |---|---|---|
 | Ethereum Mainnet | `1` | `0x1` |
-| Sepolia (testnet) | `11155111` | `0xaa36a7` |
+| Hoodi (testnet) | `17001` | `0x4269` |
 | Polygon | `137` | `0x89` |
 | Arbitrum One | `42161` | `0xa4b1` |
 

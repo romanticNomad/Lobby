@@ -463,7 +463,7 @@ async fn database_connection_loss_triggers_retry() {
 - Verify recipient balance increased
 
 **3. Uniswap V2 Swap**
-- Fork Sepolia with Uniswap V2 contracts
+- Fork Hoodi with Uniswap V2 contracts
 - Submit `swapExactTokensForTokens()` transaction
 - Verify swap executed on-chain
 
@@ -482,7 +482,7 @@ async fn database_connection_loss_triggers_retry() {
 async fn e2e_submit_transaction_and_confirm_on_chain() {
     // Start Anvil (Ethereum fork)
     let anvil = Anvil::new()
-        .fork("https://eth-sepolia.g.alchemy.com/v2/...")
+        .fork("https://eth-hoodi.g.alchemy.com/v2/...")
         .spawn();
     
     // Start Postgres
@@ -511,7 +511,7 @@ async fn e2e_submit_transaction_and_confirm_on_chain() {
                 "from": format!("{:#x}", from_address),
                 "to": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
                 "value": "0xde0b6b3a7640000", // 1 ETH
-                "chainId": "0xaa36a7", // Sepolia
+                "chainId": "0x4269", // Hoodi
                 "gas": "0x5208",
                 "maxFeePerGas": "0xba43b7400",
                 "maxPriorityFeePerGas": "0x77359400",
@@ -552,7 +552,7 @@ All tests use **ephemeral Docker containers** to ensure isolation and repeatabil
 
 **Services:**
 - **PostgreSQL 16** (with shared volumes for migrations)
-- **Anvil** (Foundry's local Ethereum node, forked from Sepolia)
+- **Anvil** (Foundry's local Ethereum node, forked from Hoodi)
 - **Optional: Toxiproxy** (for network fault injection)
 
 **Why Docker?**
@@ -722,7 +722,7 @@ async fn nonce_reservation_is_toctou_safe() {
 **Why Anvil?**
 - **Deterministic:** Local node, no external dependencies
 - **Fast:** Instant block mining, no waiting for confirmations
-- **Forkable:** Can fork from Sepolia to test against real contracts (Uniswap, ERC-20s)
+- **Forkable:** Can fork from Hoodi to test against real contracts (Uniswap, ERC-20s)
 - **Free:** No RPC rate limits
 
 **Setup:**
@@ -731,10 +731,10 @@ use foundry_config::Config;
 
 async fn start_anvil_fork() -> AnvilInstance {
     Anvil::new()
-        .fork("https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY")
+        .fork("https://eth-hoodi.g.alchemy.com/v2/API_KEY")
         .fork_block_number(5_000_000) // Pin to specific block for reproducibility
-        .chain_id(11155111) // Sepolia chain ID
-        .block_time(1) // 1-second block time (faster than real Sepolia)
+        .chain_id(17001) // Hoodi chain ID
+        .block_time(1) // 1-second block time (faster than real Hoodi)
         .spawn()
 }
 ```
@@ -747,9 +747,9 @@ services:
     image: ghcr.io/foundry-rs/foundry:latest
     command: >
       anvil
-      --fork-url https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+      --fork-url https://eth-hoodi.g.alchemy.com/v2/API_KEY
       --fork-block-number 5000000
-      --chain-id 11155111
+      --chain-id 17001
       --block-time 1
       --host 0.0.0.0
     ports:
@@ -780,7 +780,7 @@ async fn fund_account(anvil: &AnvilInstance, address: Address, amount: U256) {
 ```rust
 fn build_eth_transfer(from: Address, to: Address, value: U256) -> Eip1559Transaction {
     Eip1559Transaction {
-        chain_id: ChainId(11155111),
+        chain_id: ChainId(17001),
         nonce: 0, // Will be assigned by Nonce actor
         max_priority_fee_per_gas: U256::from(2_000_000_000u64), // 2 gwei
         max_fee_per_gas: U256::from(50_000_000_000u64), // 50 gwei
@@ -809,7 +809,7 @@ fn build_erc20_transfer(
     data.extend_from_slice(&amount.to_be_bytes::<32>());
     
     Eip1559Transaction {
-        chain_id: ChainId(11155111),
+        chain_id: ChainId(17001),
         nonce: 0,
         max_priority_fee_per_gas: U256::from(2_000_000_000u64),
         max_fee_per_gas: U256::from(50_000_000_000u64),
@@ -822,7 +822,7 @@ fn build_erc20_transfer(
 }
 ```
 
-**3. Uniswap V2 Swap (requires Sepolia fork)**
+**3. Uniswap V2 Swap (requires Hoodi fork)**
 ```rust
 fn build_uniswap_swap(
     router_address: Address,
@@ -836,7 +836,7 @@ fn build_uniswap_swap(
     // ... (full ABI encoding omitted for brevity)
     
     Eip1559Transaction {
-        chain_id: ChainId(11155111),
+        chain_id: ChainId(17001),
         nonce: 0,
         max_priority_fee_per_gas: U256::from(2_000_000_000u64),
         max_fee_per_gas: U256::from(100_000_000_000u64), // Higher gas for complex tx
@@ -956,7 +956,7 @@ impl TestAccount {
 - Default balance: 100 ETH per account (sufficient for all tests)
 
 **For Real Testnet Tests (optional):**
-- Use Sepolia faucet (manual, not automated)
+- Use Hoodi faucet (manual, not automated)
 - Pre-fund accounts before test run
 - Monitor balances, alert if below 1 ETH
 
@@ -2018,7 +2018,7 @@ firefox flamegraph.svg
 - 📍 Snapshot testing (insta for database state snapshots)
 
 ### Phase 4: Production Readiness (0.4.0)
-- 📍 Real testnet E2E tests (Sepolia with real RPC, nightly runs)
+- 📍 Real testnet E2E tests (Hoodi with real RPC, nightly runs)
 - 📍 Soak testing (24-hour continuous load)
 - 📍 Backward compatibility tests (migration from v0.1 → v0.2)
 - 📍 Performance profiling in production (eBPF tracing)
