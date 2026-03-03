@@ -1186,11 +1186,11 @@ fn benchmark_concurrent_throughput(c: &mut Criterion) {
 
 **Target:** > 1000 TPS (with 17 concurrent pipelines)
 
-#### 3. Nonce Reservation Latency
+#### 3. Actor Latency
 
-**What:** Measure isolated Nonce actor performance
+**What:** Measure isolated actor performance
 
-**Setup:**
+**Setup (example for nonce actor):**
 - Real Postgres
 - Single Nonce actor (no other actors)
 
