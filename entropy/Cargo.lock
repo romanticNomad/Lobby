@@ -3,5 +3,33 @@
 version = 4
 
 [[package]]
+name = "benchmarks"
+version = "0.1.0"
+
+[[package]]
+name = "chaos-tests"
+version = "0.1.0"
+
+[[package]]
 name = "client"
+version = "0.1.0"
+
+[[package]]
+name = "component-tests"
+version = "0.1.0"
+
+[[package]]
+name = "e2e-tests"
+version = "0.1.0"
+
+[[package]]
+name = "integration-tests"
+version = "0.1.0"
+
+[[package]]
+name = "invariant-tests"
+version = "0.1.0"
+
+[[package]]
+name = "test-utils"
 version = "0.1.0"

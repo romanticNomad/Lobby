@@ -130,7 +130,7 @@ This document is the **single source of truth** for how we validate Lobby's corr
                 │  (50 tests)                        │
                 └────────────────────────────────────┘
              ┌───────────────────────────────────────────┐
-             │  Component Tests                          │  ← Single actor, mock deps
+             │  invariant Tests                          │  ← Single actor, mock deps
              │  (100 tests)                              │
              └───────────────────────────────────────────┘
           ┌──────────────────────────────────────────────────┐
@@ -146,7 +146,7 @@ This document is the **single source of truth** for how we validate Lobby's corr
 | Layer | Primary Tools | Purpose |
 |-------|--------------|---------|
 | **Unit Tests** | `cargo test`, `rstest` | Fast, deterministic, no I/O |
-| **Component Tests** | `tokio::test`, `mockall`, `testcontainers` | Single actor with real DB |
+| **invariant Tests** | `tokio::test`, `mockall`, `testcontainers` | Single actor with real DB |
 | **Integration Tests** | `testcontainers`, `wiremock` | Multi-actor coordination |
 | **Property Tests** | `proptest`, `quickcheck` | Invariant verification via fuzzing |
 | **Chaos Tests** | `testcontainers`, `toxiproxy` (optional) | Fault injection |
@@ -158,7 +158,7 @@ This document is the **single source of truth** for how we validate Lobby's corr
 
 ## Test Layers & Responsibilities
 
-### Layer 1: Unit Tests
+### Layer 1: Unit Tests -> Deprecated
 
 **What:** Pure functions, type conversions, error handling logic  
 **No I/O:** No database, no network, no filesystem  
@@ -185,12 +185,12 @@ fn execution_id_roundtrip() {
 
 ---
 
-### Layer 2: Component Tests
+### Layer 2: invariant Tests
 
 **What:** Single actor behavior with mocked dependencies  
 **Real Database:** Yes (via `testcontainers`)  
 **Real RPC:** No (mocked with `wiremock`)  
-**Location:** `entropy/component-tests/tests/`
+**Location:** `entropy/invariant-tests/tests/`
 
 **Focus Areas:**
 - **Nonce Actor:** Reserve/resolve logic, lease expiration, concurrent requests
@@ -566,7 +566,7 @@ All tests use **ephemeral Docker containers** to ensure isolation and repeatabil
 │  Test Process (Rust)                                    │
 │                                                          │
 │  ┌──────────────┐   ┌──────────────┐   ┌─────────────┐ │
-│  │ Component    │   │ Integration  │   │  E2E Test   │ │
+│  │ invariant    │   │ Integration  │   │  E2E Test   │ │
 │  │ Test         │   │ Test         │   │             │ │
 │  └──────┬───────┘   └──────┬───────┘   └──────┬──────┘ │
 │         │                  │                   │        │
@@ -999,10 +999,10 @@ async fn pipeline_handles_insufficient_balance() {
 | Failure Mode | Layer | Test Count | Critical? |
 |--------------|-------|-----------|-----------|
 | **Transaction Reversion** | E2E, Chaos | 10 | ✅ Yes |
-| **Actor Panics** | Component, Chaos | 15 | ✅ Yes |
+| **Actor Panics** | invariant, Chaos | 15 | ✅ Yes |
 | **Nonce Conflicts** | Integration, Property | 20 | ✅ Yes |
 | Database Connection Loss | Chaos | 5 | ⚠️ Medium |
-| RPC Timeout/Failure | Component, Chaos | 10 | ⚠️ Medium |
+| RPC Timeout/Failure | invariant, Chaos | 10 | ⚠️ Medium |
 | Lease Expiration Races | Property, Integration | 8 | ⚠️ Medium |
 | Semaphore Exhaustion | Integration | 3 | ⚠️ Medium |
 | Invalid Gas Estimation | E2E | 5 | ⚠️ Medium |
@@ -1323,7 +1323,7 @@ nonce_reserve          time:   [3.1 ms 3.3 ms 3.5 ms]
 stages:
   - lint        # Clippy + rustfmt (< 1 min)
   - unit        # Unit tests (< 1 min)
-  - component   # Component tests (< 3 min)
+  - invariant   # invariant tests (< 3 min)
   - integration # Integration tests (< 5 min)
   - e2e         # E2E tests (< 10 min)
   - benchmark   # Optional, nightly only
@@ -1348,7 +1348,7 @@ lint:clippy:
   stage: lint
   image: rust:1.80
   script:
-    - rustup component add clippy
+    - rustup invariant add clippy
     - cargo clippy --all-targets --all-features -- -D warnings
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -1357,7 +1357,7 @@ lint:format:
   stage: lint
   image: rust:1.80
   script:
-    - rustup component add rustfmt
+    - rustup invariant add rustfmt
     - cargo fmt --all -- --check
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -1376,11 +1376,11 @@ test:unit:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
-### Stage 3: Component Tests (< 3 minutes)
+### Stage 3: invariant Tests (< 3 minutes)
 
 ```yaml
-test:component:
-  stage: component
+test:invariant:
+  stage: invariant
   image: rust:1.80
   services:
     - postgres:16
@@ -1392,7 +1392,7 @@ test:component:
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: postgres
   script:
-    - cd entropy/component-tests
+    - cd entropy/invariant-tests
     - cargo test --release
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -1500,7 +1500,7 @@ Merge Request Created
   │
   ▼
 ┌─────────────────────┐
-│  Component (3 min)  │  ← Real Postgres
+│  invariant (3 min)  │  ← Real Postgres
 │  ✓ Pass             │
 └─────────────────────┘
   │
@@ -1530,15 +1530,7 @@ entropy/                              # Test workspace root
 ├── Cargo.toml                        # Workspace manifest
 ├── README.md                         # Testing philosophy, quick start
 │
-├── unit-tests/                       # Pure unit tests (no I/O)
-│   ├── Cargo.toml
-│   └── tests/
-│       ├── kernel_types.rs           # ExecutionId, ChainId, etc.
-│       ├── error_handling.rs         # Error conversions
-│       ├── retry_logic.rs            # Backoff calculations
-│       └── utils.rs                  # Helper function tests
-│
-├── component-tests/                  # Single actor tests
+├── invariant-tests/                  # Single actor tests
 │   ├── Cargo.toml
 │   └── tests/
 │       ├── nonce_actor.rs            # Reserve, resolve, lease expiration
@@ -1608,9 +1600,10 @@ entropy/                              # Test workspace root
 
 ```toml
 [workspace]
+resolver = "3"
+
 members = [
-    "unit-tests",
-    "component-tests",
+    "invariant-tests",
     "integration-tests",
     "property-tests",
     "chaos-tests",
@@ -1680,14 +1673,14 @@ foundryup
 ```bash
 cd entropy
 
-# Run full test suite (unit + component + integration + e2e)
+# Run full test suite (unit + invariant + integration + e2e)
 cargo test --workspace --release
 
 # Run with verbose output
 cargo test --workspace --release -- --nocapture
 
 # Run specific test layer
-cargo test -p component-tests --release
+cargo test -p invariant-tests --release
 cargo test -p e2e-tests --release
 ```
 
@@ -1698,7 +1691,7 @@ cargo test -p e2e-tests --release
 cargo test -p integration-tests --test pipeline_happy_path
 
 # Run single test function
-cargo test -p component-tests --test nonce_actor nonce_actor_prevents_duplicate_reservation
+cargo test -p invariant-tests --test nonce_actor nonce_actor_prevents_duplicate_reservation
 
 # Run with logging
 RUST_LOG=debug cargo test -p e2e-tests --test eth_transfer -- --nocapture
@@ -1743,7 +1736,7 @@ export RETRY_BASE_DELAY_MS=10
 
 ### Test Naming Conventions
 
-**Pattern:** `<component>_<behavior>_<expected_outcome>`
+**Pattern:** `<invariant>_<behavior>_<expected_outcome>`
 
 **Examples:**
 - ✅ `nonce_actor_prevents_duplicate_reservation`
@@ -1999,7 +1992,7 @@ firefox flamegraph.svg
 ## Future Enhancements
 
 ### Phase 1: Current Focus (0.1.0)
-- ✅ Core test infrastructure (unit, component, integration, E2E)
+- ✅ Core test infrastructure (unit, invariant, integration, E2E)
 - ✅ Property-based testing (nonce monotonicity, idempotency)
 - ✅ Chaos testing (database failures, RPC timeouts, actor panics)
 - ✅ GitLab CI pipeline (gated PR merges)
