@@ -1468,9 +1468,9 @@ LOBBY_API_KEY_1=lobby_live_abc:550e8400-e29b-41d4-a716-446655440000:0x742d35Cc66
 **RPC Providers:**
 ```bash
 RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/KEY
-RPC_ENDPOINT_137=https://polygon-mainnet.g.alchemy.com/v2/KEY
+RPC_ENDPOINT_560048="https://eth-hoodi.g.alchemy.com/v2/KEY"
 ```
-### EVM Account Details
+### EVM Account Details (Lobby V 0.1.0 -> prototype use only)
 
 Lobby loads private keys from a `test_keys.json` file in the project root. Create this file with your test accounts:
 

@@ -511,7 +511,7 @@ async fn e2e_submit_transaction_and_confirm_on_chain() {
                 "from": format!("{:#x}", from_address),
                 "to": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
                 "value": "0xde0b6b3a7640000", // 1 ETH
-                "chainId": "0x4269", // Hoodi
+                "chainId": "0x88bb0", // Hoodi
                 "gas": "0x5208",
                 "maxFeePerGas": "0xba43b7400",
                 "maxPriorityFeePerGas": "0x77359400",
@@ -733,7 +733,7 @@ async fn start_anvil_fork() -> AnvilInstance {
     Anvil::new()
         .fork("https://eth-hoodi.g.alchemy.com/v2/API_KEY")
         .fork_block_number(5_000_000) // Pin to specific block for reproducibility
-        .chain_id(17001) // Hoodi chain ID
+        .chain_id(560048) // Hoodi chain ID
         .block_time(1) // 1-second block time (faster than real Hoodi)
         .spawn()
 }
@@ -749,7 +749,7 @@ services:
       anvil
       --fork-url https://eth-hoodi.g.alchemy.com/v2/API_KEY
       --fork-block-number 5000000
-      --chain-id 17001
+      --chain-id 560048
       --block-time 1
       --host 0.0.0.0
     ports:
@@ -780,7 +780,7 @@ async fn fund_account(anvil: &AnvilInstance, address: Address, amount: U256) {
 ```rust
 fn build_eth_transfer(from: Address, to: Address, value: U256) -> Eip1559Transaction {
     Eip1559Transaction {
-        chain_id: ChainId(17001),
+        chain_id: ChainId(560048),
         nonce: 0, // Will be assigned by Nonce actor
         max_priority_fee_per_gas: U256::from(2_000_000_000u64), // 2 gwei
         max_fee_per_gas: U256::from(50_000_000_000u64), // 50 gwei
@@ -809,7 +809,7 @@ fn build_erc20_transfer(
     data.extend_from_slice(&amount.to_be_bytes::<32>());
     
     Eip1559Transaction {
-        chain_id: ChainId(17001),
+        chain_id: ChainId(560048),
         nonce: 0,
         max_priority_fee_per_gas: U256::from(2_000_000_000u64),
         max_fee_per_gas: U256::from(50_000_000_000u64),
@@ -833,10 +833,10 @@ fn build_uniswap_swap(
 ) -> Eip1559Transaction {
     // ABI-encode: swapExactTokensForTokens(uint256,uint256,address[],address,uint256)
     let selector = &keccak256(b"swapExactTokensForTokens(uint256,uint256,address[],address,uint256)")[..4];
-    // ... (full ABI encoding omitted for brevity)
+    // ... (full ABI encoding omitted for brevity)0x88bb0
     
     Eip1559Transaction {
-        chain_id: ChainId(17001),
+        chain_id: ChainId(560048),
         nonce: 0,
         max_priority_fee_per_gas: U256::from(2_000_000_000u64),
         max_fee_per_gas: U256::from(100_000_000_000u64), // Higher gas for complex tx

@@ -985,7 +985,7 @@ Lobby currently supports the following blockchain networks:
 | Chain | Chain ID (decimal) | Chain ID (hex) |
 |---|---|---|
 | Ethereum Mainnet | `1` | `0x1` |
-| Hoodi (testnet) | `17001` | `0x4269` |
+| Hoodi (testnet) | `560048` | `0x88bb0` |
 | Polygon | `137` | `0x89` |
 | Arbitrum One | `42161` | `0xa4b1` |
 
@@ -1094,7 +1094,7 @@ LOBBY_API_KEY_1=lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9c
 # RPC Providers
 # Format: RPC_ENDPOINT_<chain_id>=<https_url>
 RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
-RPC_ENDPOINT_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+RPC_ENDPOINT_17001="https://eth-hoodi.g.alchemy.com/v2/YOUR_ALCHEMY_KEY"
 RPC_ENDPOINT_137=https://polygon-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
 RPC_ENDPOINT_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
 
@@ -1116,20 +1116,15 @@ source .env
 cargo run --release
 ```
 
-You should see:
+You should see (ignore the timestamps):
 ```
-INFO lobby: lobby starting
-INFO lobby: database connection estabilished
-INFO sqlx::postgres::notice: relation "_sqlx_migrations" already exists, skipping
-INFO lobby: database migrations applied
-INFO lobby: api keys loaded count=1
-INFO lobby: RPC provider registry initialized chains=[ChainId(1)] count=1
-INFO cortex: spawning cortex actor pools nonce_shards=17 sign_shards=17 broadcast_shards=17 pipeline=17
-INFO cortex: orchestrator ready
-INFO lobby: cortex ready
-INFO actors::relayhost::engine: RelayHostEngine started
-INFO actors::validator::engine: validator engine started
-INFO lobby: lobby listening server_addr=0.0.0.0:3000
+2026-03-04T12:37:29.979494Z  INFO lobby: lobby bootup sequence active
+2026-03-04T12:37:30.185088Z  INFO lobby: database migrations applied
+2026-03-04T12:37:30.185339Z  INFO lobby: api_keys loaded: 1
+2026-03-04T12:37:30.185528Z  INFO lobby: rpc_endpoints loaded: [ChainId(1), ChainId(17001)]
+2026-03-04T12:37:30.185574Z  INFO lobby: custody accounts loaded: 2
+2026-03-04T12:37:30.186146Z  INFO cortex: cortex online
+2026-03-04T12:37:30.186177Z  INFO lobby: lobby listening server_addr=0.0.0.0:3000
 ```
 
 ---
@@ -1147,7 +1142,7 @@ curl -X POST http://localhost:3000/v1/transactions \
       "from":                 "0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92",
       "to":                   "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
       "value":                "0xde0b6b3a7640000",
-      "chainId":              "0xaa36a7",
+      "chainId":              "0x88bb0",
       "gas":                  "0x5208",
       "maxFeePerGas":         "0xba43b7400",
       "maxPriorityFeePerGas": "0x77359400"

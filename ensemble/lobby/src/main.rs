@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("lobby starting");
+    tracing::info!("lobby bootup sequence active");
 
     // ============================================================
     // environment
@@ -51,15 +51,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connect(&database_url)
         .await?;
 
-    tracing::info!("database connection estabilished");
-
     sqlx::migrate!("../database/migrations")
         .run(&db_pool)
         .await?;
     tracing::info!("database migrations applied");
 
     // ============================================================
-    // lobby state artifacts artifacts
+    // lobby state artifacts
 
     // api_registry
     let api_registry = load_api_key_from_env()?;
@@ -77,16 +75,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     tracing::info!("rpc_endpoints loaded: {:?}", chains);
 
+    // custody keys
+    let custody_keys_count = export_custody_key_count();
+    tracing::info!("custody accounts loaded: {custody_keys_count}");
+
     //cortex handler
     let config = CortexConfig::from_env()?;
     let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry, config);
 
     // status registry
     let status_registry = cortex_handler.status_registry();
-
-    // custody keys
-    let custody_keys_count = export_custody_key_count();
-    tracing::info!("accounts in custody: {custody_keys_count}");
     
     // ============================================================
     // axum app
