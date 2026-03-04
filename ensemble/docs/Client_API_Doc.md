@@ -389,7 +389,7 @@ curl -X POST http://localhost:3000/v1/transactions \
     "method": "eth_sendTransaction",
     "params": [{
       "from":                 "0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92",
-      "to":                   "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+      "to":                   "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
       "value":                "0xde0b6b3a7640000",
       "chainId":              "0x1",
       "gas":                  "0x5208",
@@ -484,7 +484,7 @@ def submit_transaction(
 
 # Example: send 0.1 ETH to an address
 execution_id = submit_transaction(
-    to        = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+    to        = "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
     value_wei = 100_000_000_000_000_000,  # 0.1 ETH
     chain_id  = 1,
 )
@@ -544,7 +544,7 @@ async function submitTransaction(params: {
 
 // Example: send 0.1 ETH
 const executionId = await submitTransaction({
-  to:                   "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+  to:                   "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
   value:                100_000_000_000_000_000n, // 0.1 ETH in wei
   chainId:              1,
   gas:                  21000n,
@@ -1130,7 +1130,7 @@ You should see (ignore the timestamps):
 ---
 
 ### Step 6: Verify the Server is Running
-
+<!-- chain_id = 560048 -> Hoodi testnet -->
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
   -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92" \
@@ -1140,7 +1140,7 @@ curl -X POST http://localhost:3000/v1/transactions \
     "method":  "eth_sendTransaction",
     "params": [{
       "from":                 "0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92",
-      "to":                   "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+      "to":                   "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
       "value":                "0xde0b6b3a7640000",
       "chainId":              "0x88bb0",
       "gas":                  "0x5208",
@@ -1190,8 +1190,8 @@ No. `202 Accepted` means Lobby has validated and accepted your transaction into 
 
 **Q: What encoding should I use for addresses?**  
 Both checksummed (EIP-55) and lowercase hex addresses are accepted. Examples:
-- Checksummed: `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed`
-- Lowercase: `0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed`
+- Checksummed: `0x5b35c4571b935076c853e9c3aab59b60d7b32daf`
+- Lowercase: `0x5b35c4571b935076c853e9c3aab59b60d7b32daf`
 
 Both are valid.
 

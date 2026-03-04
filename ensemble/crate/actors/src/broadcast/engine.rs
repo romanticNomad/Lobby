@@ -6,7 +6,6 @@ use kernel::types::{
 };
 use sqlx::PgPool;
 use tokio::sync::mpsc;
-use tracing::info;
 
 // =========================================================
 // BroadcastEngine struct declaration with provider details
@@ -170,11 +169,6 @@ impl BroadcastEngine {
 
         match send_txn {
             Ok(pending_tx) => {
-                info!(
-                    "transaction for execution_id: {:?}\nsent successfully -> updating state",
-                    execution_id
-                );
-
                 let tx_hash = pending_tx.tx_hash();
                 sqlx::query!(
                     r#"
@@ -195,10 +189,6 @@ impl BroadcastEngine {
                 Ok(BroadcastOutcome { txn_hash: *tx_hash })
             }
             Err(err) => {
-                info!(
-                    "transaction for execution_id: {:?}\nfailed -> logging error in database",
-                    execution_id
-                );
                 let err_str = err.to_string();
 
                 let deterministic_error = err_str.contains("nonce")

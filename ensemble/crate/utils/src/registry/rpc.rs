@@ -71,13 +71,13 @@ pub async fn get_transaction_receipt(
 ) -> Result<Option<TransactionReceipt>, ValidatorError> {
     let provider = registry.get(&chain_id).ok_or_else(|| ValidatorError::Rpc {
         tx_hash,
-        message: format!("no rpc provider registered for chain_id: {}", chain_id),
+        message: format!("utils::rpc error: no rpc provider registered for chain_id: {}", chain_id),
     })?;
 
     provider.get_transaction_receipt(tx_hash).await.map_err(
         |e: alloy::transports::RpcError<TransportErrorKind>| ValidatorError::Rpc {
             tx_hash,
-            message: e.to_string(),
+            message: format!("utils::rpc error: {}",e.to_string()),
         },
     )
 }
@@ -90,13 +90,13 @@ pub async fn get_block_number(
 ) -> Result<u64, ValidatorError> {
     let provider = registry.get(&chain_id).ok_or_else(|| ValidatorError::Rpc {
         tx_hash,
-        message: format!("no rpc provider register for chain_id: {}", chain_id),
+        message: format!("utils::rpc error: no rpc provider register for chain_id: {}", chain_id),
     })?;
 
     provider.get_block_number().await.map_err(
         |e: alloy::transports::RpcError<TransportErrorKind>| ValidatorError::Rpc {
             tx_hash,
-            message: e.to_string(),
+            message: format!("utils::rpc error: {}",e.to_string()),
         },
     )
 }

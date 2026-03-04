@@ -191,11 +191,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // ============================================================
         // validator
-
-        let validation = match retry_with_backoff(&ctx.retry_config, "validator", || {
-            let v = Arc::clone(&ctx.validator_handle);
+        let v = Arc::clone(&ctx.validator_handle);
+        let validation = match {    
             async move { v.validate(chain_id, execution_id, tx_hash).await }
-        })
+        }
         .await
         {
             Ok(outcome) => outcome,
