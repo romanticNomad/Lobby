@@ -92,9 +92,15 @@ pub fn eth_rlp_append_u256(value: &U256, s: &mut RlpStream) {
         s.append_empty_data();
     } else {
         let buf: [u8; 32] = value.to_be_bytes();
-
         let first_non_zero = buf.iter().position(|b| *b != 0).unwrap();
-        s.encoder().encode_value(&buf[first_non_zero..]);
+        let trimmed = &buf[first_non_zero..];
+
+        // Encode into a temporary stream so the prefix bytes are written,
+        // then append_raw the result (1 item) into the parent stream.
+        // This ensures note_appended(1) is called on the parent list.
+        let mut tmp = RlpStream::new();
+        tmp.encoder().encode_value(trimmed);
+        s.append_raw(&tmp.as_raw().to_vec(), 1);
     }
 }
 
@@ -109,7 +115,11 @@ impl EthRlpEncode for U256 {
 
 impl EthRlpEncode for Address {
     fn eth_rlp_append(&self, s: &mut rlp::RlpStream) {
-        s.encoder().encode_value(self.as_slice());
+        // Encode into a temporary stream, then append_raw 1 item into the
+        // parent so note_appended(1) is called and the list counter advances.
+        let mut tmp = RlpStream::new();
+        tmp.encoder().encode_value(self.as_slice());
+        s.append_raw(&tmp.as_raw().to_vec(), 1);
     }
 }
 
