@@ -1,11 +1,10 @@
-use crate::server::AppState;
 use axum::{
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use kernel::types::AuthenticatedClient;
+use kernel::types::{ApiRegistry, AuthenticatedClient};
 use tracing::warn;
 
 // ============================================================
@@ -22,7 +21,7 @@ pub enum AuthError {
 // authentication and responce handeling
 
 pub(crate) async fn auth_middleware(
-    State(state): State<AppState>,
+    State(api_resigrty): State<ApiRegistry>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
@@ -47,8 +46,7 @@ pub(crate) async fn auth_middleware(
     };
 
     // lookup api key in DashMap (api_registry) and authenticate
-    let client_config = state
-        .api_registry
+    let client_config = api_resigrty
         .get(api_token)
         .map(|entry| entry.value().clone())
         .ok_or(AuthError::InvalidApiKey)?;

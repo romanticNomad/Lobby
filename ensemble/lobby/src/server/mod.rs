@@ -9,9 +9,9 @@ use kernel::types::ApiRegistry;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub(crate) api_registry: ApiRegistry,
-    pub(crate) cortex_handler: CortextHandle,
-    pub(crate) status_registry: StatusRegistry,
+    pub(crate) api_registry: ApiRegistry,       // authentication
+    pub(crate) cortex_handler: CortextHandle,   // POST handler
+    pub(crate) status_registry: StatusRegistry, // Get handler
 }
 
 impl AppState {
@@ -29,11 +29,17 @@ impl AppState {
 }
 
 // ============================================================
+// defining substate modifications for auth_middleware and get_status, handlers.
 
-// allowing status_registry to be a sub_state used for get_transaction_status handler
 impl axum::extract::FromRef<AppState> for StatusRegistry {
     fn from_ref(state: &AppState) -> Self {
         state.status_registry.clone()
+    }
+}
+
+impl axum::extract::FromRef<AppState> for ApiRegistry {
+    fn from_ref(state: &AppState) -> Self {
+        state.api_registry.clone()
     }
 }
 

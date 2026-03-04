@@ -154,7 +154,7 @@ pub fn spawn_cortex(
     provider: RpcProviderRegistry,
     config: CortexConfig,
 ) -> CortextHandle {
-    tracing::info!(
+    tracing::debug!(
         nonce_shards = config.nonce_shards,
         sign_shards = config.sign_shards,
         broadcast_shards = config.broadcast_shards,
@@ -250,7 +250,7 @@ pub fn spawn_cortex(
         validator: validator_handle,
     });
 
-    tracing::info!("orchestrator ready");
+    tracing::info!("cortex online");
     CortextHandle { inner }
 }
 

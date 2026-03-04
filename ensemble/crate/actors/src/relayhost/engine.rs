@@ -2,7 +2,6 @@ use crate::relayhost::handle::RelayHostCommand;
 use kernel::types::{ClientConfig, Eip1559Transaction, ExecutionId, RelayHostError};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
-use tracing::info;
 use utils::eip1559::transaction_lint;
 
 // ============================================================
@@ -24,8 +23,6 @@ impl RelayHostEngine {
 
 impl RelayHostEngine {
     pub async fn run(mut self) {
-        info!("RelayHostEngine started");
-
         while let Some(msg) = self.rx.recv().await {
             match msg {
                 RelayHostCommand::SubmitTransaction {

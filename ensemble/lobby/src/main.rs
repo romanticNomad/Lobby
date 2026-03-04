@@ -13,7 +13,7 @@ use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use utils::directory::{load_api_key_from_env, load_rpc_endpoints_from_env};
+use utils::registry::{load_api_key_from_env, load_rpc_endpoints_from_env};
 
 // ============================================================
 // lobby boot sequence
@@ -59,45 +59,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("database migrations applied");
 
     // ============================================================
-    // api keys
+    // AppState artifacts
 
+    // api_registry
     let api_registry = load_api_key_from_env()?;
-    tracing::info!(count = api_registry.len(), "api keys loaded");
+    let count = api_registry.len();
+    tracing::info!("api_keys loaded: {count}");
 
-    // ============================================================
-    // rpc provider registry
-
+    // rpc-endpoint registry
     let rpc_registry = load_rpc_endpoints_from_env();
-
-    let chain_count = rpc_registry.len();
-    if chain_count == 0 {
+    let chains: Vec<_> = rpc_registry.iter().map(|entry| *entry.key()).collect();
+    if rpc_registry.len() == 0 {
         tracing::warn!(
             "no RPC endpoints found in environment, \
-             broadcast and validator will fail for all chains."
-        );
-    } else {
-        let chains: Vec<_> = rpc_registry.iter().map(|entry| *entry.key()).collect();
-        tracing::info!(
-            ?chains,
-            count = chain_count,
-            "RPC provider registry initialized"
+            broadcast and validator will fail for all chains."
         );
     }
+    tracing::info!("rpc_endpoints loaded: {:?}", chains);
 
-    // ============================================================
-    // orchestrator init
-
+    //cortex handler
     let config = CortexConfig::from_env()?;
     let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry, config);
 
-    tracing::info!("cortex ready");
-
+    // status registry
+    let status_registry = cortex_handler.status_registry();
+    
     // ============================================================
     // axum app
 
-    let status_registry = cortex_handler.status_registry();
     let state = AppState::new(api_registry, cortex_handler, status_registry);
-
     let app = Router::new()
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
         .route("/v1/transactions", post(submit_transaction))

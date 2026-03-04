@@ -5,7 +5,7 @@ use kernel::types::{
 use sqlx::PgPool;
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
-use utils::directory::rpc;
+use utils::registry::rpc;
 
 // ============================================================
 
@@ -41,7 +41,6 @@ impl ValidatorEngine {
 impl ValidatorEngine {
     /// Run the actor's event loop, processing commands until the channel closes.
     pub async fn run(mut self) {
-        tracing::info!("validator engine started");
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
                 ValidatorCommand::Validate {
