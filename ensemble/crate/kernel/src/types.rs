@@ -245,16 +245,16 @@ pub enum ValidatorOutcome {
 #[derive(Debug, Error)]
 pub enum RelayHostError {
     /// Transaction was rejected by RelayHost validation (client-facing failure).
-    #[error("Invalid transaction: {0}")]
+    #[error("Validation Failed {0}")]
     ValidationFailed(String),
     /// Database failure while recording RelayHost state.
-    #[error("Database error: {0}")]
+    #[error("Database Error: {0}")]
     DatabaseError(#[from] sqlx::Error),
     /// Catch-all for unexpected internal failures (bugs / integration issues).
-    #[error("Internal error: {0}")]
+    #[error("Internal: {0}")]
     Internal(String),
     /// Authenticated `from` address did not match the transaction `from`.
-    #[error("From address mismatch: expected {expected}, got {actual}")]
+    #[error("From Address Mismatch: expected {expected}, got {actual}")]
     FromAddressMismatch { expected: String, actual: String },
 }
 

@@ -23,7 +23,7 @@ pub fn transaction_lint(txn: &Eip1559Transaction) -> Result<(), RelayHostError> 
     const MAX_GAS_LIMIT: u64 = 30_000_000;
     if txn.gas_limit > U256::from(MAX_GAS_LIMIT) {
         return Err(RelayHostError::ValidationFailed(format!(
-            "fee exeeds max gas limit: {}",
+            "lint error: fee exeeds max gas limit: {}",
             MAX_GAS_LIMIT
         )));
     };
@@ -33,13 +33,13 @@ pub fn transaction_lint(txn: &Eip1559Transaction) -> Result<(), RelayHostError> 
 
     if txn.max_fee_per_gas == U256::ZERO {
         return Err(RelayHostError::ValidationFailed(
-            "max_fee_per_gas cannot be zero".to_string(),
+            "lint error: max_fee_per_gas cannot be zero".to_string(),
         ));
     };
 
     if txn.max_priority_fee_per_gas >= txn.max_fee_per_gas {
         return Err(RelayHostError::ValidationFailed(
-            "max_priority_fee_per_gas cannot exceed max_fee_per_gas".to_string(),
+            "lint error: max_priority_fee_per_gas cannot exceed max_fee_per_gas".to_string(),
         ));
     };
 
@@ -49,7 +49,7 @@ pub fn transaction_lint(txn: &Eip1559Transaction) -> Result<(), RelayHostError> 
     const SUPPORTED_CHAINS: &[u64] = &[
         1,        // Ethereum Mainnet
         5,        // Goerli
-        11155111, // Sepolia
+        560048, // Hoodi
         137,      // Polygon
         42161,    // Arbitrum One
     ];
@@ -57,10 +57,10 @@ pub fn transaction_lint(txn: &Eip1559Transaction) -> Result<(), RelayHostError> 
     if !SUPPORTED_CHAINS.contains(
         &(txn.chain_id.0)
             .try_into()
-            .map_err(|_| RelayHostError::ValidationFailed("invalid chain_id format".to_string()))?,
+            .map_err(|_| RelayHostError::ValidationFailed("lint error: invalid chain_id format".to_string()))?,
     ) {
         return Err(RelayHostError::ValidationFailed(
-            "unsupported chain_id".to_string(),
+            "lint error: unsupported chain_id".to_string(),
         ));
     };
 
