@@ -833,7 +833,7 @@ fn build_uniswap_swap(
 ) -> Eip1559Transaction {
     // ABI-encode: swapExactTokensForTokens(uint256,uint256,address[],address,uint256)
     let selector = &keccak256(b"swapExactTokensForTokens(uint256,uint256,address[],address,uint256)")[..4];
-    // ... (full ABI encoding omitted for brevity)0x88bb0
+    // ... (full ABI encoding omitted for brevity)
     
     Eip1559Transaction {
         chain_id: ChainId(560048),

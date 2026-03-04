@@ -64,7 +64,7 @@ lobby_live_<random_string>:<client_id>:<from_address>
 
 **Example:**
 ```
-lobby_live_abc123xyz:550e8400-e29b-41d4-a715-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92
+lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92
 ```
 
 ---
@@ -1163,10 +1163,10 @@ Expected response:
 }
 ```
 
-Then query the status:
+Then query the status -> replace {execution_id} with the execution_id sent in reponse:
 ```bash
 curl -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92" \
-  http://localhost:3000/status/550e8400-e29b-41d4-a716-446655440000
+  http://localhost:3000/status/{execution_id}
 ```
 
 ---
