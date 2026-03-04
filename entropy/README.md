@@ -3,7 +3,7 @@
 **Version:** 0.1.0 (Initial Testing Infrastructure)  
 **Last Updated:** Mar 02, 2026  
 **Target Audience:** Contributors, maintainers, and LLMs working with Lobby's test infrastructure  
-**Prerequisites:** Read [Lobby_Dev_Doc.md](../../ensemble/docs/Lobby_Dev_Doc.md) and [Client_API_Doc.md](../../ensemble/docs/Client_API_Doc.md) first
+**Prerequisites:** Read [Lobby_Dev_Doc.md](../ensemble/docs/Lobby_Dev_Doc.md) and [Client_API_Doc.md](../ensemble/docs/Client_API_Doc.md) first
 
 ---
 
@@ -209,7 +209,7 @@ async fn nonce_actor_prevents_duplicate_reservation() {
         .await;
     
     let db = PgPool::connect(&connection_string).await.unwrap();
-    sqlx::migrate!("../../ensemble/database/migrations").run(&db).await.unwrap();
+    sqlx::migrate!("../ensemble/database/migrations").run(&db).await.unwrap();
     
     // Spawn nonce actor
     let nonce_handle = spawn_nonce_actor(db.clone(), 64);
@@ -420,7 +420,7 @@ async fn database_connection_loss_triggers_retry() {
         .await;
     
     let db = PgPool::connect(&connection_string).await.unwrap();
-    sqlx::migrate!("../../ensemble/database/migrations").run(&db).await.unwrap();
+    sqlx::migrate!("../ensemble/database/migrations").run(&db).await.unwrap();
     
     let nonce_handle = spawn_nonce_actor(db.clone(), 64);
     
@@ -614,7 +614,7 @@ async fn setup_test_db() -> PgPool {
     let pool = PgPool::connect(&db_url).await.unwrap();
     
     // Apply production migrations
-    sqlx::migrate!("../../ensemble/database/migrations")
+    sqlx::migrate!("../ensemble/database/migrations")
         .run(&pool)
         .await
         .unwrap();
@@ -1523,12 +1523,16 @@ Merge Request Created
 
 ---
 
-## Directory Structure & Organization
+## Directory Structure (underlying theme of directory)
 
 ```
 entropy/                              # Test workspace root
 ├── Cargo.toml                        # Workspace manifest
 ├── README.md                         # Testing philosophy, quick start
+│
+├── clietn/                           # Mock client -> calling lobby server
+│   ├── Cargo.toml
+│   └── src/
 │
 ├── invariant-tests/                  # Single actor tests
 │   ├── Cargo.toml
@@ -1916,7 +1920,7 @@ Table 'nonce.nonce_assignments' does not exist
 **Fix:**
 ```rust
 // Ensure correct migration path
-sqlx::migrate!("../../ensemble/database/migrations")
+sqlx::migrate!("../ensemble/database/migrations")
     .run(&db)
     .await
     .expect("Failed to apply migrations");
@@ -2038,8 +2042,8 @@ firefox flamegraph.svg
 
 **End of Testing Strategy Document**
 
-For architecture details, see [Lobby_Dev_Doc.md](../../ensemble/docs/Lobby_Dev_Doc.md).  
-For API specifications, see [Client_API_Doc.md](../../ensemble/docs/Client_API_Doc.md).
+For architecture details, see [Lobby_Dev_Doc.md](../ensemble/docs/Lobby_Dev_Doc.md).  
+For API specifications, see [Client_API_Doc.md](../ensemble/docs/Client_API_Doc.md).
 
 ---
 
