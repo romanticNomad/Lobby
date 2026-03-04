@@ -1,7 +1,7 @@
 use alloy::primitives::Address;
 use kernel::{traits::PolicyEngine, types::LocalError};
 use serde::Deserialize;
-use std::{collections::HashMap, fs::File, io::BufReader};
+use std::{collections::HashMap, fs::File, io::BufReader, path::PathBuf};
 
 // ============================================================
 
@@ -58,6 +58,15 @@ impl PolicyEngine for JsonPolicyEngine {
 
         Ok(pvt_bytes)
     }
+}
+
+// ============================================================
+
+/// return the number of keys / evm accounts in custody of lobby
+pub fn export_custody_key_count() -> usize {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
+    let file = JsonPolicyEngine::load_file(path.to_str().unwrap());
+    file.index.len()
 }
 
 // ============================================================

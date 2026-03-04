@@ -7,25 +7,25 @@ use kernel::{
 use sqlx::PgPool;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
-use utils::{eip1559::sign_eip1559_transaction, policy::JsonPolicyEngine};
+use utils::{eip1559::sign_eip1559_transaction, custody::JsonPolicyEngine};
 
 // ============================================================
 // SignEngine struct declaration with policy details
 
 pub struct SignEngine {
     db: PgPool,
-    json_policy: JsonPolicyEngine,
+    custody_keys: JsonPolicyEngine,
     rx: mpsc::Receiver<SignCommand>,
 }
 
 impl SignEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
-        let json_policy = JsonPolicyEngine::load_file(path.to_str().unwrap());
+        let custody_keys = JsonPolicyEngine::load_file(path.to_str().unwrap());
 
         Self {
             db,
-            json_policy,
+            custody_keys,
             rx,
         }
     }
@@ -65,7 +65,7 @@ impl SignEngine {
         // =========================================================
         // loading pvt_key from key policy and setting types for db
 
-        let pvt_key = self.json_policy.resolve_key(&from)?;
+        let pvt_key = self.custody_keys.resolve_key(&from)?;
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()

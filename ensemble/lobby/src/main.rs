@@ -13,7 +13,7 @@ use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use utils::registry::{load_api_key_from_env, load_rpc_endpoints_from_env};
+use utils::{custody::export_custody_key_count, registry::{load_api_key_from_env, load_rpc_endpoints_from_env}};
 
 // ============================================================
 // lobby boot sequence
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("database migrations applied");
 
     // ============================================================
-    // AppState artifacts
+    // lobby state artifacts artifacts
 
     // api_registry
     let api_registry = load_api_key_from_env()?;
@@ -83,6 +83,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // status registry
     let status_registry = cortex_handler.status_registry();
+
+    // custody keys
+    let custody_keys_count = export_custody_key_count();
+    tracing::info!("accounts in custody: {custody_keys_count}");
     
     // ============================================================
     // axum app
