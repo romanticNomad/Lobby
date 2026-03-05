@@ -1195,7 +1195,7 @@ Lobby exposes a minimal JSON-RPC API over HTTP.
   "method": "eth_sendTransaction",
   "params": [{
     "from": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-    "to": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+    "to": "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
     "value": "0xde0b6b3a7640000",
     "chainId": "0x1",
     "gas": "0x5208",
@@ -1470,7 +1470,7 @@ LOBBY_API_KEY_1=lobby_live_abc:550e8400-e29b-41d4-a716-446655440000:0x742d35Cc66
 RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/KEY
 RPC_ENDPOINT_560048="https://eth-hoodi.g.alchemy.com/v2/KEY"
 ```
-### EVM Account Details (Lobby V 0.1.0 -> prototype use only)
+### EVM Account Details (Lobby v0.1.0 -> prototype use only)
 
 Lobby loads private keys from a `test_keys.json` file in the project root. Create this file with your test accounts:
 

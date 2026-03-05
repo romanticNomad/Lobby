@@ -142,9 +142,9 @@ impl NonceEngine {
     // resolving nonce state
 
     async fn handle_resolve(
-        &self,
-        execution_id: ExecutionId,
-        success: bool,
+    &self,
+    execution_id: ExecutionId,
+    success: bool,
     ) -> Result<(), LocalError> {
         // =========================================================
         // loading state update
@@ -158,78 +158,67 @@ impl NonceEngine {
         // =========================================================
         // Atomic state transition
 
-        let updated = sqlx::query!(
+        let result = sqlx::query!(
             r#"
-            INSERT INTO nonce.nonce_assignments
-                (execution_id, revision, chain_id, from_address, nonce, state)
-            SELECT
-                $1,
-                COALESCE(
-                    (SELECT MAX(REVISION)
-                        FROM nonce.nonce_assignments
-                        WHERE execution_id = $1),
-                        0
-                ) + 1,
-                chain_id,
-                from_address,
-                nonce,
-                $2 as "new_state: NonceState"
-            FROM nonce.nonce_assignments
-            WHERE execution_id = $1
-                AND state = 'reserved'
-            ORDER BY revision DESC
-            LIMIT 1
-            ON CONFLICT (execution_id, revision) DO NOTHING 
-            RETURNING revision
+            UPDATE nonce.nonce_assignments
+            SET state = $2
+            WHERE (execution_id, revision) = (
+                SELECT execution_id, revision
+                FROM nonce.nonce_assignments
+                WHERE execution_id = $1
+                    AND state = 'reserved'
+                ORDER BY revision DESC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
             "#,
             execution_id.0.as_bytes().as_slice(),
             new_state as NonceState,
         )
-        .fetch_optional(&self.db)
+        .execute(&self.db)
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
         // =========================================================
         // pattern matching the update result
 
-        match updated {
-            Some(_) => Ok(()),
-            None => {
-                // check for idempotency or error
+        if result.rows_affected() > 0 {
+            Ok(())
+        } else {
+            // check for idempotency or error
 
-                let latest = sqlx::query!(
-                    r#"
-                    SELECT state as "state: NonceState"
-                    FROM nonce.nonce_assignments
-                    WHERE execution_id = $1
-                    ORDER BY revision DESC
-                    LIMIT 1
-                    "#,
-                    execution_id.0.as_bytes().as_slice()
-                )
-                .fetch_optional(&self.db)
-                .await
-                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
+            let latest = sqlx::query!(
+                r#"
+                SELECT state as "state: NonceState"
+                FROM nonce.nonce_assignments
+                WHERE execution_id = $1
+                ORDER BY revision DESC
+                LIMIT 1
+                "#,
+                execution_id.0.as_bytes().as_slice()
+            )
+            .fetch_optional(&self.db)
+            .await
+            .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-                match latest {
-                    Some(row) => {
-                        if row.state == new_state {
-                            Ok(())
-                        } else if matches!(row.state, NonceState::Finalized | NonceState::Released)
-                        {
-                            Err(LocalError::DatabaseError(format!(
-                                "execution_id already resolved to {:?}, cannot transition to {:?}",
-                                row.state, new_state
-                            )))
-                        } else {
-                            Err(LocalError::DatabaseError(
-                                "expected reserved state but INSERT failed".to_string(),
-                            ))
-                        }
+            match latest {
+                Some(row) => {
+                    if row.state == new_state {
+                        Ok(())
+                    } else if matches!(row.state, NonceState::Finalized | NonceState::Released)
+                    {
+                        Err(LocalError::DatabaseError(format!(
+                            "execution_id already resolved to {:?}, cannot transition to {:?}",
+                            row.state, new_state
+                        )))
+                    } else {
+                        Err(LocalError::DatabaseError(
+                            "expected reserved state but UPDATE failed".to_string(),
+                        ))
                     }
-
-                    None => Err(LocalError::Invariant("invalid execution_id".to_string())),
                 }
+
+                None => Err(LocalError::Invariant("invalid execution_id".to_string())),
             }
         }
     }
