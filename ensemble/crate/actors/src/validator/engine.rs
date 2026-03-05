@@ -102,7 +102,6 @@ impl ValidatorEngine {
                     .await?;
                 return Err(ValidatorError::Timeout {
                     chain_id,
-                    tx_hash,
                     timeout_sec: start.elapsed().as_secs(),
                 });
             }

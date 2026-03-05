@@ -64,7 +64,7 @@ impl Default for ValidatorConfig {
         Self {
             poll_interval: Duration::from_secs(3),
             timeout: Duration::from_secs(300),
-            required_confirmations: 3,
+            required_confirmations: 2,
         }
     }
 }

@@ -301,15 +301,8 @@ pub enum BroadcastError {
 pub enum ValidatorError {
     /// Validation timed out waiting for the transaction to be included.
     /// The transaction may still be pending in the mempool, or it was dropped.
-    #[error(
-        "validation timed out: {tx_hash}, after: {timeout_sec}, on chain {:?}",
-        chain_id
-    )]
-    Timeout {
-        chain_id: ChainId,
-        tx_hash: TxHash,
-        timeout_sec: u64,
-    },
+    #[error("validation timed out after: {timeout_sec} s, on chain {chain_id}")]
+    Timeout { chain_id: ChainId, timeout_sec: u64 },
     /// RPC node returned an error while polling for the transaction receipt.
     #[error("rpc error while polling for tx {tx_hash}: {message}")]
     Rpc { tx_hash: TxHash, message: String },

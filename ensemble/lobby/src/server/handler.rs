@@ -87,7 +87,7 @@ pub(crate) async fn submit_transaction(
     let execution_id = ExecutionId(Uuid::new_v4());
 
     info!(
-        %execution_id,
+        execution_id = %execution_id,
         from = %client_config.from_address,
         chain_id = %txn.chain_id,
         "transaction submission accepted"
