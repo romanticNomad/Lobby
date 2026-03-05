@@ -49,7 +49,7 @@ impl ValidatorEngine {
                     tx_hash,
                     reply_tx,
                 } => {
-                    let span = tracing::info_span!(
+                    let span = tracing::debug_span!(
                         "validate",
                         %execution_id,
                         %chain_id,
@@ -66,7 +66,7 @@ impl ValidatorEngine {
             }
         }
 
-        tracing::info!("validator engine stopped");
+        tracing::debug!("validator engine stopped");
     }
 
     // ============================================================
@@ -126,7 +126,7 @@ impl ValidatorEngine {
                     let confirmations = current_block.saturating_sub(tx_block);
 
                     if confirmations > self.config.required_confirmations {
-                        tracing::info!(
+                        tracing::debug!(
                             block_number = tx_block,
                             confirmations,
                             "transaction confirmed"
