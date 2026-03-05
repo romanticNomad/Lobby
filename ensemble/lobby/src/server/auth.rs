@@ -69,7 +69,9 @@ impl IntoResponse for AuthError {
                 StatusCode::UNAUTHORIZED,
                 "invalid authorization format (expected 'Bearer lobby_live_<random_string>:<api_token>:<from_address>')",
             ),
-            AuthError::MissingAuthHeader => (StatusCode::UNAUTHORIZED, "missing autherization header"),
+            AuthError::MissingAuthHeader => {
+                (StatusCode::UNAUTHORIZED, "missing autherization header")
+            }
         };
 
         warn!("authentication failed: {:?}", self);

@@ -7,7 +7,7 @@ use kernel::{
 use sqlx::PgPool;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
-use utils::{eip1559::sign_eip1559_transaction, custody::JsonPolicyEngine};
+use utils::{custody::JsonPolicyEngine, eip1559::sign_eip1559_transaction};
 
 // ============================================================
 // SignEngine struct declaration with policy details

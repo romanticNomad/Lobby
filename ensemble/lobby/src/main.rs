@@ -13,8 +13,11 @@ use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use tracing_forest::ForestLayer;
-use utils::{custody::export_custody_key_count, registry::{load_api_key_from_env, load_rpc_endpoints_from_env}};
+use tracing_tree::HierarchicalLayer;
+use utils::{
+    custody::export_custody_key_count,
+    registry::{load_api_key_from_env, load_rpc_endpoints_from_env},
+};
 
 // ============================================================
 // lobby boot sequence
@@ -26,7 +29,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
-        .with(ForestLayer::default())
+        .with(
+            HierarchicalLayer::new(2)
+                .with_ansi(true)
+                .with_targets(true)
+                .with_bracketed_fields(true)
+                .with_span_modes(true)
+                .with_thread_ids(true)
+                .with_indent_lines(true),
+        )
         .init();
 
     tracing::info!("lobby bootup sequence active");
@@ -82,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // status registry
     let status_registry = cortex_handler.status_registry();
-    
+
     // ============================================================
     // axum app
 

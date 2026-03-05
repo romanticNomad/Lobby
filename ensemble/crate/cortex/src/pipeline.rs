@@ -192,19 +192,16 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // validator
         let v = Arc::clone(&ctx.validator_handle);
-        let validation = match {    
-            async move { v.validate(chain_id, execution_id, tx_hash).await }
-        }
-        .await
-        {
-            Ok(outcome) => outcome,
-            Err(e) => {
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
-                let err = CortexError::NotIncluded(e);
-                record_faliure(&ctx.status, execution_id, &err);
-                return;
-            }
-        };
+        let validation =
+            match { async move { v.validate(chain_id, execution_id, tx_hash).await } }.await {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    let err = CortexError::NotIncluded(e);
+                    record_faliure(&ctx.status, execution_id, &err);
+                    return;
+                }
+            };
 
         match validation {
             ValidatorOutcome::Included {

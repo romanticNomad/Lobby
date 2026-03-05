@@ -142,9 +142,9 @@ impl NonceEngine {
     // resolving nonce state
 
     async fn handle_resolve(
-    &self,
-    execution_id: ExecutionId,
-    success: bool,
+        &self,
+        execution_id: ExecutionId,
+        success: bool,
     ) -> Result<(), LocalError> {
         // =========================================================
         // loading state update
@@ -205,8 +205,7 @@ impl NonceEngine {
                 Some(row) => {
                     if row.state == new_state {
                         Ok(())
-                    } else if matches!(row.state, NonceState::Finalized | NonceState::Released)
-                    {
+                    } else if matches!(row.state, NonceState::Finalized | NonceState::Released) {
                         Err(LocalError::DatabaseError(format!(
                             "execution_id already resolved to {:?}, cannot transition to {:?}",
                             row.state, new_state

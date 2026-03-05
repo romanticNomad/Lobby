@@ -47,18 +47,16 @@ pub fn transaction_lint(txn: &Eip1559Transaction) -> Result<(), RelayHostError> 
     // chain_id validation
 
     const SUPPORTED_CHAINS: &[u64] = &[
-        1,        // Ethereum Mainnet
-        5,        // Goerli
+        1,      // Ethereum Mainnet
+        5,      // Goerli
         560048, // Hoodi
-        137,      // Polygon
-        42161,    // Arbitrum One
+        137,    // Polygon
+        42161,  // Arbitrum One
     ];
 
-    if !SUPPORTED_CHAINS.contains(
-        &(txn.chain_id.0)
-            .try_into()
-            .map_err(|_| RelayHostError::ValidationFailed("lint error: invalid chain_id format".to_string()))?,
-    ) {
+    if !SUPPORTED_CHAINS.contains(&(txn.chain_id.0).try_into().map_err(|_| {
+        RelayHostError::ValidationFailed("lint error: invalid chain_id format".to_string())
+    })?) {
         return Err(RelayHostError::ValidationFailed(
             "lint error: unsupported chain_id".to_string(),
         ));
