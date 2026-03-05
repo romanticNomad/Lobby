@@ -64,12 +64,12 @@ pub(crate) async fn auth_middleware(
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            AuthError::InvalidApiKey => (StatusCode::UNAUTHORIZED, "missing autherization header"),
+            AuthError::InvalidApiKey => (StatusCode::UNAUTHORIZED, "unauthorized client api-key"),
             AuthError::InvalidAuthFormat => (
                 StatusCode::UNAUTHORIZED,
                 "invalid authorization format (expected 'Bearer lobby_live_<random_string>:<api_token>:<from_address>')",
             ),
-            AuthError::MissingAuthHeader => (StatusCode::UNAUTHORIZED, "invalid API key"),
+            AuthError::MissingAuthHeader => (StatusCode::UNAUTHORIZED, "missing autherization header"),
         };
 
         warn!("authentication failed: {:?}", self);
