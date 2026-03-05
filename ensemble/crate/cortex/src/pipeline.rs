@@ -218,8 +218,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 );
                 tracing::info!(
                     %tx_hash,
-                    block_number,
-                    confirmations,
+                    %block_number,
+                    %confirmations,
                     "transaction confirmed on-chain"
                 );
             }

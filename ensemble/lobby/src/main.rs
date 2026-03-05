@@ -35,7 +35,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_targets(true)
                 .with_bracketed_fields(true)
                 .with_span_modes(true)
-                .with_thread_ids(true)
                 .with_indent_lines(true),
         )
         .init();
