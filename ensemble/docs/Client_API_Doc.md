@@ -164,7 +164,7 @@ All numeric values are **hex-encoded strings** with a `0x` prefix, following the
 |---|---|---|---|
 | `from` | `address` | `"0x742d35Cc...f0bEb"` | Checksummed or lowercase both accepted |
 | `to` | `address \| null` | `"0x5aAeb6...BeAed"` | Omit or set to `null` for contract deployments |
-| `value` | `hex uint256` | `"0xde0b6b3a7640000"` | Amount in **wei** (1 ETH = `1e18` wei) |
+| `value` | `hex uint256` | `"0x2386f26fc10000"` | Amount in **wei** (1 ETH = `1e18` wei) |
 | `data` | `hex bytes` | `"0xa9059cbb000..."` | ABI-encoded function call |
 | `chainId` | `hex uint64` | `"0x1"` | See [supported chains](#11-supported-chains) |
 | `gas` | `hex uint256` | `"0x5208"` | Gas limit (21000 = simple ETH transfer) |
@@ -175,7 +175,7 @@ All numeric values are **hex-encoded strings** with a `0x` prefix, following the
 
 **Python:**
 ```python
-hex(1_000_000_000_000_000_000)  # 1 ETH in wei → "0xde0b6b3a7640000"
+hex(1_000_000_000_000_000_000)  # 1 ETH in wei → "0x2386f26fc10000"
 hex(21000)                       # Simple transfer gas → "0x5208"
 hex(50_000_000_000)              # 50 gwei maxFeePerGas → "0xba43b7400"
 ```
@@ -183,12 +183,12 @@ hex(50_000_000_000)              # 50 gwei maxFeePerGas → "0xba43b7400"
 **JavaScript:**
 ```javascript
 (1_000_000_000_000_000_000n).toString(16)  // "de0b6b3a7640000"
-"0x" + (1_000_000_000_000_000_000n).toString(16)  // "0xde0b6b3a7640000"
+"0x" + (1_000_000_000_000_000_000n).toString(16)  // "0x2386f26fc10000"
 ```
 
 **Rust:**
 ```rust
-format!("0x{:x}", 1_000_000_000_000_000_000u128)  // "0xde0b6b3a7640000"
+format!("0x{:x}", 1_000_000_000_000_000_000u128)  // "0x2386f26fc10000"
 ```
 
 ---
@@ -390,7 +390,7 @@ curl -X POST http://localhost:3000/v1/transactions \
     "params": [{
       "from":                 "0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92",
       "to":                   "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
-      "value":                "0xde0b6b3a7640000",
+      "value":                "0x2386f26fc10000",
       "chainId":              "0x1",
       "gas":                  "0x5208",
       "maxFeePerGas":         "0xba43b7400",
@@ -1141,7 +1141,7 @@ curl -X POST http://localhost:3000/v1/transactions \
     "params": [{
       "from":                 "0xaf9ce11835e031df9c9db38a58fb75d8b70ffc92",
       "to":                   "0x5b35c4571b935076c853e9c3aab59b60d7b32daf",
-      "value":                "0xde0b6b3a7640000",
+      "value":                "0x2386f26fc10000",
       "chainId":              "0x88bb0",
       "gas":                  "0x5208",
       "maxFeePerGas":         "0xba43b7400",

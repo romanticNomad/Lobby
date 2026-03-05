@@ -86,7 +86,7 @@ impl NonceEngine {
                     FROM nonce.nonce_assignments
                     WHERE chain_id = $2
                     AND from_address = $3
-                    AND state IN ('reserved', 'released')),
+                    AND state IN ('reserved', 'finalized')),
                     -1
                 ) + 1,
                 'reserved'
