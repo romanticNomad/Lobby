@@ -203,7 +203,7 @@ impl SignEngine {
         .execute(&self.db)
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
-        
+
         if result.rows_affected() > 0 {
             Ok(())
         } else {
@@ -224,14 +224,16 @@ impl SignEngine {
             match existing {
                 Some(row) => {
                     if matches!(row.state, SignState::Failed | SignState::Reserved) {
-                        Err(LocalError::Internal("txn should have been signed by now, update failed".to_string()))
+                        Err(LocalError::Internal(
+                            "txn should have been signed by now, update failed".to_string(),
+                        ))
                     } else {
-                        Err(LocalError::Invariant("txn should have been signed".to_string()))
+                        Err(LocalError::Invariant(
+                            "txn should have been signed".to_string(),
+                        ))
                     }
                 }
-                None => {
-                    Err(LocalError::Internal("invalid execution_id".to_string()))
-                }
+                None => Err(LocalError::Internal("invalid execution_id".to_string())),
             }
         }
     }
