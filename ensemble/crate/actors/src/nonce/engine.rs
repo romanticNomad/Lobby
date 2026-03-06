@@ -1,6 +1,6 @@
 use crate::nonce::{NonceCommand, NonceState};
 use alloy::primitives::Address;
-use kernel::types::{ChainId, ExecutionId, LocalError, TxNonce};
+use kernel::types::{ChainId, ExecutionId, LocalError, SYNC_MARKER_EXECUTION_ID, TxNonce};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
@@ -27,11 +27,13 @@ impl NonceEngine {
             match cmd {
                 NonceCommand::Reserve {
                     chain_id,
-                    from,
+                    from_address,
                     execution_id,
                     reply,
                 } => {
-                    let result = self.handle_reserve(chain_id, from, execution_id).await;
+                    let result = self
+                        .handle_reserve(chain_id, from_address, execution_id)
+                        .await;
                     let _ = reply.send(result);
                 }
                 NonceCommand::Resolve {
@@ -40,6 +42,23 @@ impl NonceEngine {
                     reply,
                 } => {
                     let result = self.handle_resolve(execution_id, outcome).await;
+                    let _ = reply.send(result);
+                }
+                NonceCommand::SyncAndReserve {
+                    chain_id,
+                    from_address,
+                    execution_id,
+                    nonce_on_chain,
+                    reply,
+                } => {
+                    let result = self
+                        .handle_sync_and_reserve(
+                            chain_id,
+                            from_address,
+                            execution_id,
+                            nonce_on_chain,
+                        )
+                        .await;
                     let _ = reply.send(result);
                 }
             }
@@ -134,6 +153,206 @@ impl NonceEngine {
                 .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
                 Ok(TxNonce::try_from(existing.nonce)?)
+            }
+        }
+    }
+
+    // =========================================================
+    /// ### sync with on-chain state and reserve nonce
+    ///
+    /// This is called when a broadcast fails with "nonce too low", indicating
+    /// our database state is behind the on-chain state. We create a "sync marker"
+    /// record with the on-chain nonce as 'finalized', then reserve the next nonce.
+    ///
+    /// This ensures race-safety: even if multiple pipelines detect nonce mismatch
+    /// simultaneously, only one will successfully create the sync marker.
+
+    async fn handle_sync_and_reserve(
+        &self,
+        chain_id: ChainId,
+        from: Address,
+        execution_id: ExecutionId,
+        nonce_on_chain: TxNonce,
+    ) -> Result<TxNonce, LocalError> {
+        // =========================================================
+        // setting types for db
+
+        let chain_id_i64: i64 = chain_id
+            .0
+            .try_into()
+            .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
+        let from_address_bytes = &from.0.0;
+
+        let nonce_on_chain_i64: i64 = nonce_on_chain
+            .0
+            .try_into()
+            .map_err(|_| LocalError::Invariant("nonce_on_chain does not fit in i64".to_string()))?;
+
+        let marker_execution_id = SYNC_MARKER_EXECUTION_ID;
+
+        // =========================================================
+        // Step 1: Create a sync marker (phantom finalized record) if we're behind
+        //
+        // We insert a 'finalized' record with nonce = (nonce_on_chain - 1).
+        // This tells our system: "nonce N-1 has been consumed on-chain".
+        //
+        // The WHERE NOT EXISTS ensures we only create this marker if we don't
+        // already have a finalized/reserved record >= nonce_on_chain - 1.
+
+        let sync_marker_inserted = sqlx::query_scalar!(
+            r#"
+            INSERT INTO nonce.nonce_assignments
+                (execution_id, revision, chain_id, from_address, nonce, state)
+            SELECT
+                $4,                 
+                1,                  -- First revision for this sync marker
+                $1,
+                $2,
+                ($3::BIGINT - 1),   -- Mark (nonce_on_chain - 1) as finalized
+                'finalized'
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM nonce.nonce_assignments
+                WHERE chain_id = $1
+                    AND from_address = $2
+                    AND nonce >= $3 - 1
+                    AND state IN ('reserved', 'finalized')
+            )
+            AND $3 > 0  -- Safety: don't try to finalize nonce -1
+            RETURNING nonce
+            "#,
+            chain_id_i64,
+            from_address_bytes,
+            nonce_on_chain_i64,
+            marker_execution_id.0.as_bytes().as_slice(),
+        )
+        .fetch_optional(&self.db)
+        .await
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
+
+        if let Some(synced_nonce) = sync_marker_inserted {
+            tracing::info!(
+                %chain_id,
+                %from,
+                synced_nonce,
+                "nonce sync marker created: marked nonce {} as finalized",
+                synced_nonce
+            );
+        } else {
+            tracing::debug!(
+                %chain_id,
+                %from,
+                "nonce sync marker not needed (state already up-to-date)"
+            );
+        }
+
+        // =========================================================
+        // Step 2: Reserve the on-chain nonce for this execution
+        //
+        // Now that we've synced our state, reserve nonce_on_chain.
+        // This uses the same atomic logic as handle_reserve(), but we're
+        // explicitly reserving the nonce we know is available on-chain.
+
+        let reserved = sqlx::query!(
+            r#"
+            INSERT INTO nonce.nonce_assignments
+                (execution_id, revision, chain_id, from_address, nonce, state)
+            SELECT
+                $1,
+                COALESCE(
+                    (SELECT MAX(revision)
+                    FROM nonce.nonce_assignments
+                    WHERE execution_id = $1),
+                    0
+                ) + 1,
+                $2,
+                $3,
+                $4,  -- Reserve exactly nonce_on_chain
+                'reserved'
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM nonce.nonce_assignments
+                WHERE execution_id = $1
+                    AND (
+                        state = 'finalized'
+                        OR (
+                            state = 'reserved'
+                            AND updated_at > now() - interval '5 minutes'
+                        )
+                    )
+            )
+            AND NOT EXISTS (
+                -- Ensure this nonce isn't already reserved by another execution
+                SELECT 1
+                FROM nonce.nonce_assignments
+                WHERE chain_id = $2
+                    AND from_address = $3
+                    AND nonce = $4
+                    AND state = 'reserved'
+                    AND updated_at > now() - interval '5 minutes'
+            )
+            RETURNING nonce, revision
+            "#,
+            execution_id.0.as_bytes().as_slice(),
+            chain_id_i64,
+            from_address_bytes,
+            nonce_on_chain_i64,
+        )
+        .fetch_optional(&self.db)
+        .await
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
+
+        // =========================================================
+        // pattern matching the reservation result
+
+        match reserved {
+            Some(row) => {
+                let reserved_nonce = TxNonce::try_from(row.nonce)?;
+                tracing::info!(
+                    %execution_id,
+                    %chain_id,
+                    %from,
+                    nonce = %reserved_nonce,
+                    "nonce synced and reserved after on-chain mismatch"
+                );
+                Ok(reserved_nonce)
+            }
+            None => {
+                // This could happen if:
+                // 1. This execution_id already has a finalized/reserved nonce (idempotency)
+                // 2. Another pipeline already reserved this nonce (race condition)
+                //
+                // Check which case it is and handle accordingly.
+
+                let existing = sqlx::query!(
+                    r#"
+                    SELECT nonce, state as "state: NonceState"
+                    FROM nonce.nonce_assignments
+                    WHERE execution_id = $1
+                        AND state IN ('reserved', 'finalized')
+                    ORDER BY revision DESC
+                    LIMIT 1
+                    "#,
+                    execution_id.0.as_bytes().as_slice()
+                )
+                .fetch_optional(&self.db)
+                .await
+                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
+
+                match existing {
+                    Some(row) => {
+                        // Idempotent: we already have a nonce for this execution_id
+                        Ok(TxNonce::try_from(row.nonce)?)
+                    }
+                    None => {
+                        // Race condition: nonce_on_chain was taken by another pipeline
+                        // This is rare but possible. Fail and let orchestrator retry.
+                        Err(LocalError::Rejected(format!(
+                            "nonce {} was already reserved by another execution during sync",
+                            nonce_on_chain
+                        )))
+                    }
+                }
             }
         }
     }
