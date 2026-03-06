@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use kernel::types::ExecutionId;
+use kernel::types::{ExecutionId, TxNonce};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -74,6 +74,12 @@ pub enum PipelineStatus {
     /// Pipeline failed at the given stage; the nonce has been released where
     /// applicable.
     Failed { stage: String, reason: String },
+    /// Syncing nonce on db with the on-chain nonce
+    /// retrieved using the given rpc_endpoint
+    SyncNonce {
+        nonce_on_chain: TxNonce,
+        attempted_nonce: TxNonce,
+    },
 }
 
 // ============================================================
