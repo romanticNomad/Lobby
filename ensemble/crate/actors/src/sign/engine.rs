@@ -48,6 +48,13 @@ impl SignEngine {
                     let result = self.handle_sign(from, chain_id, execution_id, txn).await;
                     let _ = reply_tx.send(result);
                 }
+                SignCommand::Revert {
+                    execution_id,
+                    reply_tx,
+                } => {
+                    let result = self.handle_revert(execution_id).await;
+                    let _ = reply_tx.send(result);
+                }
             }
         }
     }
@@ -173,6 +180,40 @@ impl SignEngine {
 
                 Err(e)
             }
+        }
+    }
+
+    async fn handle_revert(&self, execution_id: ExecutionId) -> Result<(), LocalError> {
+        let rows_affected = sqlx::query_scalar::<_, i64>(
+            r#"
+            UPDATE sign.sign_requests
+            SET state = 'failed'
+            WHERE (execution_id, revision) = (
+                SELECT execution_id, revision
+                FROM sign.sign_requests
+                WHERE execution_id = $1
+                AND state = 'signed'
+                ORDER BY revision DESC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING 1
+            "#,
+        )
+        .bind(execution_id.0.as_bytes())
+        .fetch_all(&self.db)
+        .await
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?
+        .len() as i64;
+
+        match rows_affected {
+            0 => Err(LocalError::Internal(
+                "transaction not persisted properly in DB".to_string(),
+            )),
+            1 => Ok(()),
+            _ => Err(LocalError::Invariant(
+                "(execution_id, revision) clones detected".to_string(),
+            )),
         }
     }
 }
