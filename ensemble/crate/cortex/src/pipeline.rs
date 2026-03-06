@@ -7,7 +7,7 @@ use crate::{
 };
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{ClientConfig, Eip1559Transaction, ExecutionId, ValidatorOutcome},
+    types::{BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, ValidatorOutcome},
 };
 use std::sync::Arc;
 use tracing::Instrument;
@@ -55,6 +55,7 @@ pub(crate) struct PipelineContext {
 /// | Nonce       | No nonce reserved → just log and exit     |
 /// | Sign        | Release nonce via `resolve(false)` → exit |
 /// | Broadcast   | Release nonce via `resolve(false)` → exit |
+/// |             | NonceTooLow → sync and retry once         |
 /// | Validator   | Release nonce via `resolve(false)` → exit |
 pub(crate) async fn run_pipeline(ctx: PipelineContext) {
     // ============================================================
@@ -128,7 +129,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // getting the sign handle from shard pool (sequenced by execution_id)
         let sign_handle = ctx.sign_pool.get(&ByExecutionId(&execution_id));
 
-        let signed = match retry_with_backoff(&ctx.retry_config, "sign", || {
+        let mut signed = match retry_with_backoff(&ctx.retry_config, "sign", || {
             let sh = Arc::clone(&sign_handle);
             let t = txn.clone();
             async move { sh.sign(chain_id, from_address, execution_id, t).await }
@@ -150,30 +151,170 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         tracing::info!("transaction signed");
 
         // ============================================================
-        // broadcast
+        // broadcast (with nonce mismatch retry)
 
-        // getting the bradcast handle from shard pool (sequenced by chain_id))
+        // getting the broadcast handle from shard pool (sequenced by chain_id))
         let broadcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
 
-        let outcome = match retry_with_backoff(&ctx.retry_config, "broadcast", || {
-            let bh = Arc::clone(&broadcast_handle);
-            let signed_hash = signed.clone();
+        // Guard against infinite retry loop
+        let mut nonce_retry_attempted = false;
 
-            async move {
-                bh.broadcast(chain_id, from_address, execution_id, signed_hash)
+        let outcome = loop {
+            match retry_with_backoff(&ctx.retry_config, "broadcast", || {
+                let bh = Arc::clone(&broadcast_handle);
+                let signed_clone = signed.clone();
+
+                async move {
+                    bh.broadcast(chain_id, from_address, execution_id, signed_clone)
+                        .await
+                }
+            })
+            .await
+            {
+                Ok(broadcast_outcome) => break broadcast_outcome,
+
+                // ============================================================
+                // NONCE TOO LOW - Attempt one-time recovery
+                Err(BroadcastError::NonceTooLow {
+                    nonce_on_chain,
+                    attempted_nonce,
+                }) => {
+                    if nonce_retry_attempted {
+                        // Already retried once, give up to prevent infinite loop
+                        tracing::error!(
+                            %execution_id,
+                            %nonce_on_chain,
+                            %attempted_nonce,
+                            "nonce mismatch retry failed after sync, aborting pipeline"
+                        );
+
+                        release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+
+                        let err = CortexError::Broadcast(BroadcastError::NonceTooLow {
+                            nonce_on_chain,
+                            attempted_nonce,
+                        });
+                        record_faliure(&ctx.status, execution_id, &err);
+                        return;
+                    }
+
+                    nonce_retry_attempted = true;
+
+                    tracing::warn!(
+                        %execution_id,
+                        %attempted_nonce,
+                        %nonce_on_chain,
+                        "nonce too low detected - initiating sync and retry"
+                    );
+
+                    // Update status to indicate nonce sync is happening
+                    ctx.status.set(
+                        execution_id,
+                        PipelineStatus::SyncNonce {
+                            nonce_on_chain,
+                            attempted_nonce,
+                        },
+                    );
+
+                    // ============================================================
+                    // Step 1: Release the incorrect nonce and revert sign status.
+
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    revert_sign(&sign_handle, execution_id, &ctx.retry_config).await;
+                    tracing::debug!(%execution_id, "released incorrect nonce");
+
+                    // ============================================================
+                    // Step 2: Sync with on-chain state and reserve correct nonce
+
+                    let corrected_nonce = match retry_with_backoff(
+                        &ctx.retry_config,
+                        "nonce_sync_and_reserve",
+                        || {
+                            let nh = Arc::clone(&nonce_handle);
+                            async move {
+                                nh.sync_and_reserve(
+                                    chain_id,
+                                    from_address,
+                                    execution_id,
+                                    nonce_on_chain,
+                                )
+                                .await
+                            }
+                        },
+                    )
                     .await
-            }
-        })
-        .await
-        {
-            Ok(broadcast_outcome) => broadcast_outcome,
-            Err(e) => {
-                // fatal error -> release nonce
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    {
+                        Ok(n) => n,
+                        Err(e) => {
+                            tracing::error!(
+                                %execution_id,
+                                error = %e,
+                                "failed to sync and reserve nonce after retry"
+                            );
+                            let err = CortexError::NonceReservation(e);
+                            record_faliure(&ctx.status, execution_id, &err);
+                            return;
+                        }
+                    };
 
-                let err = CortexError::Broadcast(e);
-                record_faliure(&ctx.status, execution_id, &err);
-                return;
+                    tracing::info!(
+                        %execution_id,
+                        %corrected_nonce,
+                        "nonce synced and reserved after on-chain mismatch"
+                    );
+
+                    ctx.status.set(execution_id, PipelineStatus::NonceReserved);
+
+                    // ============================================================
+                    // Step 3: Update transaction with corrected nonce
+
+                    txn.nonce = corrected_nonce;
+
+                    // ============================================================
+                    // Step 4: Re-sign transaction with corrected nonce
+
+                    signed = match retry_with_backoff(&ctx.retry_config, "sign_retry", || {
+                        let sh = Arc::clone(&sign_handle);
+                        let t = txn.clone();
+                        async move { sh.sign(chain_id, from_address, execution_id, t).await }
+                    })
+                    .await
+                    {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::error!(
+                                %execution_id,
+                                error = %e,
+                                "re-signing failed after nonce sync"
+                            );
+                            release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                            let err = CortexError::Sign(e);
+                            record_faliure(&ctx.status, execution_id, &err);
+                            return;
+                        }
+                    };
+
+                    tracing::info!(
+                        %execution_id,
+                        "transaction re-signed with corrected nonce"
+                    );
+                    ctx.status.set(execution_id, PipelineStatus::Signed);
+
+                    // ============================================================
+                    // Step 5: Loop will retry broadcast with new signed transaction
+
+                    tracing::info!(%execution_id, "retrying broadcast with synced nonce");
+                    continue;
+                }
+
+                // ============================================================
+                // OTHER BROADCAST ERRORS - Hard fail
+                Err(e) => {
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    let err = CortexError::Broadcast(e);
+                    record_faliure(&ctx.status, execution_id, &err);
+                    return;
+                }
             }
         };
 
@@ -272,7 +413,33 @@ async fn release_nonce(
             "nonce release failed after retries, lease will expire in 5 min"
         );
     } else {
-        tracing::debug!(%execution_id, "nonce release");
+        tracing::debug!(%execution_id, "nonce released");
+    }
+}
+
+/// Revert sign status from 'signed' to 'failed'
+/// for handeling errors require resigning.
+/// **example**: lobby DB and on-chain nonce mismatch
+async fn revert_sign(
+    handle: &Arc<dyn Signer>,
+    execution_id: ExecutionId,
+    retry_config: &RetryConfig,
+) {
+    let revert_result = retry_with_backoff(&retry_config, "sign_revert", || {
+        let sh = Arc::clone(handle);
+        async move { sh.revert(execution_id).await }
+    })
+    .await;
+
+    if let Err(e) = revert_result {
+        // not fatal -> lease will expire in 5 minutes
+        tracing::error!(
+            %execution_id,
+            %e,
+            "sign state revertion failed"
+        );
+    } else {
+        tracing::debug!("sign state set to failed")
     }
 }
 
