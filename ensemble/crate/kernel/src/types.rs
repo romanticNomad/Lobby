@@ -135,6 +135,7 @@ pub type TxHash = B256;
 
 #[derive(Clone, Copy, Debug, Serialize, Hash, PartialEq, Eq)]
 pub struct ExecutionId(pub uuid::Uuid);
+pub const SYNC_MARKER_EXECUTION_ID: ExecutionId = ExecutionId(uuid::Uuid::from_u128(22174019));
 
 impl fmt::Display for ExecutionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -187,7 +188,7 @@ impl fmt::Display for ChainId {
 // ============================================================
 // TxNonce wrapper for lobby and appropriate implimentations
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct TxNonce(pub U256);
 
 impl EthRlpEncode for TxNonce {
@@ -219,6 +220,7 @@ impl fmt::Display for TxNonce {
 #[derive(Clone, Debug)]
 pub struct SignedTransaction {
     pub rlp: Bytes,
+    pub with_nonce: TxNonce,
 }
 
 // ============================================================
@@ -297,7 +299,10 @@ pub enum BroadcastError {
     Unexpected { message: String },
     /// Broadcast failed due to 'nonce too low'
     #[error("nonce too low -> fetching correct nonce from rpc node")]
-    NonceTooLow { nonce_on_chain: TxNonce }
+    NonceTooLow {
+        nonce_on_chain: TxNonce,
+        attempted_nonce: TxNonce,
+    },
 }
 
 #[derive(Debug, Error)]
