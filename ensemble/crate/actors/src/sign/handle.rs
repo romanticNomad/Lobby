@@ -17,6 +17,10 @@ pub enum SignCommand {
         txn: Eip1559Transaction,
         reply_tx: oneshot::Sender<Result<SignedTransaction, LocalError>>,
     },
+    Revert {
+        execution_id: ExecutionId,
+        reply_tx: oneshot::Sender<Result<(), LocalError>>,
+    },
 }
 
 // ============================================================
@@ -50,6 +54,23 @@ impl Signer for SignHandle {
             chain_id,
             execution_id,
             txn,
+            reply_tx,
+        };
+
+        self.tx
+            .send(cmd)
+            .await
+            .map_err(|_| LocalError::Internal("sign actor has shut down".to_owned()))?;
+
+        reply_rx.await.map_err(|_| {
+            LocalError::Internal("sign actor has dropped its reply channel".to_owned())
+        })?
+    }
+
+    async fn revert(&self, execution_id: ExecutionId) -> Result<(), LocalError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let cmd = SignCommand::Revert {
+            execution_id,
             reply_tx,
         };
 
