@@ -295,6 +295,9 @@ pub enum BroadcastError {
     /// Provider failed in a non-deterministic / unexpected way.
     #[error("Unexpected error: {}", message)]
     Unexpected { message: String },
+    /// Broadcast failed due to 'nonce too low'
+    #[error("nonce too low -> fetching correct nonce from rpc node")]
+    NonceTooLow { nonce_on_chain: TxNonce }
 }
 
 #[derive(Debug, Error)]

@@ -78,7 +78,7 @@ Client (DApp/Bot)
   │
   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Orchestrator                                                    │
+│ cortex                                                    │
 │  ├─ Acquire semaphore permit (backpressure control)             │
 │  ├─ Spawn pipeline task (detached, runs in background)          │
 │  └─ Update StatusRegistry: "accepted"                           │
@@ -586,9 +586,9 @@ Database error or signing failure → Nonce is explicitly released via `nonce.re
 
 ## Pipeline Orchestration
 
-The **Orchestrator** is the central coordinator that wires all five actors together into a sequential pipeline for each transaction submission.
+The **cortex** is the central coordinator that wires all five actors together into a sequential pipeline for each transaction submission.
 
-### Orchestrator Lifecycle
+### cortex Lifecycle
 
 **Initialization (boot sequence in `main.rs`):**
 1. Load configuration from environment (shard counts, buffer sizes, concurrency limits)
@@ -605,7 +605,7 @@ The **Orchestrator** is the central coordinator that wires all five actors toget
 
 **Runtime (per-request):**
 1. HTTP handler calls `orchestrator.submit(execution_id, txn, client_config)`
-2. Orchestrator:
+2. cortex:
    - Acquires semaphore permit (blocks if at capacity, times out after 5 seconds → `BackpressureTimeout` error)
    - Registers `execution_id` in `StatusRegistry` as `"accepted"`
    - Spawns a detached Tokio task for the pipeline
@@ -1450,7 +1450,7 @@ DATABASE_URL=postgres://postgres:secret@localhost:5432/lobby
 SERVER_ADDR=0.0.0.0:3000
 ```
 
-**Orchestrator Config:**
+**cortex Config:**
 ```bash
 NONCE_SHARDS=17
 SIGN_SHARDS=17

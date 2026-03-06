@@ -52,19 +52,20 @@ pub struct ValidatorConfig {
 
     /// Maximum time to wait for a transaction to be included before giving up.
     /// After this timeout, the transaction is considered NotIncluded.
+    /// **Disclaimer**: Timout duration must be more that 5 min, since the actor lease in DB statys for 5 minutes.
     pub timeout: Duration,
 
     /// Number of block confirmations required before a transaction is
     /// considered definitively included (protection against shallow reorgs).
-    pub required_confirmations: u64, // default value '3' for rerorg safety.
+    pub required_confirmations: u64,
 }
 
 impl Default for ValidatorConfig {
     fn default() -> Self {
         Self {
-            poll_interval: Duration::from_secs(3),
+            poll_interval: Duration::from_secs(2),
             timeout: Duration::from_secs(300),
-            required_confirmations: 2,
+            required_confirmations: 0, // safe value should be >3 for chain reorg protection.
         }
     }
 }
