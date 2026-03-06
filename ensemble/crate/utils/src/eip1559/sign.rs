@@ -18,6 +18,7 @@ pub fn sign_eip1559_transaction(
     // ============================================================
     // prepare keccak-256(rlp(unsigned_tx)) for EIP-1159
 
+    let signing_nonce = tx.nonce;
     let unsigned_rlp = encode_eip1559_unsigned(&tx)?;
 
     let mut hasher = Keccak256::new();
@@ -64,6 +65,7 @@ pub fn sign_eip1559_transaction(
 
     Ok(SignedTransaction {
         rlp: Bytes::from(out),
+        with_nonce: signing_nonce,
     })
 }
 
