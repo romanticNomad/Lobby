@@ -10,11 +10,21 @@ pub trait NonceManager: Send + Sync {
     async fn reserve(
         &self,
         chain_id: ChainId,
-        from: Address,
+        from_address: Address,
         execution_id: ExecutionId,
     ) -> Result<TxNonce, LocalError>;
 
-    async fn resolve(&self, id: ExecutionId, outcome: bool) -> Result<(), LocalError>;
+    async fn resolve(&self, execution_id: ExecutionId, outcome: bool) -> Result<(), LocalError>;
+
+    /// special api for syncing nonce of given (chain_id, from_address)
+    /// in case the lobby DB and on-chain state are detected to be out of sync.
+    async fn sync_and_reserve(
+        &self,
+        chain_id: ChainId,
+        from_address: Address,
+        execution_id: ExecutionId,
+        nonce_on_chain: TxNonce,
+    ) -> Result<TxNonce, LocalError>;
 }
 
 // ============================================================
@@ -24,16 +34,20 @@ pub trait Signer: Send + Sync {
     async fn sign(
         &self,
         chain_id: ChainId,
-        from: Address,
+        from_address: Address,
         execution_id: ExecutionId,
         txn: Eip1559Transaction,
     ) -> Result<SignedTransaction, LocalError>;
+
+    /// changing status to 'failed' for resigning transaction
+    /// after resolving transaction issues like nonce_sync
+    async fn revert(&self, execution_id: ExecutionId) -> Result<(), LocalError>;
 }
 
 // ============================================================
 
 pub trait PolicyEngine: Send + Sync {
-    fn resolve_key(&self, from: &Address) -> Result<[u8; 32], LocalError>;
+    fn resolve_key(&self, from_address: &Address) -> Result<[u8; 32], LocalError>;
 }
 
 // ============================================================
@@ -43,7 +57,7 @@ pub trait Broadcaster: Send + Sync {
     async fn broadcast(
         &self,
         chain_id: ChainId,
-        from: Address,
+        from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
     ) -> Result<BroadcastOutcome, BroadcastError>;
