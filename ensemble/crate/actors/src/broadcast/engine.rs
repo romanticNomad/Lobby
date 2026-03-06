@@ -2,7 +2,7 @@ use crate::broadcast::BroadcastCommand;
 use alloy::primitives::Address;
 use kernel::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
-    TxHash,
+    TxHash, TxNonce,
 };
 use sqlx::PgPool;
 use tokio::sync::mpsc;
@@ -23,6 +23,30 @@ impl BroadcastEngine {
         rx: mpsc::Receiver<BroadcastCommand>,
     ) -> Self {
         Self { db, provider, rx }
+    }
+
+    /// Fetch the current nonce for an address from the RPC provider.
+    /// This is used when we detect a nonce mismatch to get the authoritative on-chain state.
+    async fn fetch_current_nonce(
+        &self,
+        chain_id: ChainId,
+        from_address: Address,
+    ) -> Result<TxNonce, BroadcastError> {
+        let provider = self
+            .provider
+            .get(&chain_id)
+            .map(|entry| entry.value().clone())
+            .ok_or(BroadcastError::MissingProvider { chain_id })?;
+
+        let nonce_u64 = provider
+            .get_transaction_count(from_address)
+            .pending() // Use pending to get the most up-to-date nonce
+            .await
+            .map_err(|e| BroadcastError::Unexpected {
+                message: format!("failed to fetch nonce from RPC: {e}"),
+            })?;
+
+        Ok(TxNonce(alloy::primitives::U256::from(nonce_u64)))
     }
 }
 
@@ -191,8 +215,48 @@ impl BroadcastEngine {
             Err(err) => {
                 let err_str = err.to_string();
 
-                let deterministic_error = err_str.contains("nonce")
-                    || err_str.contains("insufficient funds")
+                // =========================================================
+                // NONCE MISMATCH DETECTION - Query RPC for correct nonce
+
+                if err_str.contains("nonce too low") || err_str.contains("nonce") {
+                    tracing::warn!(
+                        %execution_id,
+                        %chain_id,
+                        %from_address,
+                        error = %err_str,
+                        "nonce mismatch detected, querying RPC for on-chain nonce"
+                    );
+
+                    // Fetch authoritative nonce from RPC
+                    let nonce_on_chain = self.fetch_current_nonce(chain_id, from_address).await?;
+
+                    // Record rejection in database
+                    sqlx::query!(
+                        r#"
+                        UPDATE broadcast.broadcast_requests
+                        SET state = 'rejected',
+                            rejection_reason = $1
+                        WHERE execution_id = $2
+                        AND revision = $3
+                        "#,
+                        err_str,
+                        execution_id.0.as_bytes().as_slice(),
+                        revision
+                    )
+                    .execute(&self.db)
+                    .await
+                    .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
+
+                    return Err(BroadcastError::NonceTooLow {
+                        nonce_on_chain,
+                        attempted_nonce: txn.with_nonce,
+                    });
+                }
+
+                // =========================================================
+                // OTHER DETERMINISTIC ERRORS
+
+                let deterministic_error = err_str.contains("insufficient funds")
                     || err_str.contains("invalid sender")
                     || err_str.contains("replacement transaction underpriced");
 
