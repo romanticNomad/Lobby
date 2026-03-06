@@ -221,41 +221,33 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
                     revert_sign(&sign_handle, execution_id, &ctx.retry_config).await;
-                    tracing::debug!(%execution_id, "released incorrect nonce");
+                    tracing::debug!(%execution_id, "released incorrect nonce and reverted sign status");
 
                     // ============================================================
                     // Step 2: Sync with on-chain state and reserve correct nonce
 
-                    let corrected_nonce = match retry_with_backoff(
-                        &ctx.retry_config,
-                        "nonce_sync_and_reserve",
-                        || {
+                    let corrected_nonce =
+                        match retry_with_backoff(&ctx.retry_config, "nonce_sync", || {
                             let nh = Arc::clone(&nonce_handle);
                             async move {
-                                nh.sync_and_reserve(
-                                    chain_id,
-                                    from_address,
-                                    execution_id,
-                                    nonce_on_chain,
-                                )
-                                .await
+                                nh.sync(chain_id, from_address, execution_id, nonce_on_chain)
+                                    .await
                             }
-                        },
-                    )
-                    .await
-                    {
-                        Ok(n) => n,
-                        Err(e) => {
-                            tracing::error!(
-                                %execution_id,
-                                error = %e,
-                                "failed to sync and reserve nonce after retry"
-                            );
-                            let err = CortexError::NonceReservation(e);
-                            record_faliure(&ctx.status, execution_id, &err);
-                            return;
-                        }
-                    };
+                        })
+                        .await
+                        {
+                            Ok(n) => n,
+                            Err(e) => {
+                                tracing::error!(
+                                    %execution_id,
+                                    error = %e,
+                                    "failed to sync and reserve nonce after retry"
+                                );
+                                let err = CortexError::NonceReservation(e);
+                                record_faliure(&ctx.status, execution_id, &err);
+                                return;
+                            }
+                        };
 
                     tracing::info!(
                         %execution_id,

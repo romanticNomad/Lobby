@@ -18,7 +18,7 @@ pub trait NonceManager: Send + Sync {
 
     /// special api for syncing nonce of given (chain_id, from_address)
     /// in case the lobby DB and on-chain state are detected to be out of sync.
-    async fn sync_and_reserve(
+    async fn sync(
         &self,
         chain_id: ChainId,
         from_address: Address,

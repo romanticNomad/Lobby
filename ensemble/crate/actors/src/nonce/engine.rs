@@ -44,7 +44,7 @@ impl NonceEngine {
                     let result = self.handle_resolve(execution_id, outcome).await;
                     let _ = reply.send(result);
                 }
-                NonceCommand::SyncAndReserve {
+                NonceCommand::Sync {
                     chain_id,
                     from_address,
                     execution_id,
@@ -52,12 +52,7 @@ impl NonceEngine {
                     reply,
                 } => {
                     let result = self
-                        .handle_sync_and_reserve(
-                            chain_id,
-                            from_address,
-                            execution_id,
-                            nonce_on_chain,
-                        )
+                        .handle_sync(chain_id, from_address, execution_id, nonce_on_chain)
                         .await;
                     let _ = reply.send(result);
                 }
@@ -167,7 +162,7 @@ impl NonceEngine {
     /// This ensures race-safety: even if multiple pipelines detect nonce mismatch
     /// simultaneously, only one will successfully create the sync marker.
 
-    async fn handle_sync_and_reserve(
+    async fn handle_sync(
         &self,
         chain_id: ChainId,
         from: Address,
@@ -204,11 +199,11 @@ impl NonceEngine {
             INSERT INTO nonce.nonce_assignments
                 (execution_id, revision, chain_id, from_address, nonce, state)
             SELECT
-                $4,                 
-                1,                  -- First revision for this sync marker
+                $4,
+                1,                  
                 $1,
                 $2,
-                ($3::BIGINT - 1),   -- Mark (nonce_on_chain - 1) as finalized
+                ($3::BIGINT - 1),
                 'finalized'
             WHERE NOT EXISTS (
                 SELECT 1

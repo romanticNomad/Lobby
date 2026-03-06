@@ -20,12 +20,13 @@
 10. [RPC Provider Registry](#rpc-provider-registry)
 11. [Status Registry & Polling](#status-registry--polling)
 12. [Idempotency & State Safety](#idempotency--state-safety)
-13. [Error Handling & Retry Logic](#error-handling--retry-logic)
-14. [API Surface](#api-surface)
-15. [Observability](#observability)
-16. [Security Model](#security-model)
-17. [Deployment](#deployment)
-18. [Future Scope](#future-scope)
+13. [Resolving Database and On-Chain Nonce Mismatch](#resolving-database-and-on-chain-nonce-mismatch)
+14. [Error Handling & Retry Logic](#error-handling--retry-logic)
+15. [API Surface](#api-surface)
+16. [Observability](#observability)
+17. [Security Model](#security-model)
+18. [Deployment](#deployment)
+19. [Future Scope](#future-scope)
 
 ---
 
@@ -1100,6 +1101,546 @@ execution_id                          | revision | state      | nonce | updated_
 
 **Mitigation (client-side):**
 Clients must generate `execution_id` client-side (or use an idempotency key) if they need safe retries. Lobby will add support for client-provided `execution_id` in a future version.
+
+---
+## Resolving Database and On-Chain Nonce Mismatch
+
+Lobby maintains its own nonce counter in PostgreSQL to enable high-throughput transaction submission without querying the blockchain for every request. However, the database state can diverge from on-chain reality in several scenarios:
+
+- **External transactions:** The same Ethereum address is used outside Lobby (manual transactions, other services)
+- **Actor crash/restart:** In-memory state is lost, and the database falls behind
+- **Chain reorganization:** A block reorg invalidates previously confirmed transactions
+- **Initial address usage:** Lobby begins managing an address that already has on-chain transaction history
+
+When such divergence occurs, the RPC provider will reject transaction broadcasts with errors like `"nonce too low: next nonce 5, tx nonce 4"`. Lobby detects these errors and **automatically synchronizes** its database state with the authoritative on-chain nonce, then retries the transaction — all within a single pipeline execution.
+
+This section describes the nonce mismatch detection and recovery mechanism.
+
+---
+
+### Detection Phase
+
+The Broadcast actor is the first component to encounter nonce mismatches, as it directly interacts with blockchain RPC nodes.
+
+**Trigger condition:**
+
+When `provider.send_raw_transaction()` fails, the Broadcast actor examines the error string for nonce-related keywords:
+
+```rust
+if err_str.contains("nonce too low") || err_str.contains("nonce") {
+    // Nonce mismatch detected
+}
+```
+
+This catches a wide range of provider-specific error messages:
+- Alchemy: `"nonce too low: next nonce 5, tx nonce 4"`
+- Infura: `"nonce too low"`
+- Geth: `"known transaction"` or `"nonce too low"`
+- QuickNode: `"the tx doesn't have the correct nonce..."`
+
+**On detection:**
+
+1. Log a `WARN`-level message with the full error string and request context
+2. Query the RPC provider for the **authoritative on-chain nonce** via `eth_getTransactionCount` with the `pending` block parameter (includes mempool transactions)
+3. Record the rejection in the `broadcast.broadcast_requests` table with `state='rejected'` and the full error message
+4. Return `BroadcastError::NonceTooLow { nonce_on_chain, attempted_nonce }`
+
+**Example RPC query:**
+
+```rust
+let nonce_on_chain = provider
+    .get_transaction_count(from_address)
+    .pending()  // Include pending mempool transactions
+    .await?;
+```
+
+The `pending` parameter ensures Lobby sees the most up-to-date nonce, including transactions that have been broadcast but not yet mined.
+
+---
+
+### Recovery Phase (Three-Step Process)
+
+When the orchestrator's pipeline receives a `BroadcastError::NonceTooLow`, it initiates a **one-time recovery sequence**:
+
+#### Step 1: Release Incorrect Nonce
+
+The pipeline calls `nonce.resolve(execution_id, false)` to mark the incorrectly reserved nonce as `'released'`. This makes it available for future use (though it will likely be skipped due to the sync marker created in Step 2).
+
+```rust
+release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+```
+
+This step uses retry-with-backoff to handle transient database failures, with a fallback to the 5-minute lease expiration if all retries fail.
+
+#### Step 2: Sync Database State with On-Chain Reality
+
+The pipeline calls a new Nonce actor method: `nonce.sync(chain_id, from_address, execution_id, nonce_on_chain)`.
+
+The Nonce actor performs a **two-phase atomic operation**:
+
+**Phase 2a: Create Sync Marker**
+
+Insert a "phantom finalized" record to mark `nonce_on_chain - 1` as consumed on-chain:
+
+```sql
+INSERT INTO nonce.nonce_assignments
+    (execution_id, revision, chain_id, from_address, nonce, state)
+SELECT
+    '\x00000000000000000000000001525943'::bytea,  -- SYNC_MARKER_EXECUTION_ID constant
+    1,
+    $chain_id,
+    $from_address,
+    $nonce_on_chain - 1,
+    'finalized'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM nonce.nonce_assignments
+    WHERE chain_id = $chain_id
+        AND from_address = $from_address
+        AND nonce >= $nonce_on_chain - 1
+        AND state IN ('reserved', 'finalized')
+)
+AND $nonce_on_chain > 0
+RETURNING nonce;
+```
+
+**Why `nonce_on_chain - 1`?**
+
+If the RPC provider reports that the next available nonce is `5`, this means nonce `4` has already been consumed on-chain. By marking `4` as `'finalized'` in our database, we signal to future `reserve()` operations that nonces `0-4` are unavailable, and the next nonce to allocate is `5`.
+
+**Why a dedicated `SYNC_MARKER_EXECUTION_ID`?**
+
+The sync marker is not tied to any specific transaction — it represents an external state correction. Using a fixed, well-known UUID (`0x01528843` = 22,174,019 in decimal) makes it trivial to identify sync events in the database:
+
+```sql
+SELECT * FROM nonce.nonce_assignments
+WHERE execution_id = '\x00000000000000000000000001525943'::bytea
+ORDER BY created_at DESC;
+```
+
+This allows operators to track how often Lobby has had to sync with on-chain state for each address, which is a useful operational metric.
+
+**Race safety:**
+
+The `WHERE NOT EXISTS` clause ensures that if multiple pipelines detect a nonce mismatch simultaneously (e.g., 10 transactions all fail with "nonce too low" at the same time), only **one** sync marker is created. Subsequent calls are no-ops.
+
+**Phase 2b: Reserve On-Chain Nonce**
+
+After the sync marker is created (or determined to be unnecessary), reserve the on-chain nonce for the current execution:
+
+```sql
+INSERT INTO nonce.nonce_assignments
+    (execution_id, revision, chain_id, from_address, nonce, state)
+SELECT
+    $execution_id,
+    COALESCE((SELECT MAX(revision) FROM nonce.nonce_assignments WHERE execution_id = $execution_id), 0) + 1,
+    $chain_id,
+    $from_address,
+    $nonce_on_chain,
+    'reserved'
+WHERE NOT EXISTS (
+    SELECT 1 FROM nonce.nonce_assignments
+    WHERE execution_id = $execution_id
+        AND (state = 'finalized' OR (state = 'reserved' AND updated_at > now() - interval '5 minutes'))
+)
+AND NOT EXISTS (
+    -- Ensure this nonce isn't already reserved by another pipeline
+    SELECT 1 FROM nonce.nonce_assignments
+    WHERE chain_id = $chain_id
+        AND from_address = $from_address
+        AND nonce = $nonce_on_chain
+        AND state = 'reserved'
+        AND updated_at > now() - interval '5 minutes'
+)
+RETURNING nonce, revision;
+```
+
+**Idempotency:**
+
+If this execution already has a reserved or finalized nonce (e.g., due to a retry), the `WHERE NOT EXISTS` clause prevents duplicate reservations. The actor returns the existing nonce instead.
+
+**Concurrency safety:**
+
+If another pipeline reserved `nonce_on_chain` between detection and sync (rare but possible), the second `NOT EXISTS` clause prevents collision. The failed pipeline will return a `LocalError::Rejected`, causing the orchestrator to hard-fail the transaction. This is correct behavior: the on-chain nonce moved again, indicating high contention or external interference.
+
+#### Step 3: Re-Sign and Re-Broadcast
+
+With the corrected nonce now reserved, the pipeline must re-generate the transaction signature:
+
+**3a. Revert Previous Signature State**
+
+The Sign actor's previous signature is now invalid (it used the wrong nonce). The pipeline calls `sign.revert(execution_id)` to mark the old signature as `'failed'`:
+
+```sql
+UPDATE sign.sign_requests
+SET state = 'failed'
+WHERE (execution_id, revision) = (
+    SELECT execution_id, revision
+    FROM sign.sign_requests
+    WHERE execution_id = $execution_id
+        AND state = 'signed'
+    ORDER BY revision DESC
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING 1;
+```
+
+This allows the subsequent `sign()` call to proceed without violating the unique index:
+
+```sql
+CREATE UNIQUE INDEX uniq_active_reservation
+ON sign.sign_requests (execution_id)
+WHERE state IN ('reserved', 'signed');
+```
+
+**3b. Re-Sign with Corrected Nonce**
+
+The pipeline updates the `Eip1559Transaction` struct with the corrected nonce and calls `sign.sign(...)` again:
+
+```rust
+txn.nonce = corrected_nonce;
+signed = retry_with_backoff(&ctx.retry_config, "sign_retry", || {
+    sign_handle.sign(chain_id, from_address, execution_id, txn.clone())
+}).await?;
+```
+
+The Sign actor creates a new `'signed'` record (satisfying the unique index), generates the RLP-encoded transaction bytes, and returns a `SignedTransaction` with the corrected nonce stored in the `with_nonce` field.
+
+**3c. Re-Broadcast**
+
+The pipeline re-enters the broadcast retry loop with the newly signed transaction. The Broadcast actor submits it to the RPC provider, which should now accept it (the nonce matches on-chain state).
+
+**StatusRegistry updates:**
+
+```
+NonceReserved → SyncNonce → NonceReserved → Signed → Broadcasted → Confirmed
+```
+
+The `SyncNonce` status is visible to clients polling `/status/{execution_id}`, signaling that recovery occurred.
+
+---
+
+### Retry Limits and Failure Modes
+
+**One-time recovery:**
+
+The pipeline uses a guard variable (`nonce_retry_attempted`) to ensure nonce sync is attempted **at most once** per execution:
+
+```rust
+let mut once_retry_attempted = false;
+// ...
+let outcome = loop {
+            match retry_with_backoff(&ctx.retry_config, "broadcast", || {
+                // ...
+            })
+            .await
+            {
+                Ok(broadcast_outcome) => break broadcast_outcome,
+
+                Err(BroadcastError::NonceTooLow {
+                    nonce_on_chain,
+                    attempted_nonce,
+                }) => {
+                    if nonce_retry_attempted {
+                        // ...
+                    }
+
+                    nonce_retry_attempted = true; // -> gaurd variable, ensure only one retry
+                    // ...
+                }
+            }
+}
+```
+
+**Why limit to one retry?**
+
+If a transaction fails with "nonce too low" **after** sync and retry, this indicates:
+- **High external contention:** Another service is rapidly submitting transactions with the same address
+- **Chain instability:** Frequent reorgs are invalidating nonces
+- **Critical bug:** The sync logic itself is flawed
+
+In all cases, continuing to retry would either fail indefinitely or mask a serious operational issue. Lobby fails the pipeline loudly, updates `StatusRegistry` to `Failed`, and logs an `ERROR`-level message. Operators can investigate the root cause via database queries:
+
+```sql
+-- How many times has this address required nonce sync?
+SELECT COUNT(*) FROM nonce.nonce_assignments
+WHERE execution_id = '\x00000000000000000000000001525943'::bytea
+    AND from_address = $target_address;
+
+-- What nonces were synced and when?
+SELECT nonce, created_at FROM nonce.nonce_assignments
+WHERE execution_id = '\x00000000000000000000000001525943'::bytea
+    AND from_address = $target_address
+ORDER BY created_at DESC;
+```
+
+**Retry-with-backoff interaction:**
+
+Each actor call within the recovery sequence uses Lobby's standard `retry_with_backoff` helper with exponential backoff and full jitter (default: 3 attempts, 100ms base delay, 200ms max delay). The total retry budget for one nonce sync recovery is:
+
+- Release nonce: up to 3 attempts
+- Sync nonce: up to 3 attempts
+- Revert signature: up to 3 attempts
+- Re-sign: up to 3 attempts
+- Re-broadcast: up to 3 attempts
+
+If **any** of these sub-operations exhaust retries, the pipeline hard-fails. This defense-in-depth ensures transient failures (e.g., database connection hiccup) don't abort recovery prematurely, while persistent failures (e.g., database corruption) are surfaced quickly.
+
+---
+
+### Performance Implications
+
+**First-time address usage:**
+
+When Lobby begins managing an Ethereum address that **already has on-chain transaction history**, the first transaction submission will trigger nonce sync:
+
+1. Lobby's database has no nonce records → reserves nonce `0`
+2. Broadcast fails: `"nonce too low: next nonce 42, tx nonce 0"`
+3. Sync creates marker: nonce `41` finalized
+4. Re-reserve: nonce `42` reserved
+5. Re-sign and re-broadcast: succeeds
+
+**Computational cost:**
+
+- 1 additional RPC call (`eth_getTransactionCount`)
+- 2 additional database INSERTs (sync marker + re-reservation)
+- 1 additional database UPDATE (revert signature)
+- 1 additional ECC signing operation (re-sign transaction)
+- Total latency overhead: ~200-500ms (dominated by RPC round-trip)
+
+**Subsequent transactions:**
+
+After the initial sync, Lobby's database state matches on-chain state. Future transactions for the same address proceed normally with **no additional overhead** — the sync marker remains in the database as a historical record, but `reserve()` operations simply allocate nonces sequentially past it.
+
+**Operational recommendation:**
+
+For addresses with known transaction history, operators can **pre-seed** the nonce state by manually inserting a sync marker:
+
+```sql
+INSERT INTO nonce.nonce_assignments
+    (execution_id, revision, chain_id, from_address, nonce, state, created_at, updated_at)
+VALUES (
+    '\x00000000000000000000000001525943'::bytea,
+    1,
+    1,  -- Ethereum mainnet
+    decode('742d35Cc6634C0532925a3b844Bc9e7595f0bEb', 'hex'),
+    41,  -- Sync marker: nonce 41 already consumed on-chain
+    'finalized',
+    now(),
+    now()
+);
+```
+
+This allows the first Lobby transaction to reserve nonce `42` immediately without triggering sync recovery.
+
+---
+
+### Observability
+
+**Structured logging:**
+
+The recovery sequence emits log events at three key points:
+
+**1. Detection (WARN level):**
+```
+WARN nonce mismatch detected, querying RPC for on-chain nonce
+  execution_id: 550e8400-e29b-41d4-a716-446655440000
+  chain_id: 1
+  from_address: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+  error: "nonce too low: next nonce 5, tx nonce 4"
+```
+
+**2. Sync marker creation (INFO level):**
+```
+INFO nonce sync marker created: marked nonce 4 as finalized
+  chain_id: 1
+  from_address: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+  synced_nonce: 4
+```
+
+**3. Recovery completion (INFO level):**
+```
+INFO nonce synced and reserved after on-chain mismatch
+  execution_id: 550e8400-e29b-41d4-a716-446655440000
+  chain_id: 1
+  from_address: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+  nonce: 5
+
+INFO transaction re-signed with corrected nonce
+  execution_id: 550e8400-e29b-41d4-a716-446655440000
+
+INFO retrying broadcast with synced nonce
+  execution_id: 550e8400-e29b-41d4-a716-446655440000
+```
+
+**4. Retry exhaustion (ERROR level):**
+```
+ERROR nonce mismatch retry failed after sync, aborting pipeline
+  execution_id: 550e8400-e29b-41d4-a716-446655440000
+  nonce_on_chain: 6
+  attempted_nonce: 5
+```
+
+### Root Cause Analysis
+
+When nonce mismatches occur frequently for a specific address, investigate the following:
+
+**1. External transaction activity:**
+
+Query the blockchain for transactions from the address that Lobby did not submit:
+
+```bash
+curl https://api.etherscan.io/api \
+  -d module=account \
+  -d action=txlist \
+  -d address=0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb \
+  -d startblock=0 \
+  -d endblock=99999999 \
+  -d sort=desc
+```
+
+Cross-reference transaction hashes against Lobby's `broadcast.broadcast_requests` table. Any on-chain transactions **not** in Lobby's database indicate external usage.
+
+**Solution:** If the address must be shared, configure external systems to coordinate nonces (e.g., via a shared nonce service). Alternatively, partition addresses so each service owns a disjoint set.
+
+**2. Actor crash/restart without database persistence:**
+
+Check Lobby's uptime and correlate nonce mismatches with restart events:
+
+```bash
+grep "nonce mismatch detected" /var/log/lobby/lobby.log | wc -l
+grep "Lobby server started" /var/log/lobby/lobby.log
+```
+
+If mismatches cluster around restart times, the Nonce actor's in-memory state (if any) is being lost.
+
+**Solution:** Ensure all nonce state is persisted to PostgreSQL **before** returning success to the caller. The current implementation already does this (nonce reservation commits to the database atomically), so this scenario should not occur unless the database itself is corrupted or lagging.
+
+**3. Database replication lag:**
+
+If Lobby reads from a PostgreSQL replica with replication lag, `reserve()` may allocate a nonce already consumed by a write to the primary.
+
+**Solution:** Configure Lobby to read from the **primary** database for all nonce operations. Replicas should only serve read-only analytics queries.
+
+**4. Chain reorganization:**
+
+A block reorg can invalidate previously confirmed transactions. If Lobby marked nonce `N` as `'finalized'` because the transaction was included in block `B`, but block `B` is later reorged out, nonce `N` is available again.
+
+**Detection:**
+
+```sql
+SELECT * FROM validator.validation_requests
+WHERE state = 'included'
+    AND chain_id = $chain_id
+    AND block_number > $recent_block - 100  -- Check last 100 blocks
+ORDER BY block_number DESC;
+```
+
+Query the RPC provider for each `block_number` and verify the block hash matches Lobby's recorded hash. A mismatch indicates a reorg.
+
+**Solution (future enhancement):** Implement chain reorg detection in the Validator actor. If a reorg is detected:
+- Mark all transactions in the reorged blocks as `'released'` (nonces become available again)
+- Re-broadcast affected transactions automatically
+
+**5. Concurrent pipeline bug:**
+
+If multiple pipelines for the **same address** execute simultaneously and bypass the Nonce actor's serialization (e.g., due to a routing bug), they may reserve the same nonce.
+
+**Detection:**
+
+```sql
+SELECT nonce, COUNT(*) FROM nonce.nonce_assignments
+WHERE chain_id = $chain_id
+    AND from_address = $from_address
+    AND state = 'reserved'
+    AND updated_at > now() - interval '1 hour'
+GROUP BY nonce
+HAVING COUNT(*) > 1;
+```
+
+**Solution:** This should be impossible due to shard routing (`ByAddress(from_address)`), but if detected, it indicates a critical bug in the ShardPool implementation. File a bug report with stack traces.
+
+
+### Security Considerations
+
+**1. RPC provider trust:**
+
+The recovery mechanism **trusts the RPC provider** to return the correct on-chain nonce. A malicious or compromised provider could return an incorrect nonce (e.g., `nonce_on_chain = 0`), causing Lobby to:
+- Create an invalid sync marker
+- Reserve nonce 0 (already consumed)
+- Broadcast fails again with "nonce too low"
+- Pipeline hard-fails after retry limit
+
+**Mitigation (future):** Query multiple RPC providers and use the median/majority response. Flag discrepancies as critical alerts.
+
+**2. Sync marker execution ID collision:**
+
+`SYNC_MARKER_EXECUTION_ID` is a fixed UUID. If an attacker could submit a transaction with this exact execution ID, they could:
+- Prevent sync markers from being created (conflicting primary key)
+- Corrupt nonce state for all addresses
+
+**Mitigation:** The `SYNC_MARKER_EXECUTION_ID` value (`0x01528843`) is **not exposed** in the public API and cannot be provided by clients. The HTTP handler always generates UUIDs via `uuid::v4()`, which has negligible collision probability.
+
+**3. Nonce gap amplification:**
+
+If Lobby syncs to nonce 100, but nonces 50-99 were never used on-chain (e.g., due to a bug), Lobby will never allocate nonces 50-99. These nonces are effectively burned.
+
+**Detection:** Query for large gaps in the nonce sequence:
+
+```sql
+SELECT nonce FROM nonce.nonce_assignments
+WHERE chain_id = $chain_id
+    AND from_address = $from_address
+    AND state = 'finalized'
+ORDER BY nonce;
+```
+
+If gaps exceed 10 nonces, investigate manually.
+
+**Mitigation:** The sync marker uses `nonce_on_chain - 1`, which is guaranteed to have been consumed on-chain (the RPC provider reports "next nonce 5" only if nonces 0-4 are used). Gaps should not occur unless the on-chain state itself has gaps (e.g., due to nonce manipulation in smart contract calls).
+
+---
+
+### Comparison with Alternative Approaches
+
+**Approach 1: Always query RPC for nonce (no database state)**
+
+**Pros:**
+- Always in sync with on-chain state
+- No possibility of divergence
+
+**Cons:**
+- **10x+ latency:** Every `reserve()` call requires an RPC round-trip (~50-100ms)
+- **RPC rate limits:** High-throughput applications (1000 txns/sec) would exhaust provider quotas
+- **No idempotency:** Can't distinguish between "reserve nonce 5" and "nonce 5 already reserved"
+
+**Approach 2: Periodic background sync (cron job)**
+
+**Pros:**
+- Proactive correction before errors occur
+- Can run during low-traffic periods
+
+**Cons:**
+- **Complexity:** Requires coordination between background task and actor
+- **Race conditions:** Background sync might conflict with in-flight reservations
+- **Waste:** Syncs addresses that haven't diverged (most of them)
+
+**Approach 3: Hybrid (database + RPC query on error)**
+
+**Pros:**
+- ✅ **Low latency:** Database queries are ~1ms (100x faster than RPC)
+- ✅ **High throughput:** No RPC call in the hot path
+- ✅ **Self-healing:** Automatic correction when divergence is detected
+- ✅ **Minimal overhead:** Recovery cost is only paid when necessary
+
+**Cons:**
+- First transaction after divergence incurs ~200-500ms penalty
+- Requires careful implementation to avoid race conditions
+
+**Lobby uses Approach 3** because it optimizes for the common case (no divergence) while gracefully handling the uncommon case (external interference or initialization).
+
+This nonce mismatch recovery mechanism allows Lobby to **safely share Ethereum addresses with external systems** or onboard addresses with existing transaction history, while maintaining high throughput and correctness guarantees. The one-time retry limit ensures that pathological cases (e.g., malicious RPC providers, rapid external transactions) fail loudly rather than silently degrading performance.
 
 ---
 

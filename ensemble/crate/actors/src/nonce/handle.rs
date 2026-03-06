@@ -32,7 +32,7 @@ pub enum NonceCommand {
         outcome: bool,
         reply: oneshot::Sender<Result<(), LocalError>>,
     },
-    SyncAndReserve {
+    Sync {
         chain_id: ChainId,
         from_address: Address,
         execution_id: ExecutionId,
@@ -102,7 +102,7 @@ impl NonceManager for NonceHandle {
         })?
     }
 
-    async fn sync_and_reserve(
+    async fn sync(
         &self,
         chain_id: ChainId,
         from_address: Address,
@@ -110,7 +110,7 @@ impl NonceManager for NonceHandle {
         nonce_on_chain: TxNonce,
     ) -> Result<TxNonce, LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
-        let cmd = NonceCommand::SyncAndReserve {
+        let cmd = NonceCommand::Sync {
             chain_id,
             from_address,
             execution_id,
