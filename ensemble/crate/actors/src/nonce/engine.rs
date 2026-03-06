@@ -420,12 +420,12 @@ impl NonceEngine {
                     if row.state == new_state {
                         Ok(())
                     } else if matches!(row.state, NonceState::Finalized | NonceState::Released) {
-                        Err(LocalError::DatabaseError(format!(
+                        Err(LocalError::Internal(format!(
                             "execution_id already resolved to {:?}, cannot transition to {:?}",
                             row.state, new_state
                         )))
                     } else {
-                        Err(LocalError::DatabaseError(
+                        Err(LocalError::Invariant(
                             "expected reserved state but UPDATE failed".to_string(),
                         ))
                     }

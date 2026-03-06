@@ -7,7 +7,7 @@ use kernel::{
 use tokio::sync::{mpsc, oneshot};
 
 // =========================================================
-// sonce state type mapping for sqlx <-> Postgres
+// nonce state type mapping for sqlx <-> Postgres
 
 #[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]

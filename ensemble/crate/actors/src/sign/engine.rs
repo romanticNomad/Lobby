@@ -1,4 +1,4 @@
-use crate::sign::SignCommand;
+use crate::sign::{SignCommand, SignState};
 use alloy::primitives::Address;
 use kernel::{
     traits::PolicyEngine,
@@ -184,7 +184,7 @@ impl SignEngine {
     }
 
     async fn handle_revert(&self, execution_id: ExecutionId) -> Result<(), LocalError> {
-        let rows_affected = sqlx::query_scalar::<_, i64>(
+        let result = sqlx::query!(
             r#"
             UPDATE sign.sign_requests
             SET state = 'failed'
@@ -197,23 +197,42 @@ impl SignEngine {
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING 1
             "#,
+            execution_id.0.as_bytes().as_slice(),
         )
-        .bind(execution_id.0.as_bytes())
-        .fetch_all(&self.db)
+        .execute(&self.db)
         .await
-        .map_err(|e| LocalError::DatabaseError(e.to_string()))?
-        .len() as i64;
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
+        
+        if result.rows_affected() > 0 {
+            Ok(())
+        } else {
+            let existing = sqlx::query!(
+                r#"
+                SELECT state as "state: SignState"
+                FROM sign.sign_requests
+                WHERE execution_id = $1
+                ORDER BY revision DESC
+                LIMIT 1
+                "#,
+                execution_id.0.as_bytes().as_slice()
+            )
+            .fetch_optional(&self.db)
+            .await
+            .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        match rows_affected {
-            0 => Err(LocalError::Internal(
-                "transaction not persisted properly in DB".to_string(),
-            )),
-            1 => Ok(()),
-            _ => Err(LocalError::Invariant(
-                "(execution_id, revision) clones detected".to_string(),
-            )),
+            match existing {
+                Some(row) => {
+                    if matches!(row.state, SignState::Failed | SignState::Reserved) {
+                        Err(LocalError::Internal("txn should have been signed by now, update failed".to_string()))
+                    } else {
+                        Err(LocalError::Invariant("txn should have been signed".to_string()))
+                    }
+                }
+                None => {
+                    Err(LocalError::Internal("invalid execution_id".to_string()))
+                }
+            }
         }
     }
 }
