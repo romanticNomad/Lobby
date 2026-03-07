@@ -1,7 +1,60 @@
 use crate::artifacts::RetryConfig;
 use rand::Rng;
+use std::future::Future;
 use std::time::Duration;
 use tracing::Instrument;
+
+// ============================================================
+// retry decision
+
+/// Controls whether an error should be retried or fail immediately.
+///
+/// This enum allows operations to signal whether a particular error is
+/// transient (and should be retried with backoff) or deterministic/fatal
+/// (and should abort the retry loop immediately).
+///
+/// ## Usage
+/// Operations passed to `retry_with_backoff` should return
+/// `Result<T, RetryDecision<E>>` and wrap their errors appropriately:
+///
+/// ```ignore
+/// // Transient errors that may succeed on retry
+/// Err(e) => Err(RetryDecision::Retry(e))
+///
+/// // Fatal errors that should not be retried
+/// Err(e) => Err(RetryDecision::FailImmediately(e))
+/// ```
+///
+/// ## Example
+/// ```ignore
+/// match broadcast_result {
+///     Err(BroadcastError::NonceTooLow { .. }) => {
+///         // Don't retry - needs special recovery logic
+///         Err(RetryDecision::FailImmediately(err))
+///     }
+///     Err(BroadcastError::Unexpected { .. }) => {
+///         // Transient - may succeed on retry
+///         Err(RetryDecision::Retry(err))
+///     }
+///     Ok(result) => Ok(result)
+/// }
+/// ```
+#[derive(Debug)]
+pub enum RetryDecision<E> {
+    /// The error is transient and should be retried with exponential backoff.
+    Retry(E),
+    /// The error is fatal/deterministic and should abort the retry loop immediately.
+    FailImmediately(E),
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for RetryDecision<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RetryDecision::Retry(e) => write!(f, "{}", e),
+            RetryDecision::FailImmediately(e) => write!(f, "{}", e),
+        }
+    }
+}
 
 // ============================================================
 // setting up retry facility
@@ -9,7 +62,12 @@ use tracing::Instrument;
 /// Execute `operation` up to `config.max_attempts + 1` times, sleeping a
 /// full-jitter exponential back-off between failures.
 ///
-/// # Full-jitter formula
+/// ## Retry Decision
+/// The operation must return `Result<T, RetryDecision<E>>`. Errors wrapped in:
+/// - `RetryDecision::Retry(e)` — will be retried with backoff
+/// - `RetryDecision::FailImmediately(e)` — abort retry loop, return immediately
+///
+/// ## Full-jitter formula
 /// window = min(max_delay, base_delay * 2^attempt)
 /// sleep  = rand(0, window)          // uniform over [0, window)
 ///
@@ -17,7 +75,7 @@ use tracing::Instrument;
 /// systems: it eliminates correlated retry spikes better than decorrelated
 /// jitter while keeping average wait times low.
 ///
-/// # Tracing
+/// ## Tracing
 /// Every retry emits a `WARN` event with structured fields:
 /// - `stage`   — the label provided by the caller (e.g. `"nonce_reserve"`)
 /// - `attempt` — 1-based attempt number
@@ -25,6 +83,7 @@ use tracing::Instrument;
 /// - `error`   — the `Display` form of the failure
 ///
 /// Final failure emits an `ERROR` event.
+/// Immediate failures emit a `DEBUG` event indicating no retry was attempted.
 pub async fn retry_with_backoff<F, Fut, T, E>(
     config: &RetryConfig,
     stage: &'static str,
@@ -32,7 +91,7 @@ pub async fn retry_with_backoff<F, Fut, T, E>(
 ) -> Result<T, E>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
+    Fut: Future<Output = Result<T, RetryDecision<E>>>,
     E: std::fmt::Display,
 {
     let max_total = config.max_attempts + 1;
@@ -48,7 +107,17 @@ where
                 return Ok(value);
             }
 
-            Err(err) if attempt == max_total => {
+            Err(RetryDecision::FailImmediately(err)) => {
+                tracing::debug!(
+                    stage,
+                    attempt,
+                    %err,
+                    "operation returned non-retryable error, failing immediately"
+                );
+                return Err(err);
+            }
+
+            Err(RetryDecision::Retry(err)) if attempt == max_total => {
                 tracing::error!(
                     stage,
                     attempt,
@@ -58,7 +127,7 @@ where
                 return Err(err);
             }
 
-            Err(err) => {
+            Err(RetryDecision::Retry(err)) => {
                 let delay = jittered_delay(config.base_delay, config.max_delay, attempt);
                 tracing::warn!(
                     stage,
