@@ -30,10 +30,19 @@ pub enum CortexError {
     #[error("nonce resolve failed (lease will expire): {0}")]
     NonceResolve(LocalError),
 
+    /// nonce update in db failed. This is a fatal error, becasue it
+    /// indicate mismatch of nonce in db and on-chain
+    #[error("failed to sync and reserve nonce after retry: {0}")]
+    NonceSync(LocalError),
+
     /// signing is failed after all retries. This is a fatal error
     /// nonce must be released before this error surfaces
     #[error("signing failed after retries: {0}")]
     Sign(LocalError),
+
+    /// same fatal status as `Sign`, logged when signer fails during nonce-sync
+    #[error("re-signing failed after nonce sync: {0}")]
+    ReSign(LocalError),
 
     /// Broadcast failed after all retries. The nonce is explicitly released
     /// before this error is surfaced.
@@ -67,7 +76,9 @@ impl CortexError {
             Self::RelayHost(_) => "relay_host",
             Self::NonceReservation(_) => "nonce_reserve",
             Self::NonceResolve(_) => "nonce_resolve",
+            Self::NonceSync(_) => "nonce_sync",
             Self::Sign(_) => "sign",
+            Self::ReSign(_) => "sign_post_nonce_sync",
             Self::Broadcast(_) => "broadcast",
             Self::NotIncluded(_) => "validator",
             Self::Internal(_) => "internal",
