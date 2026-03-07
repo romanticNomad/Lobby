@@ -2,7 +2,7 @@ use crate::{
     artifacts::config::RetryConfig,
     artifacts::error::CortexError,
     artifacts::pool::{ByAddress, ByChainId, ByExecutionId, ShardPool},
-    artifacts::retry::retry_with_backoff,
+    artifacts::retry::{RetryDecision, retry_with_backoff},
     state::{PipelineStatus, StatusRegistry},
 };
 use kernel::{
@@ -56,7 +56,19 @@ pub(crate) struct PipelineContext {
 /// | Sign        | Release nonce via `resolve(false)` → exit |
 /// | Broadcast   | Release nonce via `resolve(false)` → exit |
 /// |             | NonceTooLow → sync and retry once         |
+/// |             | MissingProvider → immediate exit          |
 /// | Validator   | Release nonce via `resolve(false)` → exit |
+///
+/// ## Nonce mismatch recovery
+///
+/// When broadcast returns `BroadcastError::NonceTooLow`, the pipeline:
+/// 1. Immediately exits retry loop (no redundant attempts)
+/// 2. Releases the incorrect nonce reservation
+/// 3. Reverts signing status
+/// 4. Syncs with on-chain nonce state
+/// 5. Re-signs transaction with corrected nonce
+/// 6. Retries broadcast once
+/// 7. If second broadcast fails → pipeline fails
 pub(crate) async fn run_pipeline(ctx: PipelineContext) {
     // ============================================================
     // sharding keys and tracing span
@@ -83,7 +95,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             let txn = ctx.txn.clone();
             let cc = ctx.client_config.clone();
 
-            async move { rh.register_transaction(execution_id, txn, cc).await }
+            async move {
+                rh.register_transaction(execution_id, txn, cc)
+                    .await
+                    .map_err(RetryDecision::Retry)
+            }
         })
         .await;
 
@@ -104,7 +120,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         let nonce = match retry_with_backoff(&ctx.retry_config, "nonce_reserve", || {
             let nh = Arc::clone(&nonce_handle);
-            async move { nh.reserve(chain_id, from_address, execution_id).await }
+            async move {
+                nh.reserve(chain_id, from_address, execution_id)
+                    .await
+                    .map_err(RetryDecision::Retry)
+            }
         })
         .await
         {
@@ -132,7 +152,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         let mut signed = match retry_with_backoff(&ctx.retry_config, "sign", || {
             let sh = Arc::clone(&sign_handle);
             let t = txn.clone();
-            async move { sh.sign(chain_id, from_address, execution_id, t).await }
+            async move {
+                sh.sign(chain_id, from_address, execution_id, t)
+                    .await
+                    .map_err(RetryDecision::Retry)
+            }
         })
         .await
         {
@@ -165,22 +189,44 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 let signed_clone = signed.clone();
 
                 async move {
-                    bh.broadcast(chain_id, from_address, execution_id, signed_clone)
+                    match bh
+                        .broadcast(chain_id, from_address, execution_id, signed_clone)
                         .await
+                    {
+                        Ok(result) => Ok(result),
+                        // Non-retryable errors that need special handling
+                        Err(BroadcastError::NonceTooLow {
+                            nonce_on_chain,
+                            attempted_nonce,
+                        }) => Err(RetryDecision::FailImmediately(
+                            BroadcastError::NonceTooLow {
+                                nonce_on_chain,
+                                attempted_nonce,
+                            },
+                        )),
+                        Err(BroadcastError::MissingProvider { chain_id }) => {
+                            Err(RetryDecision::FailImmediately(
+                                BroadcastError::MissingProvider { chain_id },
+                            ))
+                        }
+                        // All other errors are retryable
+                        Err(e) => Err(RetryDecision::Retry(e)),
+                    }
                 }
             })
             .await
             {
                 Ok(broadcast_outcome) => break broadcast_outcome,
 
-                // ============================================================
-                // NONCE TOO LOW - Attempt one-time recovery
+                // NonceTooLow -> Attempt one-time recovery
+
                 Err(BroadcastError::NonceTooLow {
                     nonce_on_chain,
                     attempted_nonce,
                 }) => {
                     if nonce_retry_attempted {
                         // Already retried once, give up to prevent infinite loop
+
                         tracing::error!(
                             %execution_id,
                             %nonce_on_chain,
@@ -208,6 +254,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     );
 
                     // Update status to indicate nonce sync is happening
+
                     ctx.status.set(
                         execution_id,
                         PipelineStatus::SyncNonce {
@@ -216,14 +263,12 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         },
                     );
 
-                    // ============================================================
                     // Step 1: Release the incorrect nonce and revert sign status.
 
                     release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
                     revert_sign(&sign_handle, execution_id, &ctx.retry_config).await;
                     tracing::debug!(%execution_id, "released incorrect nonce and reverted sign status");
 
-                    // ============================================================
                     // Step 2: Sync with on-chain state and reserve correct nonce
 
                     let corrected_nonce =
@@ -232,6 +277,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                             async move {
                                 nh.sync(chain_id, from_address, execution_id, nonce_on_chain)
                                     .await
+                                    .map_err(RetryDecision::Retry)
                             }
                         })
                         .await
@@ -254,21 +300,22 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         %corrected_nonce,
                         "nonce synced and reserved after on-chain mismatch"
                     );
-
                     ctx.status.set(execution_id, PipelineStatus::NonceReserved);
 
-                    // ============================================================
                     // Step 3: Update transaction with corrected nonce
 
                     txn.nonce = corrected_nonce;
 
-                    // ============================================================
                     // Step 4: Re-sign transaction with corrected nonce
 
                     signed = match retry_with_backoff(&ctx.retry_config, "sign_retry", || {
                         let sh = Arc::clone(&sign_handle);
                         let t = txn.clone();
-                        async move { sh.sign(chain_id, from_address, execution_id, t).await }
+                        async move {
+                            sh.sign(chain_id, from_address, execution_id, t)
+                                .await
+                                .map_err(RetryDecision::Retry)
+                        }
                     })
                     .await
                     {
@@ -292,7 +339,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     );
                     ctx.status.set(execution_id, PipelineStatus::Signed);
 
-                    // ============================================================
                     // Step 5: Loop will retry broadcast with new signed transaction
 
                     tracing::info!(%execution_id, "retrying broadcast with synced nonce");
@@ -300,7 +346,24 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 }
 
                 // ============================================================
-                // OTHER BROADCAST ERRORS - Hard fail
+                // MissingProvider -> Immediate fatal failure
+
+                Err(BroadcastError::MissingProvider { chain_id }) => {
+                    tracing::error!(
+                        %execution_id,
+                        %chain_id,
+                        "no RPC provider configured for chain, aborting pipeline"
+                    );
+
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    let err = CortexError::Broadcast(BroadcastError::MissingProvider { chain_id });
+                    record_faliure(&ctx.status, execution_id, &err);
+                    return;
+                }
+
+                // ============================================================
+                // Other broadcast errors -> Hard fail
+
                 Err(e) => {
                     release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
                     let err = CortexError::Broadcast(e);
@@ -324,6 +387,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // ============================================================
         // validator
+
         let v = Arc::clone(&ctx.validator_handle);
         let validation =
             match { async move { v.validate(chain_id, execution_id, tx_hash).await } }.await {
@@ -370,8 +434,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             }
         }
 
-        // ============================================================
-
         tracing::info!("pipeline completed");
     }
     .instrument(span)
@@ -393,7 +455,11 @@ async fn release_nonce(
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
         let nh = Arc::clone(handle);
-        async move { nh.resolve(execution_id, false).await }
+        async move {
+            nh.resolve(execution_id, false)
+                .await
+                .map_err(RetryDecision::Retry)
+        }
     })
     .await;
 
@@ -419,7 +485,7 @@ async fn revert_sign(
 ) {
     let revert_result = retry_with_backoff(&retry_config, "sign_revert", || {
         let sh = Arc::clone(handle);
-        async move { sh.revert(execution_id).await }
+        async move { sh.revert(execution_id).await.map_err(RetryDecision::Retry) }
     })
     .await;
 
@@ -443,7 +509,11 @@ async fn finalise_nonce(
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_finalise", || {
         let nh = Arc::clone(handle);
-        async move { nh.resolve(execution_id, true).await }
+        async move {
+            nh.resolve(execution_id, true)
+                .await
+                .map_err(RetryDecision::Retry)
+        }
     })
     .await;
 
