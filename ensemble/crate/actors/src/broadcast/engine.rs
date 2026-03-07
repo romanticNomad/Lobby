@@ -189,7 +189,7 @@ impl BroadcastEngine {
         let send_txn = provider.send_raw_transaction(&txn.rlp).await;
 
         // =========================================================
-        // pattern matching for the broadcasted transaction
+        // pattern matching for the broadcasted transaction tracing
 
         match send_txn {
             Ok(pending_tx) => {
@@ -216,10 +216,10 @@ impl BroadcastEngine {
                 let err_str = err.to_string();
 
                 // =========================================================
-                // NONCE MISMATCH DETECTION - Query RPC for correct nonce
+                // None mismatch detected - Query RPC for correct nonce
 
                 if err_str.contains("nonce too low") || err_str.contains("nonce") {
-                    tracing::warn!(
+                    tracing::debug!(
                         %execution_id,
                         %chain_id,
                         %from_address,
@@ -254,7 +254,7 @@ impl BroadcastEngine {
                 }
 
                 // =========================================================
-                // OTHER DETERMINISTIC ERRORS
+                // Other deterministic errors
 
                 let deterministic_error = err_str.contains("insufficient funds")
                     || err_str.contains("invalid sender")
