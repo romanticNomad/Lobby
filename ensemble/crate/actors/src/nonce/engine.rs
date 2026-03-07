@@ -200,7 +200,12 @@ impl NonceEngine {
                 (execution_id, revision, chain_id, from_address, nonce, state)
             SELECT
                 $4,
-                1,                  
+                COALESCE(
+                    (SELECT MAX(revision)
+                    FROM nonce.nonce_assignments
+                    WHERE execution_id = $4),
+                    0
+                ) + 1,         
                 $1,
                 $2,
                 ($3::BIGINT - 1),
@@ -226,7 +231,7 @@ impl NonceEngine {
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
         if let Some(synced_nonce) = sync_marker_inserted {
-            tracing::info!(
+            tracing::debug!(
                 %chain_id,
                 %from,
                 synced_nonce,
@@ -303,7 +308,7 @@ impl NonceEngine {
         match reserved {
             Some(row) => {
                 let reserved_nonce = TxNonce::try_from(row.nonce)?;
-                tracing::info!(
+                tracing::debug!(
                     %execution_id,
                     %chain_id,
                     %from,
