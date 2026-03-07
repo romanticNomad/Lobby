@@ -76,7 +76,7 @@ impl SignEngine {
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()
-            .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
+            .map_err(|_| LocalError::Invariant("Chain_id does not fit in i64".to_string()))?;
         let from_bytes = &from.0.0;
 
         // =========================================================
@@ -123,7 +123,7 @@ impl SignEngine {
         // pattern matching the state recieved (need to be done yet)
 
         let revision = revision
-            .ok_or_else(|| LocalError::Invariant("sign database invariant faliure".to_string()))?;
+            .ok_or_else(|| LocalError::Invariant("Sign database invariant faliure".to_string()))?;
 
         // =========================================================
         // signing logic and pattern matching
@@ -148,7 +148,7 @@ impl SignEngine {
 
                 if result.rows_affected() != 1 {
                     return Err(LocalError::Invariant(
-                        "invalid sign_requests state transition".to_string(),
+                        "Invalid sign_requests state transition".to_string(),
                     ));
                 }
 
@@ -174,7 +174,7 @@ impl SignEngine {
 
                 if result.rows_affected() != 1 {
                     return Err(LocalError::Invariant(
-                        "invalid sign_requests state transition".to_string(),
+                        "Invalid sign_requests state transition".to_string(),
                     ));
                 }
 
@@ -223,13 +223,17 @@ impl SignEngine {
 
             match existing {
                 Some(row) => {
-                    if matches!(row.state, SignState::Failed | SignState::Reserved) {
+                    if matches!(row.state, SignState::Reserved) {
                         Err(LocalError::Internal(
-                            "txn should have been signed by now, update failed".to_string(),
+                            "Txn should have been signed by now, update failed".to_string(),
+                        ))
+                    } else if matches!(row.state, SignState::Failed) {
+                        Err(LocalError::Internal(
+                            "Txn already updated to failed".to_string(),
                         ))
                     } else {
-                        Err(LocalError::Invariant(
-                            "txn should have been signed".to_string(),
+                        Err(LocalError::Internal(
+                            "Curropted execution_id or state".to_string(),
                         ))
                     }
                 }
