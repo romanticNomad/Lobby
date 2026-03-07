@@ -122,8 +122,9 @@ impl SignEngine {
         // =========================================================
         // pattern matching the state recieved (need to be done yet)
 
-        let revision = revision
-            .ok_or_else(|| LocalError::Invariant("Invariant failed while state insertion".to_string()))?;
+        let revision = revision.ok_or_else(|| {
+            LocalError::Invariant("Invariant failed while state insertion".to_string())
+        })?;
 
         // =========================================================
         // signing logic and pattern matching

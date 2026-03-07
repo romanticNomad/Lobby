@@ -19,7 +19,7 @@ mod tests {
     #[derive(Debug)]
     pub enum TestError {
         Failuire,
-        First
+        First,
     }
 
     impl std::fmt::Display for TestError {
@@ -40,7 +40,7 @@ mod tests {
         let calls_clone = Arc::clone(&calls);
 
         // Always fail — should exhaust all retries.
-        let result:Result<(), TestError> = retry_with_backoff(&cfg, "test_stage", || {
+        let result: Result<(), TestError> = retry_with_backoff(&cfg, "test_stage", || {
             let c = Arc::clone(&calls_clone);
             async move {
                 c.fetch_add(1, Ordering::SeqCst);
@@ -69,7 +69,11 @@ mod tests {
             let c = Arc::clone(&calls_clone);
             async move {
                 let n = c.fetch_add(1, Ordering::SeqCst);
-                if n == 0 { Err(RetryDecision::Retry(TestError::First)) } else { Ok(42) }
+                if n == 0 {
+                    Err(RetryDecision::Retry(TestError::First))
+                } else {
+                    Ok(42)
+                }
             }
         })
         .await;
@@ -86,7 +90,7 @@ mod tests {
         let calls_clone = Arc::clone(&calls);
 
         let result: Result<(), TestError> = retry_with_backoff(&cfg, "test_stage", || {
-            let c= Arc::clone(&calls_clone);
+            let c = Arc::clone(&calls_clone);
             async move {
                 c.fetch_add(1, Ordering::SeqCst);
                 Err(RetryDecision::FailImmediately(TestError::Failuire))
