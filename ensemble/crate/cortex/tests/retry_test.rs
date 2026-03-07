@@ -16,6 +16,18 @@ mod tests {
         time::Duration,
     };
 
+    #[derive(Debug)]
+    pub enum TestError {
+        Failuire,
+        First
+    }
+
+    impl std::fmt::Display for TestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self)
+        }
+    }
+
     #[tokio::test]
     async fn retries_correct_number_of_times() {
         let cfg = RetryConfig {
@@ -28,11 +40,11 @@ mod tests {
         let calls_clone = Arc::clone(&calls);
 
         // Always fail — should exhaust all retries.
-        let result: Result<(), &str> = retry_with_backoff(&cfg, "test_stage", || {
+        let result:Result<(), TestError> = retry_with_backoff(&cfg, "test_stage", || {
             let c = Arc::clone(&calls_clone);
             async move {
                 c.fetch_add(1, Ordering::SeqCst);
-                Err("boom")
+                Err(RetryDecision::Retry(TestError::Failuire))
             }
         })
         .await;
@@ -53,17 +65,37 @@ mod tests {
         let calls = Arc::new(AtomicU32::new(0));
         let calls_clone = Arc::clone(&calls);
 
-        let result: Result<u32, &str> = retry_with_backoff(&cfg, "test_stage", || {
+        let result: Result<u32, TestError> = retry_with_backoff(&cfg, "test_stage", || {
             let c = Arc::clone(&calls_clone);
             async move {
                 let n = c.fetch_add(1, Ordering::SeqCst);
-                if n == 0 { Err("first") } else { Ok(42) }
+                if n == 0 { Err(RetryDecision::Retry(TestError::First)) } else { Ok(42) }
             }
         })
         .await;
 
         assert_eq!(result.unwrap(), 42);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn fail_immediately() {
+        let cfg = RetryConfig::default(); // default -> retries for 3 times.
+
+        let calls = Arc::new(AtomicU32::new(0));
+        let calls_clone = Arc::clone(&calls);
+
+        let result: Result<(), TestError> = retry_with_backoff(&cfg, "test_stage", || {
+            let c= Arc::clone(&calls_clone);
+            async move {
+                c.fetch_add(1, Ordering::SeqCst);
+                Err(RetryDecision::FailImmediately(TestError::Failuire))
+            }
+        })
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
 
