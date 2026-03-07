@@ -218,8 +218,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             {
                 Ok(broadcast_outcome) => break broadcast_outcome,
 
+                // ============================================================
                 // NonceTooLow -> Attempt one-time recovery
-
                 Err(BroadcastError::NonceTooLow {
                     nonce_on_chain,
                     attempted_nonce,
@@ -228,10 +228,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         // Already retried once, give up to prevent infinite loop
 
                         tracing::error!(
-                            %execution_id,
                             %nonce_on_chain,
                             %attempted_nonce,
-                            "nonce mismatch retry failed after sync, aborting pipeline"
+                            "nonce matching failed after retry, aborting pipeline"
                         );
 
                         release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
@@ -247,10 +246,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     nonce_retry_attempted = true;
 
                     tracing::warn!(
-                        %execution_id,
                         %attempted_nonce,
                         %nonce_on_chain,
-                        "nonce too low detected - initiating sync and retry"
+                        "nonce mismatch detected - initiating sync"
                     );
 
                     // Update status to indicate nonce sync is happening
@@ -267,7 +265,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
                     revert_sign(&sign_handle, execution_id, &ctx.retry_config).await;
-                    tracing::debug!(%execution_id, "released incorrect nonce and reverted sign status");
+                    tracing::debug!("released incorrect nonce and reverted sign status");
 
                     // Step 2: Sync with on-chain state and reserve correct nonce
 
@@ -284,19 +282,13 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         {
                             Ok(n) => n,
                             Err(e) => {
-                                tracing::error!(
-                                    %execution_id,
-                                    error = %e,
-                                    "failed to sync and reserve nonce after retry"
-                                );
-                                let err = CortexError::NonceReservation(e);
+                                let err = CortexError::NonceSync(e);
                                 record_faliure(&ctx.status, execution_id, &err);
                                 return;
                             }
                         };
 
                     tracing::info!(
-                        %execution_id,
                         %corrected_nonce,
                         "nonce synced and reserved after on-chain mismatch"
                     );
@@ -308,54 +300,42 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     // Step 4: Re-sign transaction with corrected nonce
 
-                    signed = match retry_with_backoff(&ctx.retry_config, "sign_retry", || {
-                        let sh = Arc::clone(&sign_handle);
-                        let t = txn.clone();
-                        async move {
-                            sh.sign(chain_id, from_address, execution_id, t)
-                                .await
-                                .map_err(RetryDecision::Retry)
-                        }
-                    })
-                    .await
-                    {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::error!(
-                                %execution_id,
-                                error = %e,
-                                "re-signing failed after nonce sync"
-                            );
-                            release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
-                            let err = CortexError::Sign(e);
-                            record_faliure(&ctx.status, execution_id, &err);
-                            return;
-                        }
-                    };
+                    signed =
+                        match retry_with_backoff(&ctx.retry_config, "sign_post_nonce_sync", || {
+                            let sh = Arc::clone(&sign_handle);
+                            let t = txn.clone();
+                            async move {
+                                sh.sign(chain_id, from_address, execution_id, t)
+                                    .await
+                                    .map_err(RetryDecision::Retry)
+                            }
+                        })
+                        .await
+                        {
+                            Ok(s) => s,
+                            Err(e) => {
+                                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
 
-                    tracing::info!(
-                        %execution_id,
-                        "transaction re-signed with corrected nonce"
-                    );
+                                let err = CortexError::ReSign(e);
+                                record_faliure(&ctx.status, execution_id, &err);
+                                return;
+                            }
+                        };
+
+                    tracing::info!("transaction re-signed with corrected nonce");
                     ctx.status.set(execution_id, PipelineStatus::Signed);
 
                     // Step 5: Loop will retry broadcast with new signed transaction
 
-                    tracing::info!(%execution_id, "retrying broadcast with synced nonce");
+                    tracing::info!("retrying broadcast with corrected nonce");
                     continue;
                 }
 
                 // ============================================================
                 // MissingProvider -> Immediate fatal failure
-
                 Err(BroadcastError::MissingProvider { chain_id }) => {
-                    tracing::error!(
-                        %execution_id,
-                        %chain_id,
-                        "no RPC provider configured for chain, aborting pipeline"
-                    );
-
                     release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+
                     let err = CortexError::Broadcast(BroadcastError::MissingProvider { chain_id });
                     record_faliure(&ctx.status, execution_id, &err);
                     return;
@@ -363,7 +343,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                 // ============================================================
                 // Other broadcast errors -> Hard fail
-
                 Err(e) => {
                     release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
                     let err = CortexError::Broadcast(e);
@@ -466,18 +445,17 @@ async fn release_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> lease will expire in 5 minutes
         tracing::error!(
-            %execution_id,
             %e,
             "nonce release failed after retries, lease will expire in 5 min"
         );
     } else {
-        tracing::debug!(%execution_id, "nonce released");
+        tracing::debug!("nonce released");
     }
 }
 
 /// Revert sign status from 'signed' to 'failed'
-/// for handeling errors require resigning.
-/// **example**: lobby DB and on-chain nonce mismatch
+/// for error handeling pathways that require re-signing.
+/// **example**: `NoneTooLow`.
 async fn revert_sign(
     handle: &Arc<dyn Signer>,
     execution_id: ExecutionId,
@@ -492,7 +470,6 @@ async fn revert_sign(
     if let Err(e) = revert_result {
         // not fatal -> lease will expire in 5 minutes
         tracing::error!(
-            %execution_id,
             %e,
             "sign state revertion failed"
         );
@@ -520,19 +497,17 @@ async fn finalise_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> dangling nonce lease expires in 5 min
         tracing::error!(
-            %execution_id,
             %e,
             "nonce finalising failed -> state remains 'reserved' lease will expire in 5 minutes"
         );
     } else {
-        tracing::debug!(%execution_id, "nonce finalised");
+        tracing::debug!("nonce finalised");
     }
 }
 
 /// helper to record fatal errors.
 fn record_faliure(registry: &StatusRegistry, execution_id: ExecutionId, err: &CortexError) {
     tracing::error!(
-        %execution_id,
         stage = err.stage(),
         %err,
         "pipeline hard fail",
