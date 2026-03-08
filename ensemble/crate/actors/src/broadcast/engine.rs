@@ -26,7 +26,6 @@ impl BroadcastEngine {
     }
 
     /// Fetch the current nonce for an address from the RPC provider.
-    /// This is used when we detect a nonce mismatch to get the authoritative on-chain state.
     async fn fetch_current_nonce(
         &self,
         chain_id: ChainId,
@@ -117,7 +116,7 @@ impl BroadcastEngine {
                 AND (
                         state = 'submitted'
                     OR (
-                            state = 'received'
+                        state = 'received'
                         AND updated_at > now() - interval '5 minutes'
                     )
                 )
@@ -169,9 +168,9 @@ impl BroadcastEngine {
                         });
                     }
                     _ => {
-                        return Err(BroadcastError::Unexpected {
-                            message: "unknown database inclusion error".to_string(),
-                        });
+                        return Err(BroadcastError::DatabaseError(
+                            "unknown database inclusion error".to_string(),
+                        ));
                     }
                 }
             }
@@ -227,10 +226,9 @@ impl BroadcastEngine {
                         "nonce mismatch detected, querying RPC for on-chain nonce"
                     );
 
-                    // Fetch authoritative nonce from RPC
+                    // Fetch authoritative nonce from RPC and update rejection in Db
                     let nonce_on_chain = self.fetch_current_nonce(chain_id, from_address).await?;
 
-                    // Record rejection in database
                     sqlx::query!(
                         r#"
                         UPDATE broadcast.broadcast_requests
@@ -256,31 +254,23 @@ impl BroadcastEngine {
                 // =========================================================
                 // Other deterministic errors
 
-                let deterministic_error = err_str.contains("insufficient funds")
-                    || err_str.contains("invalid sender")
-                    || err_str.contains("replacement transaction underpriced");
+                sqlx::query!(
+                    r#"
+                    UPDATE broadcast.broadcast_requests
+                    SET state = 'rejected',
+                        rejection_reason = $1
+                    WHERE execution_id = $2
+                    AND revision = $3
+                    "#,
+                    err_str,
+                    execution_id.0.as_bytes().as_slice(),
+                    revision
+                )
+                .execute(&self.db)
+                .await
+                .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
 
-                if deterministic_error {
-                    sqlx::query!(
-                        r#"
-                        UPDATE broadcast.broadcast_requests
-                        SET state = 'rejected',
-                            rejection_reason = $1
-                        WHERE execution_id = $2
-                        AND revision = $3
-                        "#,
-                        err_str,
-                        execution_id.0.as_bytes().as_slice(),
-                        revision
-                    )
-                    .execute(&self.db)
-                    .await
-                    .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
-
-                    Err(BroadcastError::Rejected { reason: err_str })
-                } else {
-                    Err(BroadcastError::Unexpected { message: err_str })
-                }
+                Err(BroadcastError::Rejected { reason: err_str })
             }
         }
     }
