@@ -1,7 +1,7 @@
 pub mod server;
 
 use crate::server::{
-    AppState,
+    AppState, CustomTime,
     auth::auth_middleware,
     handler::{get_transaction_status, submit_transaction},
 };
@@ -13,7 +13,7 @@ use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use tracing_tree::{HierarchicalLayer, time::Uptime};
+use tracing_tree::HierarchicalLayer;
 use utils::{
     custody::export_custody_key_count,
     registry::{load_api_key_from_env, load_rpc_endpoints_from_env},
@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_bracketed_fields(true)
                 .with_span_modes(true)
                 .with_indent_lines(true)
-                .with_timer(Uptime::default()),
+                .with_timer(CustomTime::default()),
         )
         .init();
 
