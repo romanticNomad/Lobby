@@ -137,7 +137,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         };
 
         ctx.status.set(execution_id, PipelineStatus::NonceReserved);
-        tracing::info!(%nonce, "nonce reserved");
+        tracing::info!(
+            "nonce reserved\n  └─ nonce: {}",
+            nonce
+        );
 
         // updating the nonce onto txn payload
         let mut txn = ctx.txn;
@@ -228,9 +231,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         // Already retried once, give up to prevent infinite loop
 
                         tracing::error!(
-                            %nonce_on_chain,
-                            %attempted_nonce,
-                            "nonce matching failed after retry, aborting pipeline"
+                            "nonce matching failed after retry, aborting pipeline\n  └─ nonce_on_chain: {}\n  └─ attempted_nonce: {}",
+                            nonce_on_chain,
+                            attempted_nonce
                         );
 
                         release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
@@ -246,9 +249,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     nonce_retry_attempted = true;
 
                     tracing::warn!(
-                        %attempted_nonce,
-                        %nonce_on_chain,
-                        "nonce mismatch detected - initiating sync"
+                        "nonce mismatch detected - initiating sync\n  └─ attempted_nonce: {}\n  └─ nonce_on_chain: {}",
+                        attempted_nonce,
+                        nonce_on_chain
                     );
 
                     // Update status to indicate nonce sync is happening
@@ -289,8 +292,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         };
 
                     tracing::info!(
-                        %corrected_nonce,
-                        "nonce synced and reserved after on-chain mismatch"
+                        "nonce synced and reserved after on-chain mismatch\n  └─ corrected_nonce: {}",
+                        corrected_nonce
                     );
                     ctx.status.set(execution_id, PipelineStatus::NonceReserved);
 
@@ -360,8 +363,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             },
         );
         tracing::info!(
-            %tx_hash,
-            "transaction broadcasted"
+            "transaction broadcasted\n  └─ tx_hash: {:#x}",
+            tx_hash
         );
 
         // ============================================================
@@ -393,14 +396,17 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     },
                 );
                 tracing::info!(
-                    %tx_hash,
-                    %block_number,
-                    %confirmations,
-                    "transaction confirmed on-chain"
+                    "transaction confirmed on-chain\n  └─ tx_hash: {:#x}\n  └─ block_number: {}\n  └─ confirmations: {}",
+                    tx_hash,
+                    block_number,
+                    confirmations
                 );
             }
             ValidatorOutcome::NotIncluded => {
-                tracing::warn!(%tx_hash, "transaction not included (reorg or eviction)");
+                tracing::warn!(
+                    "transaction not included (reorg or eviction)\n  └─ tx_hash: {:#x}",
+                    tx_hash
+                );
                 release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
 
                 ctx.status.set(
@@ -412,6 +418,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 );
             }
         }
+
+        // ============================================================
 
         tracing::info!("pipeline completed");
     }
@@ -445,8 +453,8 @@ async fn release_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> lease will expire in 5 minutes
         tracing::error!(
-            %e,
-            "nonce release failed after retries, lease will expire in 5 min"
+            "nonce release failed after retries\n  └─ error: {}\n  └─ lease will expire in 5 min",
+            e
         );
     } else {
         tracing::debug!("nonce released");
@@ -469,10 +477,7 @@ async fn revert_sign(
 
     if let Err(e) = revert_result {
         // not fatal -> lease will expire in 5 minutes
-        tracing::error!(
-            %e,
-            "sign state revertion failed"
-        );
+        tracing::error!("sign state revertion failed\n  └─ error: {}", e);
     } else {
         tracing::debug!("sign state set to failed")
     }
@@ -497,8 +502,8 @@ async fn finalise_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> dangling nonce lease expires in 5 min
         tracing::error!(
-            %e,
-            "nonce finalising failed -> state remains 'reserved' lease will expire in 5 minutes"
+            "nonce finalising failed\n  └─ error: {}\n  └─ state remains 'reserved', lease will expire in 5 minutes",
+            e
         );
     } else {
         tracing::debug!("nonce finalised");
@@ -508,9 +513,9 @@ async fn finalise_nonce(
 /// helper to record fatal errors.
 fn record_faliure(registry: &StatusRegistry, execution_id: ExecutionId, err: &CortexError) {
     tracing::error!(
-        stage = err.stage(),
-        %err,
-        "pipeline hard fail",
+        "pipeline hard fail\n  └─ stage: {}\n  └─ error: {}",
+        err.stage(),
+        err
     );
     registry.set(
         execution_id,
