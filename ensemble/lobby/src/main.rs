@@ -12,8 +12,8 @@ use axum::{
 use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use tracing_tree::{HierarchicalLayer, time::Uptime};
+use tracing_forest::ForestLayer;
+use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt, util::SubscriberInitExt};
 use utils::{
     custody::export_custody_key_count,
     registry::{load_api_key_from_env, load_rpc_endpoints_from_env},
@@ -27,17 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================
     // logging
 
-    tracing_subscriber::registry()
+    Registry::default()
         .with(EnvFilter::from_default_env())
-        .with(
-            HierarchicalLayer::new(2)
-                .with_ansi(true)
-                .with_targets(true)
-                .with_bracketed_fields(true)
-                .with_span_modes(true)
-                .with_indent_lines(true)
-                .with_timer(Uptime::default()),
-        )
+        .with(ForestLayer::default())
         .init();
 
     tracing::info!("lobby bootup sequence active");
