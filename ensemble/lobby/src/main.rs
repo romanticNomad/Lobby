@@ -13,7 +13,7 @@ use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, net::SocketAddr};
 use tracing_forest::ForestLayer;
-use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use utils::{
     custody::export_custody_key_count,
     registry::{load_api_key_from_env, load_rpc_endpoints_from_env},
@@ -27,9 +27,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================
     // logging
 
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("transactions.json")
+        .expect("failed to open log file");
+
     Registry::default()
         .with(EnvFilter::from_default_env())
         .with(ForestLayer::default())
+        .with(fmt::layer().json().with_writer(file).with_ansi(false))
         .init();
 
     tracing::info!("lobby bootup sequence active");

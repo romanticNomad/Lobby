@@ -14,6 +14,7 @@ use tracing::Instrument;
 
 // ============================================================
 // context
+
 /// all the entities that pipeline would need,
 /// wrapped in a cheap-to-clone struct
 #[derive(Clone)]
@@ -41,6 +42,7 @@ pub(crate) struct PipelineContext {
 
 // ============================================================
 // entry point
+
 /// Run the full transaction pipeline for one execution.
 ///
 /// This function is called inside a `tokio::spawn`'d task and never returns an
