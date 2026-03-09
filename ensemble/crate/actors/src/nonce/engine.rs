@@ -96,13 +96,23 @@ impl NonceEngine {
                 $2,
                 $3,
                 COALESCE(
+                    -- Priority 1: Released nonces
+                    (SELECT MIN(nonce)
+                    FROM nonce.nonce_assignments
+                    WHERE chain_id = $2
+                    AND from_address = $3
+                    AND state = 'released'),
+
+                    -- Priority 2: Next sequential nonce
                     (SELECT MAX(nonce)
                     FROM nonce.nonce_assignments
                     WHERE chain_id = $2
                     AND from_address = $3
-                    AND state IN ('reserved', 'finalized')),
-                    -1
-                ) + 1,
+                    AND state IN ('reserved', 'finalized')) + 1,
+
+                    -- Priority 3: First none
+                    0
+                ),
                 'reserved'
                 WHERE NOT EXISTS (
                     SELECT 1

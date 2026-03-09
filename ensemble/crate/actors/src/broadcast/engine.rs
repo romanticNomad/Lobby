@@ -217,9 +217,7 @@ impl BroadcastEngine {
 
                 // None mismatch detected - Query RPC for correct nonce
 
-                if err_str.contains("nonce")
-                    || err_str.contains("known transaction")
-                {
+                if err_str.contains("nonce") || err_str.contains("known transaction") {
                     tracing::debug!(
                         %execution_id,
                         %chain_id,
