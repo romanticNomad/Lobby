@@ -79,7 +79,7 @@ Client (DApp/Bot)
   │
   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ cortex                                                    │
+│ cortex (orchestrator)                                           │
 │  ├─ Acquire semaphore permit (backpressure control)             │
 │  ├─ Spawn pipeline task (detached, runs in background)          │
 │  └─ Update StatusRegistry: "accepted"                           │
@@ -89,16 +89,16 @@ Client (DApp/Bot)
   │
   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Pipeline Stages (sequential, with retries)                     │
+│ Pipeline Stages (sequential, with retries)                      │
 │                                                                 │
-│  1. RelayHost   → Persist transaction intent                   │
-│  2. Nonce       → Reserve next available nonce                 │
-│  3. Sign        → Sign transaction with private key            │
-│  4. Broadcast   → Submit to blockchain RPC node                │
-│  5. Validator   → Poll for on-chain confirmation               │
+│  1. RelayHost   → Persist transaction intent                    │
+│  2. Nonce       → Reserve next available nonce                  │
+│  3. Sign        → Sign transaction with private key             │
+│  4. Broadcast   → Submit to blockchain RPC node                 │
+│  5. Validator   → Poll for on-chain confirmation                │
 │                                                                 │
-│  On Success: Finalize nonce, status → "confirmed"              │
-│  On Failure: Release nonce, status → "failed"                  │
+│  On Success: Finalize nonce, status → "confirmed"               │
+│  On Failure: Release nonce, status → "failed"                   │
 └─────────────────────────────────────────────────────────────────┘
   │
   │ Client polls: GET /status/{execution_id}
@@ -107,7 +107,7 @@ Client (DApp/Bot)
 ┌─────────────────────────────────────────────────────────────────┐
 │ StatusRegistry (DashMap)                                        │
 │  { execution_id → PipelineStatus }                              │
-│    - "accepted" → "nonce_reserved" → "signed" → "broadcast"    │
+│    - "accepted" → "nonce_reserved" → "signed" → "broadcast"     │
 │      → "confirmed" OR "failed"                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -1117,7 +1117,7 @@ When such divergence occurs, the RPC provider will reject transaction broadcasts
 This section describes the nonce mismatch detection and recovery mechanism.
 
 ---
-
+cortex
 ### Detection Phase
 
 The Broadcast actor is the first component to encounter nonce mismatches, as it directly interacts with blockchain RPC nodes.
