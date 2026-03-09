@@ -134,14 +134,16 @@ impl SignEngine {
                 let result = sqlx::query!(
                     r#"
                     UPDATE sign.sign_requests
-                    SET state = 'signed'
+                    SET state = 'signed',
+                        signed_tx = $3
                     WHERE execution_id = $1
                     AND revision = $2
                     AND state = 'reserved'
                     AND updated_at > now() - interval '5 minutes'
                     "#,
                     execution_id.0.as_bytes().as_slice(),
-                    revision
+                    revision,
+                    signed_tx.rlp.as_ref(),
                 )
                 .execute(&self.db)
                 .await

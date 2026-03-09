@@ -11,6 +11,7 @@ CREATE TABLE sign.sign_requests (
     revision       BIGINT NOT NULL,
     chain_id       BIGINT NOT NULL,
     from_address   BYTEA NOT NULL,
+    signed_tx      BYTEA,
     state          sign.sign_state NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
