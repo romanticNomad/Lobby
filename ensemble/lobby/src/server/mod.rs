@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod handler;
+pub mod sweeper;
 
 use cortex::{CortextHandle, artifacts::state::StatusRegistry};
 use kernel::types::ApiRegistry;
