@@ -5,6 +5,7 @@ use crate::server::{
     auth::auth_middleware,
     handler::{get_transaction_status, submit_transaction},
 };
+use actors::nonce::spawn_sweeper_bot;
 use axum::{
     Router, middleware,
     routing::{get, post},
@@ -20,8 +21,8 @@ use utils::{
 };
 
 // ============================================================
-// lobby boot sequence
 
+/// lobby boot sequence
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================
@@ -86,10 +87,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // status registry
     let status_registry = cortex_handler.status_registry();
 
+    // sweeper bot (nonce leak cleanup)
+    spawn_sweeper_bot(db_pool.clone());
+    tracing::info!("sweeper bot spawned, monitoring for stale nonce leases");
+
     // ============================================================
     // axum app
 
+    // AppState
     let state = AppState::new(api_registry, cortex_handler, status_registry);
+    
     let app = Router::new()
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
         .route("/v1/transactions", post(submit_transaction))
