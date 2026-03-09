@@ -20,13 +20,14 @@
 10. [RPC Provider Registry](#rpc-provider-registry)
 11. [Status Registry & Polling](#status-registry--polling)
 12. [Idempotency & State Safety](#idempotency--state-safety)
-13. [Resolving Database and On-Chain Nonce Mismatch](#resolving-database-and-on-chain-nonce-mismatch)
-14. [Error Handling & Retry Logic](#error-handling--retry-logic)
-15. [API Surface](#api-surface)
-16. [Observability](#observability)
-17. [Security Model](#security-model)
-18. [Deployment](#deployment)
-19. [Future Scope](#future-scope)
+13. [Nonce Nuance: OnChain Nonce Mismatch](#nonce-nuance-onchain-nonce-mismatch)
+14. [Nonce Nuance: Onchain Nonce Gaps](#nonce-nuance-onchain-nonce-gaps)
+15. [Failiure Model & Retry Logic](#failiure-model--retry-logic)
+16. [API Surface](#api-surface)
+17. [Observability](#observability)
+18. [Security Model](#security-model)
+19. [Deployment](#deployment)
+20. [Future Scope](#future-scope)
 
 ---
 
@@ -1103,7 +1104,7 @@ execution_id                          | revision | state      | nonce | updated_
 Clients must generate `execution_id` client-side (or use an idempotency key) if they need safe retries. Lobby will add support for client-provided `execution_id` in a future version.
 
 ---
-## Resolving Database and On-Chain Nonce Mismatch
+## Nonce Nuance: OnChain Nonce Mismatch
 
 Lobby maintains its own nonce counter in PostgreSQL to enable high-throughput transaction submission without querying the blockchain for every request. However, the database state can diverge from on-chain reality in several scenarios:
 
@@ -1643,8 +1644,258 @@ If gaps exceed 10 nonces, investigate manually.
 This nonce mismatch recovery mechanism allows Lobby to **safely share Ethereum addresses with external systems** or onboard addresses with existing transaction history, while maintaining high throughput and correctness guarantees. The one-time retry limit ensures that pathological cases (e.g., malicious RPC providers, rapid external transactions) fail loudly rather than silently degrading performance.
 
 ---
+## Nonce Nuance: Onchain Nonce Gaps
 
-## Error Handling & Retry Logic
+### The Problem
+
+Ethereum processes transactions **strictly sequentially** by nonce. If nonce `N` is missing from the blockchain while higher nonces (`N+1`, `N+2`) have been broadcast, all subsequent transactions remain stuck in the mempool indefinitely — a condition known as an **on-chain nonce gap**.
+
+**Example Scenario:**
+```
+Database State:
+  Nonce 13: reserved (broadcast failed, never released due to crash)
+  Nonce 14: finalized (on-chain)
+  Nonce 15: finalized (on-chain)
+
+On-Chain Mempool:
+  Nonce 13: MISSING → blocks all subsequent transactions
+  Nonce 14: PENDING (waiting for 13)
+  Nonce 15: PENDING (waiting for 13)
+```
+
+**Root Causes:**
+- Broadcast failure after nonce reservation (RPC timeout, network error)
+- System crash mid-pipeline (server panic, SIGKILL)
+- Database transaction failure during cleanup (`resolve()` fails)
+- Validator false negative (transaction confirmed but validator timed out)
+
+---
+
+### Resolution Strategy: Passive Gap Remediation
+
+Lobby employs a **self-healing** mechanism that requires no active monitoring or dummy transaction injection. The solution combines three components:
+
+#### 1. Sweeper Bot (Automated Lease Expiration)
+
+A background task runs every 30 seconds, releasing stale nonce reservations:
+
+```rust
+async fn expire_state_lease(db: &PgPool) -> Result<usize, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"
+        INSERT INTO nonce.nonce_assignments
+            (execution_id, revision, chain_id, from_address, nonce, state, created_at, updated_at)
+        SELECT
+            execution_id,
+            MAX(revision) + 1,
+            chain_id,
+            from_address,
+            nonce,
+            'released',
+            now(),
+            now()
+        FROM nonce.nonce_assignments
+        WHERE state = 'reserved'
+            AND updated_at <= now() - interval '5 minutes 30 seconds'
+        GROUP BY execution_id, chain_id, from_address, nonce
+        LIMIT 100
+        RETURNING nonce
+        "#
+    )
+    .fetch_all(db)
+    .await?;
+
+    Ok(result.len())
+}
+```
+
+**Key Characteristics:**
+- **5-minute lease window** (3 minutes max pipeline duration + 2 minutes grace period)
+- **30-second grace buffer** (prevents race with late `resolve()` calls)
+- **100 nonce batch limit** (gradual cleanup, prevents database overload)
+- **Non-blocking** (runs independently of transaction pipelines)
+
+#### 2. Priority-Based Allocation (Automatic Gap Filling)
+
+The nonce actor's reservation query uses a three-tier priority system that **preferentially allocates released nonces**:
+
+```rust
+COALESCE(
+    -- Priority 1: Reuse released nonces (fills gaps)
+    (SELECT MIN(nonce)
+    FROM (
+        SELECT DISTINCT ON (execution_id) 
+            nonce,
+            state
+        FROM nonce.nonce_assignments
+        WHERE chain_id = $2
+          AND from_address = $3
+        ORDER BY execution_id, revision DESC
+    ) latest_revisions
+    WHERE state = 'released'),
+
+    -- Priority 2: Next sequential nonce
+    (SELECT MAX(nonce)
+    FROM (
+        SELECT DISTINCT ON (execution_id) 
+            nonce,
+            state
+        FROM nonce.nonce_assignments
+        WHERE chain_id = $2
+          AND from_address = $3
+        ORDER BY execution_id, revision DESC
+    ) latest_revisions
+    WHERE state IN ('reserved', 'finalized')) + 1,
+
+    -- Priority 3: First nonce for new address
+    0
+)
+```
+
+**Critical Fix: Revision-Aware Queries**
+
+The original query had a bug where it searched **all rows** regardless of revision:
+
+```sql
+-- INCORRECT: Ignores revisions
+(SELECT MIN(nonce) FROM nonce.nonce_assignments WHERE state = 'released')
+```
+
+This would incorrectly allocate nonces that had been released in an earlier revision but later finalized:
+
+```
+execution_id=abc, nonce=13, revision=1, state='released'
+execution_id=abc, nonce=13, revision=2, state='finalized'  ← Latest, should be excluded
+```
+
+The fix uses `DISTINCT ON (execution_id)` to filter for **latest revisions only**:
+
+```sql
+-- CORRECT: Only latest revisions
+SELECT DISTINCT ON (execution_id) nonce, state
+FROM nonce.nonce_assignments
+WHERE chain_id = $2 AND from_address = $3
+ORDER BY execution_id, revision DESC
+```
+
+#### 3. Natural Mempool Unblocking
+
+Once a gap-filling transaction is broadcast, Ethereum nodes automatically process pending transactions:
+
+```
+After Sweeper Releases Nonce 13:
+  Database: Nonce 13 → state='released'
+
+Next Transaction Arrives:
+  Priority 1 allocates nonce 13 → broadcast to network
+
+On-Chain Result:
+  Nonce 13: CONFIRMED ✓
+  Nonce 14: CONFIRMED ✓ (automatically unblocked)
+  Nonce 15: CONFIRMED ✓ (automatically unblocked)
+```
+
+**No explicit unblocking logic required** — the blockchain's sequential processing handles it automatically.
+
+---
+
+### End-to-End Flow
+
+**T+0m:** Gap created (nonce 13 broadcast fails, system crashes before cleanup)
+```
+Database: Nonce 13='reserved', Nonce 14='finalized', Nonce 15='finalized'
+On-Chain: Nonce 13=MISSING, Nonce 14=PENDING, Nonce 15=PENDING
+```
+
+**T+5m30s:** Sweeper activates
+```
+Sweeper finds nonce 13 (updated_at <= 5m30s ago)
+Inserts new revision: Nonce 13='released'
+```
+
+**T+6m:** New transaction arrives
+```
+Nonce allocation: Priority 1 finds MIN(released) = 13
+Allocates nonce 13 to new transaction
+Pipeline: Reserve → Sign → Broadcast → Validate
+```
+
+**T+7m:** Gap resolved
+```
+Database: Nonce 13='finalized'
+On-Chain: Nonce 13=CONFIRMED, Nonce 14=CONFIRMED, Nonce 15=CONFIRMED
+```
+
+---
+
+### Operational Considerations
+
+**Monitoring:**
+- **Sweeper activity:** Track nonces released per hour (normal: <10, warning: >50)
+- **Backlog depth:** Count stale nonces awaiting release (normal: <5, critical: >100)
+- **Gap fill latency:** Time from release to reallocation (normal: <60s)
+
+**Database Maintenance:**
+
+Revisions accumulate over time. Periodic pruning recommended:
+
+```sql
+-- Keep only latest revision for data older than 7 days
+DELETE FROM nonce.nonce_assignments
+WHERE (execution_id, revision) NOT IN (
+    SELECT execution_id, MAX(revision)
+    FROM nonce.nonce_assignments
+    GROUP BY execution_id
+)
+AND created_at < now() - interval '7 days';
+```
+
+**Failure Recovery:**
+- **Sweeper crashes:** Automatically restarted on Lobby boot
+- **Database unavailable:** Sweeper retries every 30 seconds
+- **Large backlog:** Cleared at 100 nonces per 30 seconds (~200/minute capacity)
+
+---
+
+### Why This Approach Works
+
+**Advantages:**
+- **No dummy transactions:** Gaps filled by real user transactions (no gas waste)
+- **No active monitoring:** No RPC polling to detect gaps
+- **Self-healing:** Gaps resolved through normal traffic flow
+- **Simple implementation:** No complex orchestration or gap detection algorithms
+
+**Failure Modes:**
+- **No traffic:** If no transactions arrive after sweeper releases a nonce, gap persists until traffic resumes (acceptable because idle address isn't blocked)
+- **Repeated broadcast failures:** If nonce 13 repeatedly fails to broadcast, sweeper keeps releasing it but gap remains (indicates deeper issue requiring investigation)
+
+---
+
+### Integration with Lobby Boot Sequence
+
+The sweeper is spawned during initialization, after database migrations:
+
+```rust
+// Database migrations applied
+sqlx::migrate!("../database/migrations").run(&db_pool).await?;
+
+// ... load API keys, RPC endpoints, custody keys ...
+
+// Cortex handler
+let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry, config);
+
+// Sweeper bot (nonce gap cleanup)
+spawn_sweeper_bot(db_pool.clone());
+tracing::info!("sweeper bot spawned, monitoring for stale nonce leases");
+
+// HTTP server starts accepting requests
+```
+
+This ensures any stale nonces from previous crashes are cleaned up before new transactions arrive.
+
+---
+
+## Failiure Model & Retry Logic
 
 Lobby uses **exponential backoff with full jitter** for all transient failures.
 

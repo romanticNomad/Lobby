@@ -42,8 +42,8 @@ pub fn spawn_sweeper_bot(db: PgPool) {
                 Ok(count) => {
                     if count > 0 {
                         tracing::info!(
-                            expired_lease = count,
-                            "Background lease expiration completed"
+                            stale_states = count,
+                            "Stale transaction states detected, and nonce released"
                         )
                     }
                 }

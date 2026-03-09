@@ -16,12 +16,7 @@ impl NonceEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<NonceCommand>) -> Self {
         Self { db, rx }
     }
-}
 
-// =========================================================
-// NonceEngine functioning
-
-impl NonceEngine {
     pub async fn run(mut self) {
         while let Some(cmd) = self.rx.recv().await {
             match cmd {
@@ -69,7 +64,6 @@ impl NonceEngine {
         from: Address,
         execution_id: ExecutionId,
     ) -> Result<TxNonce, LocalError> {
-        // =========================================================
         // setting types for db
 
         let chain_id_i64: i64 = chain_id
@@ -78,7 +72,6 @@ impl NonceEngine {
             .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
 
-        // =========================================================
         // atomic INSERT with concurrency-safe nonce selection and lease locking
 
         let candidate = sqlx::query!(
@@ -148,7 +141,6 @@ impl NonceEngine {
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        // =========================================================
         // pattern matching the candidate (nonce, revision)
 
         match candidate {
@@ -191,7 +183,6 @@ impl NonceEngine {
         execution_id: ExecutionId,
         nonce_on_chain: TxNonce,
     ) -> Result<TxNonce, LocalError> {
-        // =========================================================
         // setting types for db
 
         let chain_id_i64: i64 = chain_id
@@ -207,7 +198,6 @@ impl NonceEngine {
 
         let marker_execution_id = SYNC_MARKER_EXECUTION_ID;
 
-        // =========================================================
         // Step 1: Create a sync marker (phantom finalized record) if we're behind
         //
         // We insert a 'finalized' record with nonce = (nonce_on_chain - 1).
@@ -268,12 +258,10 @@ impl NonceEngine {
             );
         }
 
-        // =========================================================
         // Step 2: Reserve the on-chain nonce for this execution
         //
         // Now that we've synced our state, reserve nonce_on_chain.
-        // This uses the same atomic logic as handle_reserve(), but we're
-        // explicitly reserving the nonce we know is available on-chain.
+        // we explicitly reserve the nonce we know is available on-chain.
 
         let reserved = sqlx::query!(
             r#"
@@ -289,7 +277,7 @@ impl NonceEngine {
                 ) + 1,
                 $2,
                 $3,
-                $4,  -- Reserve exactly nonce_on_chain
+                $4,
                 'reserved'
             WHERE NOT EXISTS (
                 SELECT 1
@@ -303,8 +291,8 @@ impl NonceEngine {
                         )
                     )
             )
+            -- Ensure this nonce isn't already reserved by another execution
             AND NOT EXISTS (
-                -- Ensure this nonce isn't already reserved by another execution
                 SELECT 1
                 FROM nonce.nonce_assignments
                 WHERE chain_id = $2
@@ -324,7 +312,6 @@ impl NonceEngine {
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        // =========================================================
         // pattern matching the reservation result
 
         match reserved {
@@ -343,8 +330,6 @@ impl NonceEngine {
                 // This could happen if:
                 // 1. This execution_id already has a finalized/reserved nonce (idempotency)
                 // 2. Another pipeline already reserved this nonce (race condition)
-                //
-                // Check which case it is and handle accordingly.
 
                 let existing = sqlx::query!(
                     r#"
@@ -387,7 +372,6 @@ impl NonceEngine {
         execution_id: ExecutionId,
         success: bool,
     ) -> Result<(), LocalError> {
-        // =========================================================
         // loading state update
 
         let new_state = if success {
@@ -396,7 +380,6 @@ impl NonceEngine {
             NonceState::Released
         };
 
-        // =========================================================
         // Atomic state transition
 
         let result = sqlx::query!(
@@ -420,7 +403,6 @@ impl NonceEngine {
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        // =========================================================
         // pattern matching the update result
 
         if result.rows_affected() > 0 {

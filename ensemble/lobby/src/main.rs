@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // AppState
     let state = AppState::new(api_registry, cortex_handler, status_registry);
-    
+
     let app = Router::new()
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
         .route("/v1/transactions", post(submit_transaction))
