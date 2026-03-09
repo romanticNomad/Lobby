@@ -257,7 +257,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     ctx.status.set(
                         execution_id,
-                        PipelineStatus::SyncNonce {
+                        PipelineStatus::NonceMismatchDetected {
                             nonce_on_chain,
                             attempted_nonce,
                         },

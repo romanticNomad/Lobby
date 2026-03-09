@@ -76,7 +76,7 @@ pub enum PipelineStatus {
     Failed { stage: String, reason: String },
     /// Syncing nonce on db with the on-chain nonce
     /// retrieved using the given rpc_endpoint
-    SyncNonce {
+    NonceMismatchDetected {
         nonce_on_chain: TxNonce,
         attempted_nonce: TxNonce,
     },

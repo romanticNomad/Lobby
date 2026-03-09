@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 pub mod broadcast;
 pub mod nonce;
 pub mod relayhost;

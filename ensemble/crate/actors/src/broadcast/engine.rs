@@ -211,10 +211,10 @@ impl BroadcastEngine {
 
                 Ok(BroadcastOutcome { txn_hash: *tx_hash })
             }
+
             Err(err) => {
                 let err_str = err.to_string();
 
-                // =========================================================
                 // None mismatch detected - Query RPC for correct nonce
 
                 if err_str.contains("nonce too low") || err_str.contains("nonce") {
@@ -227,8 +227,9 @@ impl BroadcastEngine {
                     );
 
                     // Fetch authoritative nonce from RPC and update rejection in Db
-                    let nonce_on_chain = self.fetch_current_nonce(chain_id, from_address).await?;
 
+                    let nonce_on_chain = self.fetch_current_nonce(chain_id, from_address).await?;
+                    
                     sqlx::query!(
                         r#"
                         UPDATE broadcast.broadcast_requests
@@ -251,7 +252,6 @@ impl BroadcastEngine {
                     });
                 }
 
-                // =========================================================
                 // Other deterministic errors
 
                 sqlx::query!(

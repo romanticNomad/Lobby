@@ -153,6 +153,7 @@ impl NonceEngine {
     }
 
     // =========================================================
+
     /// ### sync with on-chain state and reserve nonce
     ///
     /// This is called when a broadcast fails with "nonce too low", indicating
@@ -161,7 +162,6 @@ impl NonceEngine {
     ///
     /// This ensures race-safety: even if multiple pipelines detect nonce mismatch
     /// simultaneously, only one will successfully create the sync marker.
-
     async fn handle_sync(
         &self,
         chain_id: ChainId,
@@ -405,7 +405,6 @@ impl NonceEngine {
             Ok(())
         } else {
             // check for idempotency or error
-
             let latest = sqlx::query!(
                 r#"
                 SELECT state as "state: NonceState"

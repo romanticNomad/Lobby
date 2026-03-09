@@ -1,6 +1,6 @@
-// this module only consists of linting functions that do not require
-// database lookup .i.e, it only check business logic for eip1159
-// transaction fields.
+/// this module only consists of linting functions that do not require
+/// database lookup .i.e, it only check business logic for eip1159
+/// transaction fields.
 
 use alloy::primitives::U256;
 use kernel::types::{Eip1559Transaction, RelayHostError};
