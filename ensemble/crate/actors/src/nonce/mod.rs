@@ -25,6 +25,7 @@ pub fn spawn_nonce_actor(db: PgPool, buffer_size: usize) -> NonceHandle {
 
 /// sweeper bot actively looks for `reseved` nonce
 /// state with expired lease.
+/// 
 /// such states may accumulate due to:
 /// * mid transaction, system failiure
 /// * database malfunctions
@@ -58,25 +59,24 @@ pub fn spawn_sweeper_bot(db: PgPool) {
     });
 }
 
+// ============================================================
+// helper function (handles db query)
+
 async fn expire_state_lease(db: &PgPool) -> Result<usize, sqlx::Error> {
     let result = sqlx::query!(
         r#"
-        INSERT INTO nonce.nonce_assignments
-            (execution_id, revision, chain_id, from_address, nonce, state, created_at, updated_at)
-        SELECT
-            execution_id,
-            MAX(revision) + 1,
-            chain_id,
-            from_address,
-            nonce,
-            'released',
-            now(),
-            now()
-        FROM nonce.nonce_assignments
-        WHERE state = 'reserved'
-            AND updated_at <= now() - interval '5 minutes 5 seconds'
-        GROUP BY execution_id, chain_id, from_address, nonce
-        LIMIT 100
+        UPDATE nonce.nonce_assignments
+        SET state = 'released'
+        WHERE (execution_id, revision) IN (
+            SELECT DISTINCT ON (execution_id)
+                execution_id,
+                revision
+            FROM nonce.nonce_assignments
+            WHERE state = 'reserved'
+                AND updated_at < now() - interval '5 minutes 5 seconds'
+            ORDER BY execution_id, revision DESC
+            LIMIT 100
+        )
         RETURNING nonce
         "#
     )

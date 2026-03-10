@@ -171,8 +171,8 @@ impl NonceEngine {
     /// ### sync with on-chain state and reserve nonce
     ///
     /// This is called when a broadcast fails with "nonce too low", indicating
-    /// our database state is behind the on-chain state. We create a "sync marker"
-    /// record with the on-chain nonce as 'finalized', then reserve the next nonce.
+    /// our database state is behind the on-chain state. We explicitly reserve the
+    /// next nonce returned by RPC.
     ///
     /// This ensures race-safety: even if multiple pipelines detect nonce mismatch
     /// simultaneously, only one will successfully create the sync marker.
