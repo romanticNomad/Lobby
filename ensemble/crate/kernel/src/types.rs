@@ -135,7 +135,6 @@ pub type TxHash = B256;
 
 #[derive(Clone, Copy, Debug, Serialize, Hash, PartialEq, Eq)]
 pub struct ExecutionId(pub uuid::Uuid);
-pub const SYNC_MARKER_EXECUTION_ID: ExecutionId = ExecutionId(uuid::Uuid::from_u128(22174019));
 
 impl fmt::Display for ExecutionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
