@@ -85,11 +85,7 @@ impl NonceManager for NonceHandle {
         })?
     }
 
-    async fn resolve(
-        &self,
-        execution_id: ExecutionId,
-        outcome: bool,
-    ) -> Result<(), LocalError> {
+    async fn resolve(&self, execution_id: ExecutionId, outcome: bool) -> Result<(), LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Resolve {
             execution_id,

@@ -167,15 +167,8 @@ impl NonceEngine {
     }
 
     // =========================================================
+    // nonce sync operation handler
 
-    /// ### sync with on-chain state and reserve nonce
-    ///
-    /// This is called when a broadcast fails with "nonce too low", indicating
-    /// our database state is behind the on-chain state. We explicitly reserve the
-    /// next nonce returned by RPC.
-    ///
-    /// This ensures race-safety: even if multiple pipelines detect nonce mismatch
-    /// simultaneously, only one will successfully create the sync marker.
     async fn handle_sync(
         &self,
         chain_id: ChainId,
@@ -197,9 +190,6 @@ impl NonceEngine {
             .map_err(|_| LocalError::Invariant("nonce_on_chain does not fit in i64".to_string()))?;
 
         // Step 1: Reserve the on-chain nonce for this execution
-        //
-        // Now that we know the nonce_on_chain.
-        // we explicitly reserve it in the database.
 
         let reserved = sqlx::query!(
             r#"
@@ -250,7 +240,7 @@ impl NonceEngine {
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        // pattern matching the reservation result
+        // Step 2: pattern matching the reservation result
 
         match reserved {
             Some(row) => {
@@ -303,7 +293,7 @@ impl NonceEngine {
     }
 
     // =========================================================
-    // resolving nonce state
+    // nonce state resolve handler
 
     async fn handle_resolve(
         &self,
@@ -319,20 +309,10 @@ impl NonceEngine {
         // Single atomic CTE query that:
         // 1. Updates current execution_id to new state
         // 2. Marks any released nonce that was reused as 'consumed'
+
         sqlx::query!(
             r#"
-            WITH current_nonce_info AS (
-                -- Get the nonce and state being resolved
-                SELECT nonce, chain_id, from_address
-                FROM nonce.nonce_assignments
-                WHERE execution_id = $1
-                    AND state = 'reserved'
-                ORDER BY revision DESC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            ),
-            resolve_current AS (
-                -- Update current execution to finalized/released
+            WITH resolve_current AS (
                 UPDATE nonce.nonce_assignments
                 SET state = $2
                 WHERE (execution_id, revision) = (
@@ -344,45 +324,26 @@ impl NonceEngine {
                     LIMIT 1
                 )
                 RETURNING nonce, chain_id, from_address
-            ),
-            previous_released AS (
-                -- Find if this nonce was previously released by another execution_id
-                SELECT DISTINCT ON (na.execution_id) 
-                    na.execution_id,
-                    na.chain_id,
-                    na.from_address,
-                    na.nonce,
-                    MAX(na.revision) as max_revision
-                FROM nonce.nonce_assignments na
-                INNER JOIN resolve_current rc 
-                    ON na.chain_id = rc.chain_id
-                    AND na.from_address = rc.from_address
-                    AND na.nonce = rc.nonce
-                WHERE na.execution_id != $1
-                    AND na.state = 'released'
-                GROUP BY na.execution_id, na.chain_id, na.from_address, na.nonce
             )
-            -- Mark the previously released nonce as consumed (only if current was finalized)
-            INSERT INTO nonce.nonce_assignments
-                (execution_id, revision, chain_id, from_address, nonce, state)
-            SELECT
-                pr.execution_id,
-                pr.max_revision + 1,
-                pr.chain_id,
-                pr.from_address,
-                pr.nonce,
-                'consumed'::nonce.nonce_state
-            FROM previous_released pr
-            WHERE $2 = 'finalized'::nonce.nonce_state
+            UPDATE nonce.nonce_assignments na
+            SET state = 'consumed'
+            FROM resolve_current rc
+            WHERE na.chain_id = rc.chain_id
+                AND na.from_address = rc.from_address
+                AND na.nonce = rc.nonce
+                AND na.execution_id != $1
+                AND na.state = 'released'
+                AND $2 = 'finalized'
             "#,
             execution_id.0.as_bytes().as_slice(),
-            new_state as NonceState,
+            new_state as NonceState
         )
         .execute(&self.db)
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
         // Verify the operation succeeded
+
         let latest = sqlx::query!(
             r#"
             SELECT state as "state: NonceState"
@@ -401,7 +362,10 @@ impl NonceEngine {
             Some(row) => {
                 if row.state == new_state {
                     Ok(())
-                } else if matches!(row.state, NonceState::Finalized | NonceState::Released | NonceState::Consumed) {
+                } else if matches!(
+                    row.state,
+                    NonceState::Finalized | NonceState::Released | NonceState::Consumed
+                ) {
                     Err(LocalError::Internal(format!(
                         "execution_id already resolved to {:?}, cannot transition to {:?}",
                         row.state, new_state
