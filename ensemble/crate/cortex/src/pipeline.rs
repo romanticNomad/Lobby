@@ -5,9 +5,10 @@ use crate::{
     artifacts::retry::{RetryDecision, retry_with_backoff},
     state::{PipelineStatus, StatusRegistry},
 };
+use alloy::primitives::Address;
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, ValidatorOutcome},
+    types::{BroadcastError, ChainId, ClientConfig, Eip1559Transaction, ExecutionId, ValidatorOutcome},
 };
 use std::sync::Arc;
 use tracing::Instrument;
@@ -165,7 +166,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             Ok(s) => s,
             Err(e) => {
                 // signing error -> hard fail
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
 
                 let err = CortexError::Sign(e);
                 record_faliure(&ctx.status, execution_id, &err);
@@ -235,7 +236,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                             "nonce matching failed after retry, aborting pipeline"
                         );
 
-                        release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                        release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
 
                         let err = CortexError::Broadcast(BroadcastError::NonceTooLow {
                             nonce_on_chain,
@@ -265,7 +266,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     // Step 1: Release the incorrect nonce and revert sign status.
 
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
                     revert_sign(&sign_handle, execution_id, &ctx.retry_config).await;
                     tracing::debug!("released incorrect nonce and reverted sign status");
 
@@ -316,7 +317,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         {
                             Ok(s) => s,
                             Err(e) => {
-                                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                                release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
 
                                 let err = CortexError::ReSign(e);
                                 record_faliure(&ctx.status, execution_id, &err);
@@ -336,7 +337,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 // ============================================================
                 // MissingProvider -> Immediate fatal failure
                 Err(BroadcastError::MissingProvider { chain_id }) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
 
                     let err = CortexError::Broadcast(BroadcastError::MissingProvider { chain_id });
                     record_faliure(&ctx.status, execution_id, &err);
@@ -346,7 +347,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 // ============================================================
                 // Other broadcast errors -> Hard fail
                 Err(e) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
                     let err = CortexError::Broadcast(e);
                     record_faliure(&ctx.status, execution_id, &err);
                     return;
@@ -371,7 +372,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             match { async move { v.validate(chain_id, execution_id, tx_hash).await } }.await {
                 Ok(outcome) => outcome,
                 Err(e) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
                     let err = CortexError::NotIncluded(e);
                     record_faliure(&ctx.status, execution_id, &err);
                     return;
@@ -383,7 +384,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 block_number,
                 confirmations,
             } => {
-                finalise_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                finalise_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
 
                 ctx.status.set(
                     execution_id,
@@ -402,7 +403,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     tx_hash = %format!("{:#x}", tx_hash),
                     "transaction not included (reorg or eviction)"
                 );
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                release_nonce(&nonce_handle, chain_id, from_address, execution_id, &ctx.retry_config).await;
 
                 ctx.status.set(
                     execution_id,
@@ -432,13 +433,15 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 /// dangling 'reserved' nonce; the 5-minute lease is the last-resort safety net.
 async fn release_nonce(
     handle: &Arc<dyn NonceManager>,
+    chain_id: ChainId,
+    from_address: Address,
     execution_id: ExecutionId,
     retry_config: &RetryConfig,
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
         let nh = Arc::clone(handle);
         async move {
-            nh.resolve(execution_id, false)
+            nh.resolve(chain_id, from_address, execution_id, false)
                 .await
                 .map_err(RetryDecision::Retry)
         }
@@ -481,13 +484,15 @@ async fn revert_sign(
 /// Finalize (consume) a reserved nonce after on-chain inclusion.
 async fn finalise_nonce(
     handle: &Arc<dyn NonceManager>,
+    chain_id: ChainId,
+    from_address: Address,
     execution_id: ExecutionId,
     retry_config: &RetryConfig,
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_finalise", || {
         let nh = Arc::clone(handle);
         async move {
-            nh.resolve(execution_id, true)
+            nh.resolve(chain_id, from_address, execution_id, true)
                 .await
                 .map_err(RetryDecision::Retry)
         }

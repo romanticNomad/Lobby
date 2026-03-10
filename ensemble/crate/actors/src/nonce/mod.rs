@@ -25,7 +25,7 @@ pub fn spawn_nonce_actor(db: PgPool, buffer_size: usize) -> NonceHandle {
 
 /// sweeper bot actively looks for `reseved` nonce
 /// state with expired lease.
-/// 
+///
 /// such states may accumulate due to:
 /// * mid transaction, system failiure
 /// * database malfunctions

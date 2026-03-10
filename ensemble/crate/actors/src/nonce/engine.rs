@@ -32,6 +32,8 @@ impl NonceEngine {
                     let _ = reply.send(result);
                 }
                 NonceCommand::Resolve {
+                    chain_id,
+                    from_address,
                     execution_id,
                     outcome,
                     reply,
