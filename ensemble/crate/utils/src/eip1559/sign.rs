@@ -15,7 +15,6 @@ pub fn sign_eip1559_transaction(
     tx: Eip1559Transaction,
     pvt_key: [u8; 32],
 ) -> Result<SignedTransaction, LocalError> {
-    // ============================================================
     // prepare keccak-256(rlp(unsigned_tx)) for EIP-1159
 
     let signing_nonce = tx.nonce;
@@ -26,7 +25,6 @@ pub fn sign_eip1559_transaction(
     hasher.update(&unsigned_rlp);
     let signing_hash = hasher.finalize();
 
-    // ============================================================
     // load key & produce (signature, recovery_id) -> { signature = sekp256k1( keccak-256(rlp_unsigned_tx), pvt_key ) }
 
     let signing_key = SigningKey::from_bytes(&pvt_key.into())
@@ -39,9 +37,7 @@ pub fn sign_eip1559_transaction(
         .sign_prehash_recoverable(&signing_hash)
         .map_err(|e| LocalError::Invariant(format!("Signing failed: {e}")))?;
 
-    // ============================================================
     // canonicalize to low 's'
-
     if signature.s().is_high().into() {
         signature = signature
             .normalize_s()
@@ -54,9 +50,7 @@ pub fn sign_eip1559_transaction(
     let r_bytes = signature.r().to_bytes();
     let s_bytes = signature.s().to_bytes();
 
-    // ============================================================
     // package into 'Bytes' and return 0x02 || rlp(signed_tx)
-
     let signed_rlp = encode_eip1559_signed(&tx, y_parity, &r_bytes.into(), &s_bytes.into())?;
 
     let mut out = Vec::with_capacity(1 + signed_rlp.len());
@@ -108,7 +102,6 @@ pub fn encode_eip1559_unsigned(tx: &Eip1559Transaction) -> Result<Vec<u8>, Local
 }
 
 // ============================================================
-// encode signed transaction to rlp stream
 
 pub fn encode_eip1559_signed(
     tx: &Eip1559Transaction,
@@ -149,10 +142,28 @@ pub fn encode_eip1559_signed(
 
     // signature fields (EIP-1559)
     srlp.append(&y_parity); // yParity ∈ {0,1}
-    srlp.append(&r.as_slice()); // r: 32-byte big-endian
-    srlp.append(&s.as_slice()); // s: 32-byte big-endian (LOW-S)
+
+    // CRITICAL: Strip leading zeros for canonical RLP encoding
+    srlp.append(&strip_leading_zeros(r)); // r: canonical big-endian
+    srlp.append(&strip_leading_zeros(s)); // s: canonical big-endian (LOW-S)
 
     Ok(srlp.out().to_vec())
+}
+
+// ============================================================
+// Helper function to strip leading zeros for canonical RLP encoding
+
+fn strip_leading_zeros(bytes: &[u8]) -> &[u8] {
+    let mut i = 0;
+    while i < bytes.len() && bytes[i] == 0 {
+        i += 1;
+    }
+    // If all zeros, return a single zero byte
+    if i == bytes.len() {
+        &bytes[bytes.len() - 1..]
+    } else {
+        &bytes[i..]
+    }
 }
 
 // ============================================================
