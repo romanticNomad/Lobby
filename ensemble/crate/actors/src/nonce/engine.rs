@@ -32,8 +32,6 @@ impl NonceEngine {
                     let _ = reply.send(result);
                 }
                 NonceCommand::Resolve {
-                    chain_id,
-                    from_address,
                     execution_id,
                     outcome,
                     reply,
@@ -312,29 +310,70 @@ impl NonceEngine {
         execution_id: ExecutionId,
         success: bool,
     ) -> Result<(), LocalError> {
-        // loading state update
-
         let new_state = if success {
             NonceState::Finalized
         } else {
             NonceState::Released
         };
 
-        // Atomic state transition
-
-        let result = sqlx::query!(
+        // Single atomic CTE query that:
+        // 1. Updates current execution_id to new state
+        // 2. Marks any released nonce that was reused as 'consumed'
+        sqlx::query!(
             r#"
-            UPDATE nonce.nonce_assignments
-            SET state = $2
-            WHERE (execution_id, revision) = (
-                SELECT execution_id, revision
+            WITH current_nonce_info AS (
+                -- Get the nonce and state being resolved
+                SELECT nonce, chain_id, from_address
                 FROM nonce.nonce_assignments
                 WHERE execution_id = $1
                     AND state = 'reserved'
                 ORDER BY revision DESC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
+            ),
+            resolve_current AS (
+                -- Update current execution to finalized/released
+                UPDATE nonce.nonce_assignments
+                SET state = $2
+                WHERE (execution_id, revision) = (
+                    SELECT execution_id, revision
+                    FROM nonce.nonce_assignments
+                    WHERE execution_id = $1
+                        AND state = 'reserved'
+                    ORDER BY revision DESC
+                    LIMIT 1
+                )
+                RETURNING nonce, chain_id, from_address
+            ),
+            previous_released AS (
+                -- Find if this nonce was previously released by another execution_id
+                SELECT DISTINCT ON (na.execution_id) 
+                    na.execution_id,
+                    na.chain_id,
+                    na.from_address,
+                    na.nonce,
+                    MAX(na.revision) as max_revision
+                FROM nonce.nonce_assignments na
+                INNER JOIN resolve_current rc 
+                    ON na.chain_id = rc.chain_id
+                    AND na.from_address = rc.from_address
+                    AND na.nonce = rc.nonce
+                WHERE na.execution_id != $1
+                    AND na.state = 'released'
+                GROUP BY na.execution_id, na.chain_id, na.from_address, na.nonce
             )
+            -- Mark the previously released nonce as consumed (only if current was finalized)
+            INSERT INTO nonce.nonce_assignments
+                (execution_id, revision, chain_id, from_address, nonce, state)
+            SELECT
+                pr.execution_id,
+                pr.max_revision + 1,
+                pr.chain_id,
+                pr.from_address,
+                pr.nonce,
+                'consumed'::nonce.nonce_state
+            FROM previous_released pr
+            WHERE $2 = 'finalized'::nonce.nonce_state
             "#,
             execution_id.0.as_bytes().as_slice(),
             new_state as NonceState,
@@ -343,44 +382,37 @@ impl NonceEngine {
         .await
         .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        // pattern matching the update result
+        // Verify the operation succeeded
+        let latest = sqlx::query!(
+            r#"
+            SELECT state as "state: NonceState"
+            FROM nonce.nonce_assignments
+            WHERE execution_id = $1
+            ORDER BY revision DESC
+            LIMIT 1
+            "#,
+            execution_id.0.as_bytes().as_slice()
+        )
+        .fetch_optional(&self.db)
+        .await
+        .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-        if result.rows_affected() > 0 {
-            Ok(())
-        } else {
-            // check for idempotency or error
-            let latest = sqlx::query!(
-                r#"
-                SELECT state as "state: NonceState"
-                FROM nonce.nonce_assignments
-                WHERE execution_id = $1
-                ORDER BY revision DESC
-                LIMIT 1
-                "#,
-                execution_id.0.as_bytes().as_slice()
-            )
-            .fetch_optional(&self.db)
-            .await
-            .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
-
-            match latest {
-                Some(row) => {
-                    if row.state == new_state {
-                        Ok(())
-                    } else if matches!(row.state, NonceState::Finalized | NonceState::Released) {
-                        Err(LocalError::Internal(format!(
-                            "execution_id already resolved to {:?}, cannot transition to {:?}",
-                            row.state, new_state
-                        )))
-                    } else {
-                        Err(LocalError::Invariant(
-                            "expected reserved state but UPDATE failed".to_string(),
-                        ))
-                    }
+        match latest {
+            Some(row) => {
+                if row.state == new_state {
+                    Ok(())
+                } else if matches!(row.state, NonceState::Finalized | NonceState::Released | NonceState::Consumed) {
+                    Err(LocalError::Internal(format!(
+                        "execution_id already resolved to {:?}, cannot transition to {:?}",
+                        row.state, new_state
+                    )))
+                } else {
+                    Err(LocalError::Invariant(
+                        "expected reserved state but UPDATE failed".to_string(),
+                    ))
                 }
-
-                None => Err(LocalError::Invariant("invalid execution_id".to_string())),
             }
+            None => Err(LocalError::Invariant("invalid execution_id".to_string())),
         }
     }
 }

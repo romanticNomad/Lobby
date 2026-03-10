@@ -16,8 +16,6 @@ pub trait NonceManager: Send + Sync {
 
     async fn resolve(
         &self,
-        chain_id: ChainId,
-        from_address: Address,
         execution_id: ExecutionId,
         outcome: bool,
     ) -> Result<(), LocalError>;
