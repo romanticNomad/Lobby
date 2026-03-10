@@ -3,7 +3,8 @@ CREATE SCHEMA IF NOT EXISTS nonce;
 CREATE TYPE nonce.nonce_state AS ENUM (
     'reserved',
     'finalized',
-    'released'
+    'released',
+    'consumed'
 );
 
 CREATE TABLE nonce.nonce_assignments (

@@ -15,6 +15,7 @@ pub enum NonceState {
     Reserved,
     Finalized,
     Released,
+    Consumed,
 }
 
 // =========================================================
