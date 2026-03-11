@@ -1,8 +1,8 @@
-use crate::sign::{SignCommand, SignState};
+use crate::sign::SignCommand;
 use alloy::primitives::Address;
 use kernel::{
     traits::PolicyEngine,
-    types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignedTransaction},
+    types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignState, SignedTransaction},
 };
 use sqlx::PgPool;
 use std::path::PathBuf;
@@ -228,16 +228,14 @@ impl SignEngine {
                 Some(row) => {
                     if matches!(row.state, SignState::Reserved) {
                         Err(LocalError::Internal(
-                            "Txn should have been signed by now, update failed".to_string(),
+                            "txn should have been signed by now, update failed".to_string(),
                         ))
                     } else if matches!(row.state, SignState::Failed) {
                         Err(LocalError::Internal(
-                            "Txn already updated to failed".to_string(),
+                            "txn already updated to failed".to_string(),
                         ))
                     } else {
-                        Err(LocalError::Internal(
-                            "Curropted execution_id or state".to_string(),
-                        ))
+                        Err(LocalError::Internal("curropted state".to_string()))
                     }
                 }
                 None => Err(LocalError::Internal("invalid execution_id".to_string())),

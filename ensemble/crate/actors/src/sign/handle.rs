@@ -6,17 +6,6 @@ use kernel::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-// =========================================================
-// sign state type mapping for sqlx <-> Postgres
-
-#[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "sign.sign_requests", rename_all = "lowercase")]
-pub enum SignState {
-    Reserved,
-    Signed,
-    Failed,
-}
-
 // ============================================================
 // command sent over the mpsc channel
 

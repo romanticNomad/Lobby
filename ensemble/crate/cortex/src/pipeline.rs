@@ -7,7 +7,9 @@ use crate::{
 };
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, ValidatorOutcome},
+    types::{
+        BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, NonceState, ValidatorOutcome,
+    },
 };
 use std::sync::Arc;
 use tracing::Instrument;
@@ -412,9 +414,21 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     },
                 );
             }
-        }
+            ValidatorOutcome::Timeout => {
+                tracing::warn!(
+                    tx_hash = %format!("{:#x}", tx_hash),
+                    "inclusion confimation failed (nonce gap or rpc failiure)"
+                );
+                consume_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
 
-        // ============================================================
+                ctx.status.set(
+                    execution_id,
+                    PipelineStatus::ValidatorTimedOut {
+                        message: "validator timed out, wait for confirmation".to_string(),
+                    },
+                );
+            }
+        }
 
         tracing::info!("pipeline completed");
     }
@@ -426,10 +440,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 // helper
 
 /// Release (invalidate) a reserved nonce so it can be re-used.
-///
 /// Called on any hard-fail *after* a nonce has been reserved.
-/// Retries are attempted because a transient DB error here would leave a
-/// dangling 'reserved' nonce; the 5-minute lease is the last-resort safety net.
 async fn release_nonce(
     handle: &Arc<dyn NonceManager>,
     execution_id: ExecutionId,
@@ -438,7 +449,7 @@ async fn release_nonce(
     let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
         let nh = Arc::clone(handle);
         async move {
-            nh.resolve(execution_id, false)
+            nh.resolve(execution_id, NonceState::Released)
                 .await
                 .map_err(RetryDecision::Retry)
         }
@@ -478,7 +489,7 @@ async fn revert_sign(
     }
 }
 
-/// Finalize (consume) a reserved nonce after on-chain inclusion.
+/// Finalize a reserved nonce after on-chain inclusion.
 async fn finalise_nonce(
     handle: &Arc<dyn NonceManager>,
     execution_id: ExecutionId,
@@ -487,7 +498,7 @@ async fn finalise_nonce(
     let resolve_result = retry_with_backoff(&retry_config, "nonce_finalise", || {
         let nh = Arc::clone(handle);
         async move {
-            nh.resolve(execution_id, true)
+            nh.resolve(execution_id, NonceState::Finalized)
                 .await
                 .map_err(RetryDecision::Retry)
         }
@@ -502,6 +513,35 @@ async fn finalise_nonce(
         );
     } else {
         tracing::debug!("nonce finalised");
+    }
+}
+
+/// Consume a 'reserved' nonce, in case a nonce gap is created on-chain
+/// and the nonce overflows, the validator will not be able
+/// to confirm inclusion of nonce on chain, until gap is covered.
+async fn consume_nonce(
+    handle: &Arc<dyn NonceManager>,
+    execution_id: ExecutionId,
+    retry_config: &RetryConfig,
+) {
+    let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
+        let nh = Arc::clone(handle);
+        async move {
+            nh.resolve(execution_id, NonceState::Consumed)
+                .await
+                .map_err(RetryDecision::Retry)
+        }
+    })
+    .await;
+
+    if let Err(e) = resolve_result {
+        // not fatal -> lease will expire in 5 minutes
+        tracing::error!(
+            error = %e,
+            "'consume' state update failed after retries, 'reserve' lease will expire in 5 min"
+        );
+    } else {
+        tracing::debug!("nonce released");
     }
 }
 

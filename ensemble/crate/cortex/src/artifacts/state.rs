@@ -80,6 +80,9 @@ pub enum PipelineStatus {
         nonce_on_chain: TxNonce,
         attempted_nonce: TxNonce,
     },
+    /// Validator timed out without confirmation (due to high nonce),
+    /// such situation might be created due to nonce gaps
+    ValidatorTimedOut { message: String },
 }
 
 // ============================================================

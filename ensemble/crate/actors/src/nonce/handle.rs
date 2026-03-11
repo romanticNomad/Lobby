@@ -2,21 +2,9 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use kernel::{
     traits::NonceManager,
-    types::{ChainId, ExecutionId, LocalError, TxNonce},
+    types::{ChainId, ExecutionId, LocalError, NonceState, TxNonce},
 };
 use tokio::sync::{mpsc, oneshot};
-
-// =========================================================
-// nonce state type mapping for sqlx <-> Postgres
-
-#[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]
-pub enum NonceState {
-    Reserved,
-    Finalized,
-    Released,
-    Consumed,
-}
 
 // =========================================================
 // commands to sent over the channel.
@@ -30,7 +18,7 @@ pub enum NonceCommand {
     },
     Resolve {
         execution_id: ExecutionId,
-        outcome: bool,
+        state: NonceState,
         reply: oneshot::Sender<Result<(), LocalError>>,
     },
     Sync {
@@ -85,11 +73,15 @@ impl NonceManager for NonceHandle {
         })?
     }
 
-    async fn resolve(&self, execution_id: ExecutionId, outcome: bool) -> Result<(), LocalError> {
+    async fn resolve(
+        &self,
+        execution_id: ExecutionId,
+        state: NonceState,
+    ) -> Result<(), LocalError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = NonceCommand::Resolve {
             execution_id,
-            outcome,
+            state,
             reply: reply_tx,
         };
 

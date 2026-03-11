@@ -98,12 +98,9 @@ impl ValidatorEngine {
                     elapsed_time = start.elapsed().as_secs(),
                     "validation timed out"
                 );
-                self.record_outcome(execution_id, ValidatorOutcome::NotIncluded)
+                self.record_outcome(execution_id, ValidatorOutcome::Timeout)
                     .await?;
-                return Err(ValidatorError::Timeout {
-                    chain_id,
-                    timeout_sec: start.elapsed().as_secs(),
-                });
+                return Ok(ValidatorOutcome::Timeout);
             }
 
             // fetch receipt
@@ -150,7 +147,10 @@ impl ValidatorEngine {
                 }
                 Err(e) => {
                     // RPC error — log and retry (caller will handle timeout)
-                    tracing::warn!(%e, "rpc error while fetching receipt, will retry");
+                    tracing::warn!(%e, "rpc errored while fetching receipt, will retry");
+                    self.record_outcome(execution_id, ValidatorOutcome::NotIncluded)
+                        .await?;
+                    return Err(e);
                 }
             }
 
@@ -253,7 +253,7 @@ impl ValidatorEngine {
         let outcome_str = match outcome {
             ValidatorOutcome::Included { .. } => "included",
             ValidatorOutcome::NotIncluded => "not_included",
-            ValidatorOutcome::Timeout => "timed_out"
+            ValidatorOutcome::Timeout => "timed_out",
         };
 
         sqlx::query!(
