@@ -1,11 +1,14 @@
+pub mod bots;
 pub mod server;
 
-use crate::server::{
-    AppState,
-    auth::auth_middleware,
-    handler::{get_transaction_status, submit_transaction},
+use crate::{
+    bots::sweeper::spawn_sweeper_bot,
+    server::{
+        AppState,
+        auth::auth_middleware,
+        handler::{get_transaction_status, submit_transaction},
+    },
 };
-use actors::nonce::spawn_sweeper_bot;
 use axum::{
     Router, middleware,
     routing::{get, post},
@@ -55,7 +58,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("../database/migrations")
         .run(&db_pool)
         .await?;
-    tracing::info!("database migrations applied");
 
     // ============================================================
     // lobby state artifacts
