@@ -253,6 +253,7 @@ impl ValidatorEngine {
         let outcome_str = match outcome {
             ValidatorOutcome::Included { .. } => "included",
             ValidatorOutcome::NotIncluded => "not_included",
+            ValidatorOutcome::Timeout => "timed_out"
         };
 
         sqlx::query!(
