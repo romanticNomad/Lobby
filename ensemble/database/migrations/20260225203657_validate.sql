@@ -5,8 +5,7 @@ CREATE TABLE validator.validation_requests (
     revision            INT NOT NULL,
     chain_id            BIGINT NOT NULL,
     tx_hash             BYTEA NOT NULL,
-    state               TEXT NOT NULL CHECK (state IN ('pending', 'included', 'not_included')),
-    outcome             TEXT CHECK (outcome IN ('included', 'not_included')),
+    state               TEXT NOT NULL CHECK (state IN ('pending', 'included', 'not_included', 'timed_out')),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -24,10 +23,9 @@ WHERE state = 'pending';
 
 -- Lookup completed validations for caching
 CREATE INDEX idx_validation_outcome
-ON validator.validation_requests (execution_id, outcome, updated_at)
-WHERE outcome IS NOT NULL;
+ON validator.validation_requests (execution_id, state);
 
--- Audit queries: find all validations for a given transaction hash
+-- Audit queries: find all validations for a given transaction hash outcome
 CREATE INDEX idx_validation_by_tx_hash
 ON validator.validation_requests (tx_hash, chain_id);
 
@@ -59,9 +57,6 @@ COMMENT ON TABLE validator.validation_requests IS
 
 COMMENT ON COLUMN validator.validation_requests.state IS
 'Current state: pending (polling RPC), included (confirmed on-chain), not_included (timeout/reorg/reverted).';
-
-COMMENT ON COLUMN validator.validation_requests.outcome IS
-'Final outcome after validation completes. NULL while state=pending.';
 
 COMMENT ON COLUMN validator.validation_requests.updated_at IS
 'Timestamp of the last state change. Used for 5-minute lease-based idempotency.';

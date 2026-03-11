@@ -169,11 +169,9 @@ impl ValidatorEngine {
     ) -> Result<Option<ValidatorOutcome>, ValidatorError> {
         let row = sqlx::query!(
             r#"
-            SELECT outcome
+            SELECT state
             FROM validator.validation_requests
             WHERE execution_id = $1
-                AND outcome IS NOT NULL
-                AND updated_at > now() - interval '5 minutes'
             ORDER BY revision DESC
             LIMIT 1
             "#,
@@ -182,12 +180,12 @@ impl ValidatorEngine {
         .fetch_optional(&self.db)
         .await?;
 
-        Ok(row.and_then(|r| match r.outcome.as_deref() {
-            Some("included") => Some(ValidatorOutcome::Included {
+        Ok(row.and_then(|r| match r.state.as_str() {
+            "included" => Some(ValidatorOutcome::Included {
                 block_number: 0, // needs to be added to db
                 confirmations: 0,
             }),
-            Some("not_included") => Some(ValidatorOutcome::NotIncluded),
+            "not_included" => Some(ValidatorOutcome::NotIncluded),
             _ => None,
         }))
     }
@@ -259,13 +257,12 @@ impl ValidatorEngine {
         sqlx::query!(
             r#"
             INSERT INTO validator.validation_requests
-                (execution_id, revision, chain_id, tx_hash, state, outcome)
+                (execution_id, revision, chain_id, tx_hash, state)
             SELECT
                 execution_id,
                 MAX(revision) + 1,
                 chain_id,
                 tx_hash,
-                $2,
                 $2
             FROM validator.validation_requests
             WHERE execution_id = $1
