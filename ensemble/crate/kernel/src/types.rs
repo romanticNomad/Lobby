@@ -214,6 +214,29 @@ impl fmt::Display for TxNonce {
     }
 }
 
+// =========================================================
+// nonce state type mapping for sqlx <-> Postgres
+
+#[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "nonce.nonce_state", rename_all = "lowercase")]
+pub enum NonceState {
+    Reserved,
+    Finalized,
+    Released,
+    Consumed,
+}
+
+// =========================================================
+// sign state type mapping for sqlx <-> Postgres
+
+#[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "sign.sign_requests", rename_all = "lowercase")]
+pub enum SignState {
+    Reserved,
+    Signed,
+    Failed,
+}
+
 // ============================================================
 
 #[derive(Clone, Debug)]
