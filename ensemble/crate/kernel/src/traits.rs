@@ -14,7 +14,8 @@ pub trait NonceManager: Send + Sync {
         execution_id: ExecutionId,
     ) -> Result<TxNonce, LocalError>;
 
-    async fn resolve(&self, execution_id: ExecutionId, state: NonceState) -> Result<(), LocalError>;
+    async fn resolve(&self, execution_id: ExecutionId, state: NonceState)
+    -> Result<(), LocalError>;
 
     /// special api for syncing nonce of given (chain_id, from_address)
     /// in case the lobby DB and on-chain state are detected to be out of sync.

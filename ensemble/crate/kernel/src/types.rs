@@ -261,7 +261,7 @@ pub enum ValidatorOutcome {
         confirmations: u64,
     },
     NotIncluded,
-    Timeout
+    Timeout,
 }
 
 // ============================================================
