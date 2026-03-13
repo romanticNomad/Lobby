@@ -7,6 +7,8 @@ use std::{sync::Arc, time::Duration};
 use tokio::time::interval;
 use uuid::Uuid;
 
+// ============================================================
+
 /// Represents a timed-out transaction that needs to be rescanned
 #[derive(Debug, Clone, Copy)]
 struct TimedOutTransaction {
@@ -14,6 +16,8 @@ struct TimedOutTransaction {
     txn_hash: TxHash,
     chain_id: ChainId,
 }
+
+// ============================================================
 
 /// `scanner_bot` actively keeps track of `state = 'timed_out'` transactions
 /// and polls the RPC nodes to check if they eventually got included.
@@ -34,6 +38,8 @@ pub fn scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcProviderRegistry) 
         }
     });
 }
+
+// ============================================================
 
 /// Main scanning logic: fetch 'timed-out' transactions, check RPC, update DB + registry
 async fn scanner_handler(
@@ -87,6 +93,8 @@ async fn scanner_handler(
     Ok(())
 }
 
+// ============================================================
+
 async fn fetch_timed_out_txn(db: &PgPool) -> Result<Vec<TimedOutTransaction>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"
@@ -112,6 +120,8 @@ async fn fetch_timed_out_txn(db: &PgPool) -> Result<Vec<TimedOutTransaction>, sq
         })
         .collect())
 }
+
+// ============================================================
 
 /// Process all timed_out transactions for a specific chain
 async fn process_chain(
@@ -146,6 +156,8 @@ async fn process_chain(
         }
     }
 }
+
+// ============================================================
 
 /// Process a single transaction: fetch receipt, update DB, update registry
 async fn process_txn(
@@ -191,6 +203,8 @@ async fn process_txn(
 
     Ok(())
 }
+
+// ============================================================
 
 async fn update_db(
     db: &PgPool,
@@ -246,3 +260,5 @@ fn update_state(state: &StatusRegistry, txn: &TimedOutTransaction, new_state: &'
         );
     }
 }
+
+// ============================================================
