@@ -25,7 +25,7 @@ struct TimedOutTransaction {
 /// It runs continuously, scanning every 30 seconds for up to 100 timed-out
 /// transactions, and updates both the database and StatusRegistry when a
 /// transaction is found on-chain.
-pub fn scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcProviderRegistry) {
+pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcProviderRegistry) {
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(30));
 

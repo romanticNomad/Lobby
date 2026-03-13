@@ -2,7 +2,7 @@ pub mod bots;
 pub mod server;
 
 use crate::{
-    bots::sweeper::spawn_sweeper_bot,
+    bots::{scanner::spawn_scanner_bot, sweeper::spawn_sweeper_bot},
     server::{
         AppState,
         auth::auth_middleware,
@@ -84,14 +84,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     //cortex handler
     let config = CortexConfig::from_env()?;
-    let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry, config);
+    let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry.clone(), config);
 
     // status registry
     let status_registry = cortex_handler.status_registry();
 
-    // sweeper bot (nonce leak cleanup)
+    // ============================================================
+    // bots
+
     spawn_sweeper_bot(db_pool.clone());
-    tracing::info!("sweeper bot spawned, monitoring for stale nonce leases");
+    spawn_scanner_bot(
+        db_pool.clone(),
+        status_registry.clone(),
+        rpc_registry.clone(),
+    );
+
+    tracing::info!("bots spawned, monitoring status");
 
     // ============================================================
     // axum app
