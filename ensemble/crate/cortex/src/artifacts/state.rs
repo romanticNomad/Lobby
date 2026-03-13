@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// shard (64 by default).  Reads and writes are O(1).
 #[derive(Clone, Debug)]
 pub struct StatusRegistry {
-    status_book: Arc<DashMap<ExecutionId, PipelineStatus>>,
+    pub status_book: Arc<DashMap<ExecutionId, PipelineStatus>>,
 }
 
 impl StatusRegistry {
