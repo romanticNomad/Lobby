@@ -12,6 +12,7 @@ use kernel::{
     },
 };
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::Instrument;
 
 // ============================================================
@@ -89,7 +90,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
     );
 
     async move {
-        tracing::info!("Pipeline started");
+        // Start timing for this pipeline execution
+        let start = Instant::now();
+
+        tracing::info!(elapsed_ms = start.elapsed().as_millis(), "Pipeline started");
 
         // ============================================================
         // relay host
@@ -109,12 +113,15 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         if let Err(e) = rh_result {
             let err = CortexError::RelayHost(e);
-            record_faliure(&ctx.status, execution_id, &err);
+            record_faliure(&ctx.status, execution_id, &err, &start);
             return;
         }
 
         ctx.status.set(execution_id, PipelineStatus::Accepted);
-        tracing::debug!("relay_host: recorded");
+        tracing::debug!(
+            elapsed_ms = start.elapsed().as_millis(),
+            "relay_host: recorded"
+        );
 
         // ============================================================
         // nonce reserve
@@ -135,13 +142,17 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             Ok(n) => n,
             Err(e) => {
                 let err = CortexError::NonceReservation(e);
-                record_faliure(&ctx.status, execution_id, &err);
+                record_faliure(&ctx.status, execution_id, &err, &start);
                 return;
             }
         };
 
         ctx.status.set(execution_id, PipelineStatus::NonceReserved);
-        tracing::info!(nonce = %nonce, "nonce reserved");
+        tracing::info!(
+            elapsed_ms = start.elapsed().as_millis(),
+            nonce = %nonce,
+            "nonce reserved"
+        );
 
         // updating the nonce onto txn payload
         let mut txn = ctx.txn;
@@ -167,16 +178,19 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             Ok(s) => s,
             Err(e) => {
                 // signing error -> hard fail
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
 
                 let err = CortexError::Sign(e);
-                record_faliure(&ctx.status, execution_id, &err);
+                record_faliure(&ctx.status, execution_id, &err, &start);
                 return;
             }
         };
 
         ctx.status.set(execution_id, PipelineStatus::Signed);
-        tracing::info!("transaction signed");
+        tracing::info!(
+            elapsed_ms = start.elapsed().as_millis(),
+            "transaction signed"
+        );
 
         // ============================================================
         // broadcast (with nonce mismatch retry)
@@ -232,24 +246,26 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         // Already retried once, give up to prevent infinite loop
 
                         tracing::error!(
+                            elapsed_ms = start.elapsed().as_millis(),
                             nonce_on_chain = %nonce_on_chain,
                             attempted_nonce = %attempted_nonce,
                             "nonce matching failed after retry, aborting pipeline"
                         );
 
-                        release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                        release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
 
                         let err = CortexError::Broadcast(BroadcastError::NonceTooLow {
                             nonce_on_chain,
                             attempted_nonce,
                         });
-                        record_faliure(&ctx.status, execution_id, &err);
+                        record_faliure(&ctx.status, execution_id, &err, &start);
                         return;
                     }
 
                     nonce_retry_attempted = true;
 
                     tracing::warn!(
+                        elapsed_ms = start.elapsed().as_millis(),
                         attempted_nonce = %attempted_nonce,
                         nonce_on_chain = %nonce_on_chain,
                         "nonce mismatch detected - initiating sync"
@@ -267,9 +283,12 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     // Step 1: Release the incorrect nonce and revert sign status.
 
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
-                    revert_sign(&sign_handle, execution_id, &ctx.retry_config).await;
-                    tracing::debug!("released incorrect nonce and reverted sign status");
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
+                    revert_sign(&sign_handle, execution_id, &ctx.retry_config, &start).await;
+                    tracing::debug!(
+                        elapsed_ms = start.elapsed().as_millis(),
+                        "released incorrect nonce and reverted sign status"
+                    );
 
                     // Step 2: Sync with on-chain state and reserve correct nonce
 
@@ -287,12 +306,13 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                             Ok(n) => n,
                             Err(e) => {
                                 let err = CortexError::NonceSync(e);
-                                record_faliure(&ctx.status, execution_id, &err);
+                                record_faliure(&ctx.status, execution_id, &err, &start);
                                 return;
                             }
                         };
 
                     tracing::info!(
+                        elapsed_ms = start.elapsed().as_millis(),
                         corrected_nonce = %corrected_nonce,
                         "nonce synced and reserved after on-chain mismatch"
                     );
@@ -318,39 +338,51 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                         {
                             Ok(s) => s,
                             Err(e) => {
-                                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                                release_nonce(
+                                    &nonce_handle,
+                                    execution_id,
+                                    &ctx.retry_config,
+                                    &start,
+                                )
+                                .await;
 
                                 let err = CortexError::ReSign(e);
-                                record_faliure(&ctx.status, execution_id, &err);
+                                record_faliure(&ctx.status, execution_id, &err, &start);
                                 return;
                             }
                         };
 
-                    tracing::info!("transaction re-signed with corrected nonce");
+                    tracing::info!(
+                        elapsed_ms = start.elapsed().as_millis(),
+                        "transaction re-signed with corrected nonce"
+                    );
                     ctx.status.set(execution_id, PipelineStatus::Signed);
 
                     // Step 5: Loop will retry broadcast with new signed transaction
 
-                    tracing::debug!("retrying broadcast with corrected nonce");
+                    tracing::debug!(
+                        elapsed_ms = start.elapsed().as_millis(),
+                        "retrying broadcast with corrected nonce"
+                    );
                     continue;
                 }
 
                 // ============================================================
                 // MissingProvider -> Immediate fatal failure
                 Err(BroadcastError::MissingProvider { chain_id }) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
 
                     let err = CortexError::Broadcast(BroadcastError::MissingProvider { chain_id });
-                    record_faliure(&ctx.status, execution_id, &err);
+                    record_faliure(&ctx.status, execution_id, &err, &start);
                     return;
                 }
 
                 // ============================================================
                 // Other broadcast errors -> Hard fail
                 Err(e) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
                     let err = CortexError::Broadcast(e);
-                    record_faliure(&ctx.status, execution_id, &err);
+                    record_faliure(&ctx.status, execution_id, &err, &start);
                     return;
                 }
             }
@@ -363,7 +395,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 tx_hash: format!("{tx_hash:#x}"),
             },
         );
-        tracing::info!(tx_hash = %format!("{:#x}", tx_hash), "transaction broadcasted");
+        tracing::info!(
+            elapsed_ms = start.elapsed().as_millis(),
+            tx_hash = %format!("{:#x}", tx_hash),
+            "transaction broadcasted"
+        );
 
         // ============================================================
         // validator
@@ -373,9 +409,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             match { async move { v.validate(chain_id, execution_id, tx_hash).await } }.await {
                 Ok(outcome) => outcome,
                 Err(e) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
                     let err = CortexError::NotIncluded(e);
-                    record_faliure(&ctx.status, execution_id, &err);
+                    record_faliure(&ctx.status, execution_id, &err, &start);
                     return;
                 }
             };
@@ -385,7 +421,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 block_number,
                 confirmations,
             } => {
-                finalise_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                finalise_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
 
                 ctx.status.set(
                     execution_id,
@@ -394,6 +430,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                     },
                 );
                 tracing::info!(
+                    elapsed_ms = start.elapsed().as_millis(),
                     block_number = %block_number,
                     confirmations = %confirmations,
                     "transaction confirmed on-chain"
@@ -401,10 +438,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             }
             ValidatorOutcome::NotIncluded => {
                 tracing::warn!(
+                    elapsed_ms = start.elapsed().as_millis(),
                     tx_hash = %format!("{:#x}", tx_hash),
                     "transaction not included (reorg or eviction)"
                 );
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
 
                 ctx.status.set(
                     execution_id,
@@ -416,10 +454,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             }
             ValidatorOutcome::Timeout => {
                 tracing::warn!(
+                    elapsed_ms = start.elapsed().as_millis(),
                     tx_hash = %format!("{:#x}", tx_hash),
                     "inclusion confimation failed (nonce gap or rpc failiure)"
                 );
-                consume_nonce(&nonce_handle, execution_id, &ctx.retry_config).await;
+                consume_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
 
                 ctx.status.set(
                     execution_id,
@@ -430,7 +469,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             }
         }
 
-        tracing::info!("pipeline completed");
+        tracing::info!(
+            elapsed_ms = start.elapsed().as_millis(),
+            "pipeline completed"
+        );
     }
     .instrument(span)
     .await;
@@ -445,6 +487,7 @@ async fn release_nonce(
     handle: &Arc<dyn NonceManager>,
     execution_id: ExecutionId,
     retry_config: &RetryConfig,
+    start: &Instant,
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
         let nh = Arc::clone(handle);
@@ -459,11 +502,12 @@ async fn release_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> lease will expire in 5 minutes
         tracing::error!(
+            elapsed_ms = start.elapsed().as_millis(),
             error = %e,
             "nonce release failed after retries, lease will expire in 5 min"
         );
     } else {
-        tracing::debug!("nonce released");
+        tracing::debug!(elapsed_ms = start.elapsed().as_millis(), "nonce released");
     }
 }
 
@@ -474,6 +518,7 @@ async fn revert_sign(
     handle: &Arc<dyn Signer>,
     execution_id: ExecutionId,
     retry_config: &RetryConfig,
+    start: &Instant,
 ) {
     let revert_result = retry_with_backoff(&retry_config, "sign_revert", || {
         let sh = Arc::clone(handle);
@@ -483,9 +528,16 @@ async fn revert_sign(
 
     if let Err(e) = revert_result {
         // not fatal -> lease will expire in 5 minutes
-        tracing::error!(error = %e, "sign state revertion failed");
+        tracing::error!(
+            elapsed_ms = start.elapsed().as_millis(),
+            error = %e,
+            "sign state revertion failed"
+        );
     } else {
-        tracing::debug!("sign state set to failed")
+        tracing::debug!(
+            elapsed_ms = start.elapsed().as_millis(),
+            "sign state set to failed"
+        );
     }
 }
 
@@ -494,6 +546,7 @@ async fn finalise_nonce(
     handle: &Arc<dyn NonceManager>,
     execution_id: ExecutionId,
     retry_config: &RetryConfig,
+    start: &Instant,
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_finalise", || {
         let nh = Arc::clone(handle);
@@ -508,11 +561,12 @@ async fn finalise_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> dangling nonce lease expires in 5 min
         tracing::error!(
+            elapsed_ms = start.elapsed().as_millis(),
             error = %e,
             "nonce finalising failed, state remains 'reserved', lease will expire in 5 minutes"
         );
     } else {
-        tracing::debug!("nonce finalised");
+        tracing::debug!(elapsed_ms = start.elapsed().as_millis(), "nonce finalised");
     }
 }
 
@@ -523,6 +577,7 @@ async fn consume_nonce(
     handle: &Arc<dyn NonceManager>,
     execution_id: ExecutionId,
     retry_config: &RetryConfig,
+    start: &Instant,
 ) {
     let resolve_result = retry_with_backoff(&retry_config, "nonce_release", || {
         let nh = Arc::clone(handle);
@@ -537,17 +592,24 @@ async fn consume_nonce(
     if let Err(e) = resolve_result {
         // not fatal -> lease will expire in 5 minutes
         tracing::error!(
+            elapsed_ms = start.elapsed().as_millis(),
             error = %e,
             "'consume' state update failed after retries, 'reserve' lease will expire in 5 min"
         );
     } else {
-        tracing::debug!("nonce released");
+        tracing::debug!(elapsed_ms = start.elapsed().as_millis(), "nonce released");
     }
 }
 
 /// helper to record fatal errors.
-fn record_faliure(registry: &StatusRegistry, execution_id: ExecutionId, err: &CortexError) {
+fn record_faliure(
+    registry: &StatusRegistry,
+    execution_id: ExecutionId,
+    err: &CortexError,
+    start: &Instant,
+) {
     tracing::error!(
+        elapsed_ms = start.elapsed().as_millis(),
         stage = %err.stage(),
         error = %err,
         "pipeline hard fail"

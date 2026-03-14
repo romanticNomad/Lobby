@@ -295,7 +295,10 @@ impl ValidatorEngine {
 
             match existing {
                 Some(row) => {
-                    if row.state == "included" || row.state == "not_included" || row.state == "timed_out" {
+                    if row.state == "included"
+                        || row.state == "not_included"
+                        || row.state == "timed_out"
+                    {
                         Err(ValidatorError::Internal(format!(
                             "validation already completed with state '{}', cannot update to '{}'",
                             row.state, outcome_str
