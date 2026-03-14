@@ -242,7 +242,7 @@ impl ValidatorEngine {
         Ok(())
     }
 
-    /// recording validation outcome
+    /// Recording validation outcome
     async fn record_outcome(
         &self,
         execution_id: ExecutionId,
@@ -254,19 +254,20 @@ impl ValidatorEngine {
             ValidatorOutcome::Timeout => "timed_out",
         };
 
-        sqlx::query!(
+        // Update the latest pending validation request to the final outcome
+        let result = sqlx::query!(
             r#"
-            INSERT INTO validator.validation_requests
-                (execution_id, revision, chain_id, tx_hash, state)
-            SELECT
-                execution_id,
-                MAX(revision) + 1,
-                chain_id,
-                tx_hash,
-                $2
-            FROM validator.validation_requests
-            WHERE execution_id = $1
-            GROUP BY execution_id, chain_id, tx_hash
+            UPDATE validator.validation_requests
+            SET state = $2
+            WHERE (execution_id, revision) = (
+                SELECT execution_id, revision
+                FROM validator.validation_requests
+                WHERE execution_id = $1
+                    AND state = 'pending'
+                ORDER BY revision DESC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
             "#,
             execution_id.0.as_bytes().as_slice(),
             outcome_str,
@@ -274,8 +275,42 @@ impl ValidatorEngine {
         .execute(&self.db)
         .await?;
 
-        tracing::debug!(%outcome_str, "validation outcome recorded");
-        Ok(())
+        if result.rows_affected() > 0 {
+            tracing::debug!(%outcome_str, "validation outcome recorded");
+            Ok(())
+        } else {
+            // No rows updated - check why
+            let existing = sqlx::query!(
+                r#"
+                SELECT state
+                FROM validator.validation_requests
+                WHERE execution_id = $1
+                ORDER BY revision DESC
+                LIMIT 1
+                "#,
+                execution_id.0.as_bytes().as_slice()
+            )
+            .fetch_optional(&self.db)
+            .await?;
+
+            match existing {
+                Some(row) => {
+                    if row.state == "included" || row.state == "not_included" || row.state == "timed_out" {
+                        Err(ValidatorError::Internal(format!(
+                            "validation already completed with state '{}', cannot update to '{}'",
+                            row.state, outcome_str
+                        )))
+                    } else {
+                        Err(ValidatorError::Internal(
+                            "validation should have been pending, update failed".to_string(),
+                        ))
+                    }
+                }
+                None => Err(ValidatorError::Internal(
+                    "invalid execution_id, no validation request found".to_string(),
+                )),
+            }
+        }
     }
 }
 
