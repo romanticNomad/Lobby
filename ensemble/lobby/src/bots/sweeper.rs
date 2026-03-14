@@ -1,5 +1,7 @@
+use kernel::types::ExecutionId;
 use sqlx::PgPool;
 use std::time::Duration;
+use uuid::Uuid;
 
 /// sweeper bot actively looks for `reseved` nonce
 /// state with expired lease.
@@ -17,12 +19,13 @@ pub fn spawn_sweeper_bot(db: PgPool) {
 
         loop {
             interval.tick().await;
-            match expire_state_lease(&db).await {
-                Ok(count) => {
+            match expire_states(&db).await {
+                Ok((count, txn_list)) => {
                     if count > 0 {
                         tracing::info!(
-                            stale_states = count,
-                            "Stale transaction states detected, and nonce released"
+                            stale_states_released = count,
+                            "Stale transactions: {:?}",
+                            txn_list
                         )
                     }
                 }
@@ -40,7 +43,7 @@ pub fn spawn_sweeper_bot(db: PgPool) {
 // ============================================================
 // helper function (handles db query)
 
-async fn expire_state_lease(db: &PgPool) -> Result<usize, sqlx::Error> {
+async fn expire_states(db: &PgPool) -> Result<(usize, Vec<ExecutionId>), sqlx::Error> {
     let result = sqlx::query!(
         r#"
         UPDATE nonce.nonce_assignments
@@ -55,13 +58,19 @@ async fn expire_state_lease(db: &PgPool) -> Result<usize, sqlx::Error> {
             ORDER BY execution_id, revision DESC
             LIMIT 100
         )
-        RETURNING nonce
+        RETURNING nonce, execution_id
         "#
     )
     .fetch_all(db)
     .await?;
 
-    Ok(result.len())
+    let count = result.len();
+    let execution_id_list = result
+        .into_iter()
+        .map(|row| ExecutionId(Uuid::from_slice(&row.execution_id).unwrap()))
+        .collect();
+
+    Ok((count, execution_id_list))
 }
 
 // ============================================================
