@@ -423,7 +423,9 @@ impl NonceEngine {
                                     "txn already set to consumed".to_string(),
                                 ))
                             } else {
-                                Err(LocalError::Internal("corrupted state".to_string()))
+                                Err(LocalError::Internal(
+                                    "state remained 'reserved'".to_string(),
+                                ))
                             }
                         }
                         None => Err(LocalError::Internal("invalid execution_id".to_string())),
