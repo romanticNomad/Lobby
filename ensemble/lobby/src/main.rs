@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("transactions.log")
+        .open("logs/transactions.log")
         .expect("Failed to open LOG file");
 
     Registry::default()
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_writer(file)
                 .with_ansi(false)
                 .with_target(true)
-                .with_thread_ids(true)
+                .with_thread_ids(true),
         )
         .init();
 

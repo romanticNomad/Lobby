@@ -964,12 +964,36 @@ pub struct StatusRegistry {
 **Pipeline States:**
 ```rust
 pub enum PipelineStatus {
+    /// pipeline semaphore permit aquired
+    PermitAquired,
+    /// request has been accepted and persisted by RelayHost
     Accepted,
+    /// nonce successfully reserved, awaiting signer
     NonceReserved,
+    /// transaction signed, awaiting broadcaster
     Signed,
-    Broadcast { tx_hash: String },
-    Confirmed { tx_hash: String },
+    /// transaction broadcasted, awaiting on-chain confirmation
+    Broadcasted {
+        #[serde(rename = "tx_hash")]
+        tx_hash: String,
+    },
+    /// Validator confirmed >=1 block confirmation
+    Confirmed {
+        #[serde(rename = "tx_hash")]
+        tx_hash: String,
+    },
+    /// Pipeline failed at the given stage; the nonce has been released where
+    /// applicable.
     Failed { stage: String, reason: String },
+    /// Syncing nonce on db with the on-chain nonce
+    /// retrieved using the given rpc_endpoint
+    NonceMismatchDetected {
+        nonce_on_chain: TxNonce,
+        attempted_nonce: TxNonce,
+    },
+    /// Validator timed out without confirmation (due to high nonce),
+    /// such situation might be created due to nonce gaps
+    ValidatorTimedOut { message: String },
 }
 ```
 
