@@ -137,7 +137,7 @@ impl CortextHandle {
     }
 
     // ===========================================================
-    
+
     /// simple helper for obtaining StatusRegistry clone
     pub fn status_registry(&self) -> StatusRegistry {
         self.inner.status_registry.clone()

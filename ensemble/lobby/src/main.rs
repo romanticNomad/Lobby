@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CortexConfig::from_env()?;
     let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry.clone(), config);
 
-    // status registry
+    // status registry -> fails if RockDB failed to boot up
     let status_registry = cortex_handler.status_registry();
 
     // ============================================================
