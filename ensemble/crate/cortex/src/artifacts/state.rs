@@ -51,7 +51,7 @@ impl StatusRegistry {
         opts.set_compression_type(rocksdb::DBCompressionType::Lz4); // Fast compression
 
         let db = DB::open(&opts, &db_path)?;
-        tracing::info!(?db_path, "rocksdb: booted successfully");
+        tracing::debug!(?db_path, "rocksdb: booted successfully");
 
         let status_book = Arc::new(DashMap::new());
 
