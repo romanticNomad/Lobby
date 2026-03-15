@@ -100,6 +100,44 @@ impl StatusRegistry {
             db: Arc::new(db),
         })
     }
+
+    /// Record or overwrite the status of a pipeline.
+    ///
+    /// Writes to both:
+    /// 1. DashMap (immediate, in-memory)
+    /// 2. RocksDB (async via write-ahead log, durable)
+    ///
+    /// **Error handling:**
+    /// - DashMap write always succeeds (in-memory)
+    /// - RocksDB write failure is logged as ERROR but does NOT crash
+    /// - In-memory state remains valid even if disk write fails
+    ///
+    /// **Why non-crashing?**
+    /// - Transient disk errors (full disk, I/O timeout) shouldn't kill the server
+    /// - StatusRegistry is observable state, not critical for correctness
+    /// - Worst case: Status is lost on restart (client sees "unknown execution_id")
+    pub fn set(&self, execution_id: ExecutionId, status: PipelineStatus) {
+        // update in-memory
+        self.status_book.insert(execution_id, status.clone());
+
+        // persist to rocksdb
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || {
+            let key = execution_id.0.as_bytes();
+
+            let value = match postcard::to_allocvec(&status) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(%execution_id, %e, "rockdb: failed to serialize status");
+                    return;
+                }
+            };
+
+            if let Err(e) = db.put(key, value) {
+                tracing::error!(%execution_id, %e, "failed to write status")
+            }
+        });
+    }
 }
 
 // ============================================================
