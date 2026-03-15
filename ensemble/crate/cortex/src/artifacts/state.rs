@@ -138,6 +138,59 @@ impl StatusRegistry {
             }
         });
     }
+
+    /// Retrieve the current pipeline status (reads from DashMap only, no disk I/O).
+    ///
+    /// # Returns
+    /// - `Some(status)` if execution_id exists in memory
+    /// - `None` if execution_id is unknown (never submitted or evicted)
+    pub fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus> {
+        self.status_book.get(execution_id).map(|v| v.clone())
+    }
+
+    /// Explicitly delete an entry from both DashMap and RocksDB.
+    ///
+    /// **Use case:** Cleanup task to evict old `Confirmed`/`Failed` entries.
+    ///
+    /// **Error handling:** RocksDB delete failure is logged but does NOT crash.
+    pub fn remove(&self, execution_id: &ExecutionId) {
+        // remove from in-memory
+        self.status_book.remove(execution_id);
+
+        //remove from RocksDB
+        let db = Arc::clone(&self.db);
+        let id = *execution_id;
+
+        tokio::task::spawn_blocking(move || {
+            let key = id.0.as_bytes();
+            if let Err(e) = db.delete(key) {
+                tracing::error!(%id, %e, "rocksdb: delete failiure");
+            }
+        });
+    }
+
+    /// Get the approximate size of the RocksDB database in bytes.
+    ///
+    /// **Use case:** Monitoring, alerting on disk usage.
+    pub fn db_size_bytes(&self) -> Result<u64, rocksdb::Error> {
+        let mut total_size = 0u64;
+        
+        // Sum up all SST file sizes
+        if let Some(stats) = self.db.property_value("rocksdb.total-sst-files-size")? {
+            if let Ok(size) = stats.parse::<u64>() {
+                total_size += size;
+            }
+        }
+
+        // Add memtable size (in-memory, not yet flushed)
+        if let Some(stats) = self.db.property_value("rocksdb.cur-size-all-mem-tables")? {
+            if let Ok(size) = stats.parse::<u64>() {
+                total_size += size;
+            }
+        }
+
+        Ok(total_size)
+    }    
 }
 
 // ============================================================
