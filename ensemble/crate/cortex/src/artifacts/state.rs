@@ -174,7 +174,7 @@ impl StatusRegistry {
     /// **Use case:** Monitoring, alerting on disk usage.
     pub fn db_size_bytes(&self) -> Result<u64, rocksdb::Error> {
         let mut total_size = 0u64;
-        
+
         // Sum up all SST file sizes
         if let Some(stats) = self.db.property_value("rocksdb.total-sst-files-size")? {
             if let Ok(size) = stats.parse::<u64>() {
@@ -190,7 +190,7 @@ impl StatusRegistry {
         }
 
         Ok(total_size)
-    }    
+    }
 }
 
 // ============================================================

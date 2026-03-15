@@ -33,7 +33,7 @@ use kernel::{
     types::{ClientConfig, Eip1559Transaction, ExecutionId, RpcProviderRegistry},
 };
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Semaphore;
 
 // ============================================================
@@ -137,6 +137,7 @@ impl CortextHandle {
     }
 
     // ===========================================================
+    
     /// simple helper for obtaining StatusRegistry clone
     pub fn status_registry(&self) -> StatusRegistry {
         self.inner.status_registry.clone()
@@ -172,6 +173,7 @@ pub fn spawn_cortex(
                 Arc::new(handle) as Arc<dyn NonceManager>
             })
             .collect();
+
         Arc::new(ShardPool::new(shards))
     };
 
@@ -186,6 +188,7 @@ pub fn spawn_cortex(
                 Arc::new(handle) as Arc<dyn Signer>
             })
             .collect();
+
         Arc::new(ShardPool::new(shards))
     };
 
@@ -204,6 +207,7 @@ pub fn spawn_cortex(
                 Arc::new(handle) as Arc<dyn Broadcaster>
             })
             .collect();
+
         Arc::new(ShardPool::new(shards))
     };
 
@@ -213,6 +217,7 @@ pub fn spawn_cortex(
     let relayhost_handle = {
         let handle = relayhost::spawn_relayhost_actor(db.clone(), config.actor_buffer);
         tracing::debug!("relay_host actor spawned");
+
         Arc::new(handle) as Arc<dyn IntentRelay>
     };
 
@@ -227,6 +232,7 @@ pub fn spawn_cortex(
             config.actor_buffer,
         );
         tracing::debug!("validate actor spawned");
+
         Arc::new(handle) as Arc<dyn Validator>
     };
 
@@ -236,11 +242,18 @@ pub fn spawn_cortex(
     let pipeline_semaphore = Arc::new(Semaphore::new(config.pipeline_concurrency));
 
     // ============================================================
+    // initialize StatusRegistry
+
+    let db_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../logs/status.db");
+    let status_registry =
+        StatusRegistry::new(db_path).expect("rocksdb: failed to boot up StatusREgistry");
+
+    // ============================================================
     // returning final cortex handle.
 
     let inner = Arc::new(Cortex {
         cortex_config: config,
-        status_registry: StatusRegistry::new(),
+        status_registry,
         semaphore: pipeline_semaphore,
         relayhost: relayhost_handle,
         nonce: nonce_pool,
