@@ -74,7 +74,7 @@ async fn scanner_handler(
 
     // Process each chain concurrently
     let mut handles = Vec::new();
-    
+
     for entry in by_chain_id.into_iter() {
         let (chain_id, txns) = entry;
         let db = db.clone();

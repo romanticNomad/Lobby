@@ -92,15 +92,10 @@ pub trait IntentRelay: Send + Sync {
 // ============================================================
 // standard endoints for lobby StatusRegistry manager.
 
-#[async_trait]
 pub trait StateStore: Send + Sync {
-    async fn set(
-        &self,
-        execution_id: ExecutionId,
-        status: PipelineStatus,
-    );
-    async fn get(&self, execution_id: ExecutionId) -> Option<PipelineStatus>;
-    async fn remove(&self, execution_id: ExecutionId);
+    fn set(&self, execution_id: ExecutionId, status: PipelineStatus);
+    fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus>;
+    fn remove(&self, execution_id: &ExecutionId);
 }
 
 // ============================================================
