@@ -6,10 +6,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use cortex::{artifacts::error::CortexError, artifacts::state::StatusRegistry};
-use kernel::types::{
-    AuthenticatedClient, Eip1193SendTransactionParams, ExecutionId, JsonRpcError,
-    JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse, JsonStatusResponse,
-    TxnAcceptedResult,
+use kernel::{
+    traits::StateStore,
+    types::{
+        AuthenticatedClient, Eip1193SendTransactionParams, ExecutionId, JsonRpcError,
+        JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse, JsonStatusResponse,
+        TxnAcceptedResult,
+    },
 };
 use tracing::{error, info};
 use utils::eip1559::NormalizationError;

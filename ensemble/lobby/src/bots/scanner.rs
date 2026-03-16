@@ -1,7 +1,10 @@
 use alloy::primitives::TxHash;
 use cortex::artifacts::StatusRegistry;
 use dashmap::DashMap;
-use kernel::types::{ChainId, ExecutionId, PipelineStatus, RpcProviderRegistry};
+use kernel::{
+    traits::StateStore,
+    types::{ChainId, ExecutionId, PipelineStatus, RpcProviderRegistry},
+};
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::time::interval;
@@ -71,6 +74,7 @@ async fn scanner_handler(
 
     // Process each chain concurrently
     let mut handles = Vec::new();
+    
     for entry in by_chain_id.into_iter() {
         let (chain_id, txns) = entry;
         let db = db.clone();
@@ -205,6 +209,7 @@ async fn process_txn(
 }
 
 // ============================================================
+// state update helper functions
 
 async fn update_db(
     db: &PgPool,
