@@ -1,9 +1,10 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use dashmap::DashMap;
-use kernel::types::{ExecutionId, PipelineStatus};
+use kernel::{
+    traits::StateStore,
+    types::{ExecutionId, PipelineStatus},
+};
 use redis::{AsyncCommands, aio::ConnectionManager};
+use std::sync::Arc;
 use uuid::Uuid;
 
 // ============================================================
@@ -115,3 +116,109 @@ impl StatusRegistry {
 
 // ============================================================
 // StateStore implimentaion
+
+impl StateStore for StatusRegistry {
+    /// Record or overwrite the status of a pipeline.
+    ///
+    /// Writes to both:
+    /// 1. DashMap (immediate, in-memory)
+    /// 2. Redis (async, ~1-2ms, with 1-hour TTL)
+    ///
+    /// **Error handling:**
+    /// - DashMap write always succeeds (in-memory)
+    /// - Redis write failure is logged as ERROR but does NOT crash
+    /// - In-memory state remains valid even if Redis write fails
+    ///
+    /// **TTL:** 1 hour (auto-cleanup of completed transactions)
+    fn set(&self, execution_id: ExecutionId, status: PipelineStatus) {
+        // update in-memory state
+        self.status_book.insert(execution_id, status.clone());
+
+        // persist to Redis (non-blocking)
+        let mut redis = self.redis.clone();
+        let id = execution_id;
+
+        tokio::spawn(async move {
+            let key = format!("lobby:status:{}", id);
+
+            //serialize status to json
+            let value = match serde_json::to_string(&status) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(%id, "StatusRegistry: status serializing failed");
+                    return;
+                }
+            };
+
+            let result: Result<(), redis::RedisError> = redis.set_ex(&key, value, 3600).await;
+
+            if let Err(e) = result {
+                tracing::error!(%id, %e, "redis: write operation failed")
+            }
+        });
+    }
+
+    /// Retrieve the current pipeline status (reads from DashMap only, no network I/O).
+    ///
+    /// # Returns
+    /// - `Some(status)` if execution_id exists in memory
+    /// - `None` if execution_id is unknown (never submitted or TTL expired)
+    fn get(&self, execution_id: &ExecutionId) -> Option<PipelineStatus> {
+        self.status_book
+            .get(execution_id)
+            .map(|status| status.clone())
+    }
+
+    /// Explicitly delete an entry from both DashMap and Redis.
+    ///
+    /// **Use case:** Cleanup task to evict old `Confirmed`/`Failed` entries.
+    ///
+    /// **Error handling:** Redis delete failure is logged but does NOT crash.
+    fn remove(&self, execution_id: &ExecutionId) {
+        // remove from memory DashMap
+        self.status_book.remove(execution_id);
+
+        // remove from Redis (non - blocking)
+        let mut redis = self.redis.clone();
+        let id = *execution_id;
+
+        tokio::spawn(async move {
+            let key = format!("lobby:state:{}", id);
+            let result: Result<(), redis::RedisError> = redis.del(&key).await;
+
+            if let Err(e) = result {
+                tracing::error!(%id, %e, "redis: status delete failed");
+            }
+        });
+    }
+}
+
+// ============================================================
+// helper functions
+
+impl StatusRegistry {
+    /// Get the approximate number of entries in the registry.
+    ///
+    /// **Note:** Reads from DashMap (in-memory count), not Redis.
+    pub fn len(&self) -> usize {
+        self.status_book.len()
+    }
+
+    /// Check if the registry is empty.
+    pub fn is_empty(&self) -> bool {
+        self.status_book.is_empty()
+    }
+
+    /// Get Redis connection statistics (for monitoring).
+    ///
+    /// **Use case:** Health checks, metrics collection.
+    pub async fn redis_info(&self) -> Result<String, redis::RedisError> {
+        let mut redis = self.redis.clone();
+        redis::cmd("INFO")
+            .arg("stats")
+            .query_async(&mut redis)
+            .await
+    }
+}
+
+// ============================================================
