@@ -30,7 +30,7 @@ use crate::{
 use actors::{broadcast, nonce, relayhost, sign, validator};
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
-    types::{ClientConfig, Eip1559Transaction, ExecutionId, RpcProviderRegistry},
+    types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus, RpcProviderRegistry},
 };
 use sqlx::PgPool;
 use std::{path::PathBuf, sync::Arc};
@@ -105,7 +105,7 @@ impl CortextHandle {
         );
 
         orch.status_registry
-            .set(execution_id, state::PipelineStatus::PermitAquired);
+            .set(execution_id, PipelineStatus::PermitAquired);
 
         // ============================================================
         // building the pipeline context

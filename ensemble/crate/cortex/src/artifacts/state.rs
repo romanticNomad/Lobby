@@ -1,7 +1,6 @@
 use dashmap::DashMap;
-use kernel::types::{ExecutionId, TxNonce};
+use kernel::types::{ExecutionId, PipelineStatus};
 use rocksdb::{DB, Options};
-use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
 use uuid::Uuid;
 
@@ -191,60 +190,6 @@ impl StatusRegistry {
 
         Ok(total_size)
     }
-}
-
-// ============================================================
-// tracking pipeline status
-
-/// Coarse-grained lifecycle states that the orchestrator pipeline advances
-/// through for each `ExecutionId`.
-///
-/// The status is written optimistically (no locking beyond DashMap's per-shard
-/// locks) — readers may briefly see a stale value, but the transitions are
-/// monotonic (states only advance forward or to Failed).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "status")]
-pub enum PipelineStatus {
-    /// pipeline semaphore permit aquired
-    PermitAquired,
-    /// request has been accepted and persisted by RelayHost
-    Accepted,
-    /// nonce successfully reserved, awaiting signer
-    NonceReserved,
-    /// transaction signed, awaiting broadcaster
-    Signed,
-    /// transaction broadcasted, awaiting on-chain confirmation
-    Broadcasted {
-        #[serde(rename = "tx_hash")]
-        tx_hash: String,
-    },
-    /// Validator confirmed >=1 block confirmation
-    Confirmed {
-        #[serde(rename = "tx_hash")]
-        tx_hash: String,
-    },
-    /// Pipeline failed at the given stage; the nonce has been released where
-    /// applicable.
-    Failed { stage: String, reason: String },
-    /// Syncing nonce on db with the on-chain nonce
-    /// retrieved using the given rpc_endpoint
-    NonceMismatchDetected {
-        nonce_on_chain: TxNonce,
-        attempted_nonce: TxNonce,
-    },
-    /// Validator timed out without confirmation (due to high nonce),
-    /// such situation might be created due to nonce gaps
-    ValidatorTimedOut { message: String },
-}
-
-// ============================================================
-// json status reponse
-
-#[derive(Debug, Serialize)]
-pub struct JsonStatusResponse {
-    pub execution_id: String,
-    #[serde(flatten)]
-    pub status: PipelineStatus,
 }
 
 // ============================================================

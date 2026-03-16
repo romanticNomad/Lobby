@@ -3,12 +3,13 @@ use crate::{
     artifacts::error::CortexError,
     artifacts::pool::{ByAddress, ByChainId, ByExecutionId, ShardPool},
     artifacts::retry::{RetryDecision, retry_with_backoff},
-    state::{PipelineStatus, StatusRegistry},
+    state::StatusRegistry,
 };
 use kernel::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
     types::{
-        BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, NonceState, ValidatorOutcome,
+        BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, NonceState, PipelineStatus,
+        ValidatorOutcome,
     },
 };
 use std::sync::Arc;

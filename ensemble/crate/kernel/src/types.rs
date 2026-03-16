@@ -125,6 +125,13 @@ pub struct TxnAcceptedResult {
     pub status: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct JsonStatusResponse {
+    pub execution_id: String,
+    #[serde(flatten)]
+    pub status: PipelineStatus,
+}
+
 // ============================================================
 // TxHash lobby wrapper for B256
 
@@ -214,6 +221,21 @@ impl fmt::Display for TxNonce {
     }
 }
 
+// ============================================================
+
+#[derive(Clone, Debug)]
+pub struct SignedTransaction {
+    pub rlp: Bytes,
+    pub with_nonce: TxNonce,
+}
+
+// ============================================================
+
+#[derive(Clone, Debug)]
+pub struct BroadcastOutcome {
+    pub txn_hash: TxHash,
+}
+
 // =========================================================
 // nonce state type mapping for sqlx <-> Postgres
 
@@ -238,18 +260,47 @@ pub enum SignState {
 }
 
 // ============================================================
+// tracking pipeline status
 
-#[derive(Clone, Debug)]
-pub struct SignedTransaction {
-    pub rlp: Bytes,
-    pub with_nonce: TxNonce,
-}
-
-// ============================================================
-
-#[derive(Clone, Debug)]
-pub struct BroadcastOutcome {
-    pub txn_hash: TxHash,
+/// Coarse-grained lifecycle states that the orchestrator pipeline advances
+/// through for each `ExecutionId`.
+///
+/// The status is written optimistically (no locking beyond DashMap's per-shard
+/// locks) — readers may briefly see a stale value, but the transitions are
+/// monotonic (states only advance forward or to Failed).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum PipelineStatus {
+    /// pipeline semaphore permit aquired
+    PermitAquired,
+    /// request has been accepted and persisted by RelayHost
+    Accepted,
+    /// nonce successfully reserved, awaiting signer
+    NonceReserved,
+    /// transaction signed, awaiting broadcaster
+    Signed,
+    /// transaction broadcasted, awaiting on-chain confirmation
+    Broadcasted {
+        #[serde(rename = "tx_hash")]
+        tx_hash: String,
+    },
+    /// Validator confirmed >=1 block confirmation
+    Confirmed {
+        #[serde(rename = "tx_hash")]
+        tx_hash: String,
+    },
+    /// Pipeline failed at the given stage; the nonce has been released where
+    /// applicable.
+    Failed { stage: String, reason: String },
+    /// Syncing nonce on db with the on-chain nonce
+    /// retrieved using the given rpc_endpoint
+    NonceMismatchDetected {
+        nonce_on_chain: TxNonce,
+        attempted_nonce: TxNonce,
+    },
+    /// Validator timed out without confirmation (due to high nonce),
+    /// such situation might be created due to nonce gaps
+    ValidatorTimedOut { message: String },
 }
 
 // ============================================================
@@ -266,6 +317,22 @@ pub enum ValidatorOutcome {
 
 // ============================================================
 // errors for different execution levels
+
+#[derive(Debug, Error)]
+pub enum StoreError {
+    /// Serialize / Deserialize erorr
+    #[error("Cannonicalizing failiure: {0}")]
+    CannonicalizeFailed(String),
+    /// Internal Error
+    #[error("Internal errro: {0}")]
+    InternalError(String),
+    /// Data fetch failed
+    #[error("Invalid key: {0}")]
+    InvaideKey(String),
+    /// I/O error
+    #[error("I/O operation failed: {0}")]
+    IOFailed(String),
+}
 
 #[derive(Debug, Error)]
 pub enum RelayHostError {

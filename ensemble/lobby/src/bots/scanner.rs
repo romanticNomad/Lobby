@@ -1,7 +1,7 @@
 use alloy::primitives::TxHash;
-use cortex::artifacts::{PipelineStatus, StatusRegistry};
+use cortex::artifacts::StatusRegistry;
 use dashmap::DashMap;
-use kernel::types::{ChainId, ExecutionId, RpcProviderRegistry};
+use kernel::types::{ChainId, ExecutionId, PipelineStatus, RpcProviderRegistry};
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::time::interval;
