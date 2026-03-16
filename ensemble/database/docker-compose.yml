@@ -17,10 +17,48 @@ services:
       - lobby_pgdata:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lobby -d lobby"]
+      test: ["CMD-SHELL", "pg_isready -U lobby -d lobby-db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: lobby-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - lobby_redis_data:/data
+
+    # Enable AOF persistence (crash-safe)
+    command: redis-server --appendonly yes --appendfsync everysec
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Optional: RedisInsight (GUI for debugging Redis)
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: lobby-redis-insight
+    restart: unless-stopped
+    
+    ports:
+      - "8001:8001"
+    
+    volumes:
+      - lobby_redisinsight_data:/db
+    
+    depends_on:
+      - redis
+
 volumes:
   lobby_pgdata:
+  lobby_redis_data:
+  lobby_redisinsight_data:
+  
