@@ -44,7 +44,7 @@ impl StatusRegistry {
     /// - Scans all `lobby:status:*` keys in Redis
     /// - Loads them into DashMap for fast local reads
     /// - Logs recovery stats (entry count, elapsed time)
-    pub async fn new(redis_url: &'static str) -> Result<Self, redis::RedisError> {
+    pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
         let start = std::time::Instant::now();
 
         //create redis client
@@ -145,7 +145,7 @@ impl StateStore for StatusRegistry {
             let value = match serde_json::to_string(&status) {
                 Ok(v) => v,
                 Err(e) => {
-                    tracing::error!(%id, "StatusRegistry: status serializing failed");
+                    tracing::error!(%id, %e,"StatusRegistry: status serializing failed");
                     return;
                 }
             };

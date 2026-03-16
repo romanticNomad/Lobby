@@ -6,7 +6,7 @@ use crate::{
     state::StatusRegistry,
 };
 use kernel::{
-    traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
+    traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
     types::{
         BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, NonceState, PipelineStatus,
         ValidatorOutcome,
@@ -93,7 +93,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
     async move {
         // Start timing for this pipeline execution
         let start = Instant::now();
-
         tracing::info!(elapsed_ms = start.elapsed().as_millis(), "Pipeline started");
 
         // ============================================================
@@ -198,8 +197,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // getting the broadcast handle from shard pool (sequenced by chain_id))
         let broadcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
-
-        // Guard against infinite retry loop
         let mut nonce_retry_attempted = false;
 
         let outcome = loop {

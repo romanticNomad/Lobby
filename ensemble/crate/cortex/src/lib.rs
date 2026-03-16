@@ -29,11 +29,11 @@ use crate::{
 };
 use actors::{broadcast, nonce, relayhost, sign, validator};
 use kernel::{
-    traits::{Broadcaster, IntentRelay, NonceManager, Signer, Validator},
+    traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
     types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus, RpcProviderRegistry},
 };
 use sqlx::PgPool;
-use std::{path::PathBuf, sync::Arc};
+use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
 
 // ============================================================
@@ -149,7 +149,7 @@ impl CortextHandle {
 
 /// Spawn all actor shards and assemble the `OrchestratorHandle`.
 /// panics if number of shards in config = 0.
-pub fn spawn_cortex(
+pub async fn spawn_cortex(
     db: PgPool,
     provider: RpcProviderRegistry,
     config: CortexConfig,
@@ -238,15 +238,15 @@ pub fn spawn_cortex(
 
     // ============================================================
     // pipeline semaphore
-
     let pipeline_semaphore = Arc::new(Semaphore::new(config.pipeline_concurrency));
 
     // ============================================================
     // initialize StatusRegistry
 
-    let db_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../logs/status.db");
-    let status_registry =
-        StatusRegistry::new(db_path).expect("rocksdb: failed to boot up StatusREgistry");
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+    let status_registry = StatusRegistry::new(&redis_url)
+        .await
+        .expect("StatusRegistry: failed to connect to Redis server");
 
     // ============================================================
     // returning final cortex handle.
