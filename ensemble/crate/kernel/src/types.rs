@@ -319,22 +319,6 @@ pub enum ValidatorOutcome {
 // errors for different execution levels
 
 #[derive(Debug, Error)]
-pub enum StoreError {
-    /// Serialize / Deserialize erorr
-    #[error("Cannonicalizing failiure: {0}")]
-    CannonicalizeFailed(String),
-    /// Internal Error
-    #[error("Internal errro: {0}")]
-    InternalError(String),
-    /// Data fetch failed
-    #[error("Invalid key: {0}")]
-    InvaideKey(String),
-    /// I/O error
-    #[error("I/O operation failed: {0}")]
-    IOFailed(String),
-}
-
-#[derive(Debug, Error)]
 pub enum RelayHostError {
     /// Transaction was rejected by RelayHost validation (client-facing failure).
     #[error("Validation Failed {0}")]

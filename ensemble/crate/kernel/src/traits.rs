@@ -98,9 +98,9 @@ pub trait StateStore: Send + Sync {
         &self,
         execution_id: ExecutionId,
         status: PipelineStatus,
-    ) -> Result<(), StoreError>;
-    async fn get(&self, execution_id: ExecutionId) -> Result<Option<PipelineStatus>, StoreError>;
-    async fn remove(&self, execution_id: ExecutionId) -> Result<(), StoreError>;
+    );
+    async fn get(&self, execution_id: ExecutionId) -> Option<PipelineStatus>;
+    async fn remove(&self, execution_id: ExecutionId);
 }
 
 // ============================================================
