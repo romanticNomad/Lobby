@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
     
     ports:
-      - "8001:8001"
+      - "5540:5540"
     
     volumes:
       - lobby_redisinsight_data:/db
