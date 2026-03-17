@@ -281,7 +281,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                     // Step 1: Release the incorrect nonce and revert sign status.
 
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
+                    consume_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
                     revert_sign(&sign_handle, execution_id, &ctx.retry_config, &start).await;
                     tracing::debug!(
                         elapsed_ms = start.elapsed().as_millis(),
