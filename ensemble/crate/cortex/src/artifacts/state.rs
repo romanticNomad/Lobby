@@ -84,7 +84,7 @@ impl StatusRegistry {
                                     }
 
                                     Err(e) => {
-                                        tracing::error!(%execution_id, %e, "redis: status deserialize failed");
+                                        tracing::error!(%execution_id, %e, "redis: status deserializing failed");
                                     }
                                 }
                             }
