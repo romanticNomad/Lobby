@@ -283,6 +283,7 @@ pub enum PipelineStatus {
     Broadcasted {
         #[serde(rename = "tx_hash")]
         tx_hash: String,
+        messege: String
     },
     /// Validator confirmed >=1 block confirmation
     ConfirmedOnChain {
