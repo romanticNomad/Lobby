@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18.3
     container_name: lobby-postgres
     restart: unless-stopped
 
@@ -23,7 +23,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.6-alpine
     container_name: lobby-redis
     restart: unless-stopped
 
@@ -33,7 +33,7 @@ services:
     volumes:
       - lobby_redis_data:/data
 
-    # Enable AOF persistence (crash-safe)
+    # AOF persistence (crash-safe)
     command: redis-server --appendonly yes --appendfsync everysec
 
     healthcheck:
@@ -42,9 +42,9 @@ services:
       timeout: 3s
       retries: 5
 
-  # Optional: RedisInsight (GUI for debugging Redis)
+  # RedisInsight (GUI for debugging Redis)
   redis-insight:
-    image: redislabs/redisinsight:latest
+    image: redis/redisinsight:latest
     container_name: lobby-redis-insight
     restart: unless-stopped
     
@@ -52,7 +52,7 @@ services:
       - "5540:5540"
     
     volumes:
-      - lobby_redisinsight_data:/db
+      - lobby_redisinsight_data:/data
     
     depends_on:
       - redis
@@ -61,4 +61,3 @@ volumes:
   lobby_pgdata:
   lobby_redis_data:
   lobby_redisinsight_data:
-  
