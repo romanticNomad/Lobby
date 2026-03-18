@@ -285,7 +285,7 @@ pub enum PipelineStatus {
         tx_hash: String,
     },
     /// Validator confirmed >=1 block confirmation
-    Confirmed {
+    ConfirmedOnChain {
         #[serde(rename = "tx_hash")]
         tx_hash: String,
     },

@@ -49,13 +49,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    tracing::info!("lobby bootup sequence active");
+    tracing::debug!("lobby bootup sequence active");
 
     // ============================================================
     // environment
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let server_addr: SocketAddr = env::var("SERVER_ADDR")
+    let address: SocketAddr = env::var("SERVER_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:3000".to_string())
         .parse()
         .expect("SERVER_ADDR is not a valid socket address");
@@ -95,15 +95,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let custody_keys_count = export_custody_key_count();
     tracing::info!("custody accounts loaded: {custody_keys_count}");
 
-    //cortex handler
+    // cortex handler
     let config = CortexConfig::from_env()?;
     let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry.clone(), config).await;
 
-    // status registry -> fails if RockDB failed to boot up
+    // status registry
     let status_registry = cortex_handler.status_registry();
 
     // ============================================================
-    // bots
+    // sweeper bot -> checks 'reserved' transaction with expired 5 min lease and marks them 'released'.
+    // scanner bot -> checks RPC for block inclusion status of 'timed_out' transactions.
 
     spawn_sweeper_bot(db_pool.clone());
     spawn_scanner_bot(
@@ -112,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rpc_registry.clone(),
     );
 
-    tracing::info!("bots spawned, monitoring status");
+    tracing::info!("bots spawned: monitoring status");
 
     // ============================================================
     // axum app
@@ -132,8 +133,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             auth_middleware,
         ));
 
-    tracing::info!(%server_addr, "lobby listening");
-    let listner = tokio::net::TcpListener::bind(server_addr).await?;
+    tracing::info!(%address, "lobby listening at:");
+    let listner = tokio::net::TcpListener::bind(address).await?;
+
     axum::serve(listner, app).await?;
 
     Ok(())

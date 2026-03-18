@@ -45,7 +45,7 @@ impl StatusRegistry {
     /// - Loads them into DashMap for fast local reads
     /// - Logs recovery stats (entry count, elapsed time)
     pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         //create redis client
         let client = redis::Client::open(redis_url)?;
@@ -55,7 +55,7 @@ impl StatusRegistry {
 
         // load existing entries from redis to dashmap
         let status_book = Arc::new(DashMap::new());
-        let mut loaded_count = 0;
+        let mut artifacts_count = 0;
         let pattern = "lobby:status:*";
         let mut cursor: u64 = 0;
 
@@ -80,7 +80,7 @@ impl StatusRegistry {
                                 match serde_json::from_str::<PipelineStatus>(&json) {
                                     Ok(status) => {
                                         status_book.insert(execution_id, status);
-                                        loaded_count += 1;
+                                        artifacts_count += 1;
                                     }
 
                                     Err(e) => {
@@ -103,11 +103,11 @@ impl StatusRegistry {
             }
         }
 
-        let elapsed = start.elapsed();
+        // let elapsed = start.elapsed();
         tracing::info!(
-            loaded_count,
-            elapsed_ms = elapsed.as_millis(),
-            "StatusRegistry: loaded"
+            artifacts_count,
+            // elapsed_ms = elapsed.as_millis(),
+            "StatusRegistry loaded"
         );
 
         Ok(Self { status_book, redis })

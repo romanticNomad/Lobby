@@ -246,7 +246,7 @@ async fn update_db(
 
 fn update_state(state: &StatusRegistry, txn: &TimedOutTransaction, new_state: &'static str) {
     let new_state = match new_state {
-        "included" => PipelineStatus::Confirmed {
+        "included" => PipelineStatus::ConfirmedOnChain {
             tx_hash: format!("{:?}", txn.txn_hash),
         },
         "not_included" => PipelineStatus::Failed {

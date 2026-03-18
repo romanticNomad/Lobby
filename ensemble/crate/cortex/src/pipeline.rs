@@ -396,7 +396,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         tracing::info!(
             elapsed_ms = start.elapsed().as_millis(),
             tx_hash = %format!("{:#x}", tx_hash),
-            "transaction broadcasted"
+            "transaction broadcasted, waiting for confirmation on-chain:"
         );
 
         // ============================================================
@@ -423,7 +423,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                 ctx.status.set(
                     execution_id,
-                    PipelineStatus::Confirmed {
+                    PipelineStatus::ConfirmedOnChain {
                         tx_hash: format!("{tx_hash:#x}"),
                     },
                 );
