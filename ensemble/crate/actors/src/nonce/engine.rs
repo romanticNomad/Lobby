@@ -76,61 +76,51 @@ impl NonceEngine {
 
         let candidate = sqlx::query!(
             r#"
+            WITH consumed_nonce AS (
+                UPDATE nonce.nonce_assignments
+                SET state = 'consumed'
+                WHERE (execution_id, revision) = (
+                    SELECT execution_id, revision
+                    FROM nonce.nonce_assignments
+                    WHERE chain_id = $2
+                    AND from_address = $3
+                    AND state = 'released'
+                    ORDER BY nonce, execution_id, revision DESC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING nonce
+            ),
+            max_nonce AS (
+                SELECT COALESCE(MAX(nonce), -1) as nonce
+                FROM nonce.nonce_assignments
+                WHERE chain_id = $2
+                AND from_address = $3
+                AND state IN ('reserved', 'finalized')
+            )
             INSERT INTO nonce.nonce_assignments
                 (execution_id, revision, chain_id, from_address, nonce, state)
             SELECT
                 $1,
                 COALESCE(
-                    (SELECT MAX(revision)
-                    FROM nonce.nonce_assignments
-                    WHERE execution_id = $1),
+                    (SELECT MAX(revision) FROM nonce.nonce_assignments WHERE execution_id = $1),
                     0
                 ) + 1,
                 $2,
                 $3,
                 COALESCE(
-                    -- Priority 1: Released nonces
-                    (SELECT MIN(nonce)
-                    FROM (
-                        SELECT DISTINCT ON (execution_id) 
-                            nonce,
-                            state
-                        FROM nonce.nonce_assignments
-                        WHERE chain_id = $2
-                        AND from_address = $3
-                        ORDER BY execution_id, revision DESC
-                    ) latest_revisions
-                    WHERE state = 'released'),
-
-                    -- Priority 2: Next sequential nonce
-                    (SELECT MAX(nonce)
-                    FROM (
-                        SELECT DISTINCT ON (execution_id)
-                            nonce,
-                            state
-                        FROM nonce.nonce_assignments
-                        WHERE chain_id = $2
-                        AND from_address = $3
-                        ORDER BY execution_id, revision DESC
-                    ) latest_revisions
-                    WHERE state IN ('reserved', 'finalized')) + 1,
-
-                    -- Priority 3: First nonce
+                    (SELECT nonce FROM consumed_nonce),
+                    (SELECT nonce FROM max_nonce) + 1,
                     0
                 ),
                 'reserved'
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM nonce.nonce_assignments
-                    WHERE execution_id = $1
-                        AND (
-                            state = 'finalized'
-                            OR (
-                                state = 'reserved'
-                                AND updated_at > now() - interval '5 minutes'
-                            )
-                        )
-                )
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM nonce.nonce_assignments
+                WHERE execution_id = $1
+                AND state IN ('finalized', 'reserved')
+                AND (state = 'finalized' OR updated_at > now() - interval '5 minutes')
+            )
             RETURNING nonce, revision
             "#,
             execution_id.0.as_bytes().as_slice(),
