@@ -277,11 +277,13 @@ impl NonceEngine {
                 match existing {
                     Some(row) => {
                         // Idempotent: we already have a nonce for this execution_id
+
                         Ok(TxNonce::try_from(row.nonce)?)
                     }
                     None => {
                         // Race condition: nonce_on_chain was taken by another pipeline
                         // This is rare but possible. Fail and let orchestrator retry.
+
                         Err(LocalError::Rejected(format!(
                             "nonce {} was already reserved by another execution during sync",
                             nonce_on_chain
@@ -301,35 +303,22 @@ impl NonceEngine {
         state: NonceState,
     ) -> Result<(), LocalError> {
         match state {
-            NonceState::Finalized | NonceState::Released => {
-                // Single atomic CTE query that:
-                // 1. Updates current execution_id to new state
-                // 2. Marks any released nonce that was reused as 'consumed'
+            NonceState::Finalized | NonceState::Released | NonceState::Consumed => {
+                // Atomic update query
 
-                sqlx::query!(
+                let result = sqlx::query!(
                     r#"
-                    WITH resolve_current AS (
-                        UPDATE nonce.nonce_assignments
-                        SET state = $2
-                        WHERE (execution_id, revision) = (
-                            SELECT execution_id, revision
-                            FROM nonce.nonce_assignments
-                            WHERE execution_id = $1
-                                AND state = 'reserved'
-                            ORDER BY revision DESC
-                            LIMIT 1
-                        )
-                        RETURNING nonce, chain_id, from_address
+                    UPDATE nonce.nonce_assignments
+                    SET state = $2
+                    WHERE (execution_id, revision) = (
+                        SELECT execution_id, revision
+                        FROM nonce.nonce_assignments
+                        WHERE execution_id = $1
+                            AND state = 'reserved'
+                        ORDER BY revision DESC
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
                     )
-                    UPDATE nonce.nonce_assignments na
-                    SET state = 'consumed'
-                    FROM resolve_current rc
-                    WHERE na.chain_id = rc.chain_id
-                        AND na.from_address = rc.from_address
-                        AND na.nonce = rc.nonce
-                        AND na.execution_id != $1
-                        AND na.state = 'released'
-                        AND $2 = 'finalized'
                     "#,
                     execution_id.0.as_bytes().as_slice(),
                     state as NonceState
@@ -340,67 +329,10 @@ impl NonceEngine {
 
                 // Verify the operation succeeded
 
-                let latest = sqlx::query!(
-                    r#"
-                    SELECT state as "state: NonceState"
-                    FROM nonce.nonce_assignments
-                    WHERE execution_id = $1
-                    ORDER BY revision DESC
-                    LIMIT 1
-                    "#,
-                    execution_id.0.as_bytes().as_slice()
-                )
-                .fetch_optional(&self.db)
-                .await
-                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
-
-                match latest {
-                    Some(row) => {
-                        if row.state == state {
-                            Ok(())
-                        } else if matches!(
-                            row.state,
-                            NonceState::Finalized | NonceState::Released | NonceState::Consumed
-                        ) {
-                            Err(LocalError::Internal(format!(
-                                "execution_id already resolved to {:?}, cannot transition to {:?}",
-                                row.state, state
-                            )))
-                        } else {
-                            Err(LocalError::Invariant(
-                                "expected reserved state but UPDATE failed".to_string(),
-                            ))
-                        }
-                    }
-                    None => Err(LocalError::Invariant("invalid execution_id".to_string())),
-                }
-            }
-
-            NonceState::Consumed => {
-                let result = sqlx::query!(
-                    r#"
-                    UPDATE nonce.nonce_assignments
-                    SET state = 'consumed'
-                    WHERE (execution_id, revision) = (
-                        SELECT execution_id, revision
-                        FROM nonce.nonce_assignments
-                        WHERE execution_id = $1
-                            AND state = 'reserved'
-                        ORDER BY revision DESC
-                        LIMIT 1
-                        FOR update SKIP LOCKED
-                    )
-                    "#,
-                    execution_id.0.as_bytes().as_slice()
-                )
-                .execute(&self.db)
-                .await
-                .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
-
                 if result.rows_affected() > 0 {
                     Ok(())
                 } else {
-                    let existing = sqlx::query!(
+                    let latest = sqlx::query!(
                         r#"
                         SELECT state as "state: NonceState"
                         FROM nonce.nonce_assignments
@@ -414,21 +346,25 @@ impl NonceEngine {
                     .await
                     .map_err(|e| LocalError::DatabaseError(e.to_string()))?;
 
-                    match existing {
+                    match latest {
                         Some(row) => {
-                            if matches!(row.state, NonceState::Finalized) {
-                                Err(LocalError::Internal("txn already finalized".to_string()))
-                            } else if matches!(row.state, NonceState::Consumed) {
-                                Err(LocalError::Internal(
-                                    "txn already set to consumed".to_string(),
-                                ))
+                            if row.state == state {
+                                Ok(())
+                            } else if matches!(
+                                row.state,
+                                NonceState::Finalized | NonceState::Released | NonceState::Consumed
+                            ) {
+                                Err(LocalError::Internal(format!(
+                                    "execution_id already resolved to {:?}, cannot transition to {:?}",
+                                    row.state, state
+                                )))
                             } else {
-                                Err(LocalError::Internal(
-                                    "state remained 'reserved'".to_string(),
+                                Err(LocalError::Invariant(
+                                    "expected reserved state but UPDATE failed".to_string(),
                                 ))
                             }
                         }
-                        None => Err(LocalError::Internal("invalid execution_id".to_string())),
+                        None => Err(LocalError::Invariant("invalid execution_id".to_string())),
                     }
                 }
             }
