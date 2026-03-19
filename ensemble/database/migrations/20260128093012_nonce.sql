@@ -25,6 +25,10 @@ CREATE UNIQUE INDEX uniq_active_nonce
 ON nonce.nonce_assignments (chain_id, from_address, nonce)
 WHERE state IN ('reserved', 'finalized');
 
+-- special index for selecting 'released' nonce
+CREATE INDEX idx_nonce_released ON nonce.nonce_assignments 
+(chain_id, from_address, nonce) WHERE state = 'released';
+
 -- Index for efficient revision lookups
 CREATE INDEX idx_nonce_latest_revision 
 ON nonce.nonce_assignments (execution_id, revision DESC);
