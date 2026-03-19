@@ -391,7 +391,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             execution_id,
             PipelineStatus::Broadcasted {
                 tx_hash: format!("{tx_hash:#x}"),
-                messege: String::from("Waiting for validation on-chain")
+                messege: String::from("Waiting for validation on-chain"),
             },
         );
         tracing::info!(
