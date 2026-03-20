@@ -863,7 +863,7 @@ Submits a transaction for processing. Returns immediately with an `execution_id`
 
 Lobby expects a JSON-RPC 2.0 envelope with `method: "eth_sendTransaction"` and one `params` entry in EIP-1193 format:
 
-```json
+```bash
 curl -X POST http://localhost:3000/v1/transactions \
   -H "Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:<from_address>" \
   -H "Content-Type: application/json" \
