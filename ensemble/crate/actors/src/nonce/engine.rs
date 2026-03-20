@@ -65,14 +65,14 @@ impl NonceEngine {
         execution_id: ExecutionId,
     ) -> Result<TxNonce, LocalError> {
         // setting types for db
-
         let chain_id_i64: i64 = chain_id
             .0
             .try_into()
             .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
 
-        // atomic INSERT with concurrency-safe nonce selection and lease locking
+        // atomic INSERT with concurrency-safe nonce selection and lease locking, 
+        // using CTE (Common Table Expression) to simultanously update released nonce.
 
         let candidate = sqlx::query!(
             r#"
@@ -109,8 +109,17 @@ impl NonceEngine {
                 $2,
                 $3,
                 COALESCE(
-                    (SELECT nonce FROM consumed_nonce),
-                    (SELECT nonce FROM max_nonce) + 1,
+                -- Priority 1: 'released' nonce
+                    (
+                    SELECT nonce
+                    FROM consumed_nonce
+                    ),
+                -- Priority 2: next sequential nonce
+                    (
+                    SELECT nonce
+                    FROM max_nonce
+                    ) + 1,
+                -- Priority 3: first nonce assignment
                     0
                 ),
                 'reserved'
@@ -118,8 +127,9 @@ impl NonceEngine {
                 SELECT 1
                 FROM nonce.nonce_assignments
                 WHERE execution_id = $1
-                AND state IN ('finalized', 'reserved')
-                AND (state = 'finalized' OR updated_at > now() - interval '5 minutes')
+                AND (state = 'finalized' 
+                    OR (state = 'reserved' AND updated_at > now() - interval '2 minutes')
+                )
             )
             RETURNING nonce, revision
             "#,
