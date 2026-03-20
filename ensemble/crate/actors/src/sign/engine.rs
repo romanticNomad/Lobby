@@ -48,6 +48,7 @@ impl SignEngine {
                     let result = self.handle_sign(from, chain_id, execution_id, txn).await;
                     let _ = reply_tx.send(result);
                 }
+
                 SignCommand::Revert {
                     execution_id,
                     reply_tx,
@@ -105,7 +106,7 @@ impl SignEngine {
                         state = 'signed'
                         OR (
                             state = 'reserved'
-                            AND updated_at > now() - interval '5 minutes'    
+                            AND updated_at > now() - interval '2 minutes'    
                         )
                     )
             )
@@ -238,6 +239,7 @@ impl SignEngine {
                         Err(LocalError::Internal("curropted state".to_string()))
                     }
                 }
+
                 None => Err(LocalError::Internal("invalid execution_id".to_string())),
             }
         }

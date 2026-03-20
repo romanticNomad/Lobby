@@ -29,6 +29,7 @@ pub fn spawn_sweeper_bot(db: PgPool) {
                         )
                     }
                 }
+
                 Err(e) => {
                     tracing::error!(
                         error = %e,
@@ -43,6 +44,8 @@ pub fn spawn_sweeper_bot(db: PgPool) {
 // ============================================================
 // helper function (handles db query)
 
+/// Queries nonce.nonce_state table to expire stale nonce rows
+/// returns the number the stale state found and their execution_id(s).
 async fn expire_states(db: &PgPool) -> Result<(usize, Vec<ExecutionId>), sqlx::Error> {
     let result = sqlx::query!(
         r#"
@@ -54,7 +57,7 @@ async fn expire_states(db: &PgPool) -> Result<(usize, Vec<ExecutionId>), sqlx::E
                 revision
             FROM nonce.nonce_assignments
             WHERE state = 'reserved'
-                AND updated_at < now() - interval '5 minutes 5 seconds'
+                AND updated_at < now() - interval '2 minutes 5 seconds'
             ORDER BY execution_id, revision DESC
             LIMIT 100
         )

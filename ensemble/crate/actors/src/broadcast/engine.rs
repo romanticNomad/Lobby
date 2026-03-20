@@ -117,7 +117,7 @@ impl BroadcastEngine {
                         state = 'submitted'
                     OR (
                         state = 'received'
-                        AND updated_at > now() - interval '5 minutes'
+                        AND updated_at > now() - interval '2 minutes'
                     )
                 )
             )

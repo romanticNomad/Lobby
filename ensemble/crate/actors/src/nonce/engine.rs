@@ -71,7 +71,7 @@ impl NonceEngine {
             .map_err(|_| LocalError::Invariant("chain_id does not fit in i64".to_string()))?;
         let from_address_bytes = &from.0.0;
 
-        // atomic INSERT with concurrency-safe nonce selection and lease locking, 
+        // atomic INSERT with concurrency-safe nonce selection and lease locking,
         // using CTE (Common Table Expression) to simultanously update released nonce.
 
         let candidate = sqlx::query!(

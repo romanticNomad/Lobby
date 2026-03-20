@@ -150,6 +150,7 @@ impl ValidatorEngine {
                     tracing::warn!(%e, "rpc errored while fetching receipt, will retry");
                     self.record_outcome(execution_id, ValidatorOutcome::NotIncluded)
                         .await?;
+
                     return Err(e);
                 }
             }
@@ -185,7 +186,9 @@ impl ValidatorEngine {
                 block_number: 0, // needs to be added to db
                 confirmations: 0,
             }),
+
             "not_included" => Some(ValidatorOutcome::NotIncluded),
+
             _ => None,
         }))
     }
@@ -222,13 +225,13 @@ impl ValidatorEngine {
                 SELECT 1
                 FROM validator.validation_requests
                 WHERE execution_id = $1
-                  AND (
-                      state IN ('included', 'not_included')
-                      OR (
-                          state = 'pending'
-                          AND updated_at > now() - interval '5 minutes'
-                      )
-                  )
+                AND (
+                    state IN ('included', 'not_included')
+                    OR (
+                        state = 'pending'
+                        AND updated_at > now() - interval '2 minutes'
+                    )
+                )
             )
             "#,
             execution_id.0.as_bytes().as_slice(),
@@ -277,6 +280,7 @@ impl ValidatorEngine {
 
         if result.rows_affected() > 0 {
             tracing::debug!(%outcome_str, "validation outcome recorded");
+
             Ok(())
         } else {
             // No rows updated - check why
