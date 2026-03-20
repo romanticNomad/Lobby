@@ -305,14 +305,19 @@ pub enum PipelineStatus {
 }
 
 // ============================================================
+// outcomes returned by validator.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidatorOutcome {
+    /// confirmation recieved from RPC
     Included {
         block_number: u64,
         confirmations: u64,
     },
+    /// RPC returns status 0, or error responce
     NotIncluded,
+    /// validator timed out
+    /// scanner_bot will poll rpc for confirmation
     Timeout,
 }
 
