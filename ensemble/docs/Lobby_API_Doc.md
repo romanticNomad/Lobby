@@ -1,8 +1,8 @@
 # Lobby Client API Documentation
 
-> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.
-
-> **Do Not** use **Lobby** for mainnet transactions. 
+> * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.  
+> * **Do Not** use **Lobby** for mainnet transactions.
+> * For `test keys` generation the user may use my evm account genration tool **[Locket](https://github.com/romanticNomad/Locket)**, the user can simply get a new account with a `cargo run` command.
 
 **Version:** 0.1.0 (Prototype)  
 **Last Updates:** March 21 2026  

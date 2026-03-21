@@ -1,14 +1,14 @@
 # Lobby Architecture Guide
 
-> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.    
+> * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.  
+> * **Do Not** use **Lobby** for mainnet transactions.
+> * For `test keys` generation the user may use my evm account genration tool **[Locket](https://github.com/romanticNomad/Locket)**, the user can simply get a new account with a `cargo run` command.
 
-> This Doc contains the architectural details of `Lobby` for API-specific documentation (request formats, error codes, rate limits), see [Lobby_API_Doc.md](Lobby_API_Doc.md).
-
-> **Do Not** use `Lobby` for mainnet transactions.  
+> This Doc contains the architectural details of `Lobby` for API-specific documentation (request formats, error codes, rate limits), see [Lobby_API_Doc](docs/Lobby_API_Doc.md).
 
 **Version:** 0.1.0 (Prototype)  
 **Last Updates:** March 21 2026  
-**Target Audience:** Contributors, maintainers, and LLMs working with the Lobby codebase
+**Target Audience:** Contributors, maintainers, and LLMs working with the Lobby codebase    
 
 ---
 
@@ -1166,7 +1166,7 @@ The response is a flat JSON object with a `status` field (snake_case tag) plus a
 
 Returns HTTP 404 if the `execution_id` is unknown or has expired from the registry. Returns HTTP 400 if the `execution_id` is not a valid UUID.
 
-> For full API semantics, error codes, and integration examples, see the separate [Lobby_API_Doc](Lobby_API_Doc.md)`.
+> For full API semantics, error codes, and integration examples, see the separate [Lobby_API_Doc](docs/Lobby_API_Doc.md)`.
 
 ---
 
