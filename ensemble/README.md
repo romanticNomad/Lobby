@@ -1,7 +1,13 @@
 # Lobby Architecture Guide
 
+> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.    
+
+> This Doc contains the architectural details of `Lobby` for API-specific documentation (request formats, error codes, rate limits), see [Lobby_API_Doc.md](Lobby_API_Doc.md).
+
+> **Do Not** use `Lobby` for mainnet transactions.  
+
 **Version:** 0.1.0 (Prototype)  
-**Last Updates:** March 20 2026  
+**Last Updates:** March 21 2026  
 **Target Audience:** Contributors, maintainers, and LLMs working with the Lobby codebase
 
 ---
@@ -25,25 +31,68 @@
 15. [Status Registry](#15-status-registry)
 16. [Security Model](#16-security-model)
 17. [Configuration Reference](#17-configuration-reference)
-18. [API Overview](#18-api-overview)
+18. [Production Consideration](#18-production-considerations)
+19. [API Overview](#19-api-overview)
+20. [Appendices](#20-appendices)
 
 ---
 
 ## 1. What is Lobby?
 
-**Lobby** is a high-throughput, custodial EVM transaction signing service designed for applications that need to submit thousands of blockchain transactions per second while maintaining strict correctness guarantees around nonce ordering, idempotency, and state consistency.
+**Lobby** is a high-performance, low-latency blockchain transaction signing service designed for developers who need reliable, concurrent transaction processing at scale.
 
-Lobby treats transaction submission as a **multi-stage pipeline** where each stage is owned by a dedicated **actor** — a long-lived asynchronous task that processes requests sequentially and maintains exclusive ownership of mutable state. Actors communicate via typed message passing (Tokio mpsc channels) and persist state transitions to PostgreSQL with full audit trails.
+### Key Features
 
-The clients submit an EIP-1193 `eth_sendTransaction` requests over HTTP; Lobby assigns nonces, signs, broadcasts to the RPC node, and confirms on-chain inclusion — all in the background. The client receives an `execution_id` immediately and polls a status endpoint until the transaction is confirmed or failed.
+- **Sub-second internal processing** — Nonce assignment and signing typically complete in < 1 second
+- **Concurrent pipeline architecture** — Process thousands of transactions simultaneously via actor-based sharding
+- **Automatic recovery** — Built-in retry logic for transient failures, nonce mismatch detection, and stale nonce cleanup
+- **Multi-chain support** — Single API for Ethereum mainnet, Polygon, Arbitrum, and testnets
+- **Real-time status tracking** — Poll transaction progress from submission to on-chain confirmation
 
-**Key guarantees:**
-- Designed to handle over 1000 concurrent transaction pipelines
-- Nonce ordering is correct even under high concurrency across the same address
-- Every state transition is recorded in PostgreSQL with a full revision history
-- Duplicate submissions (same `execution_id`) are safely deduplicated
-- Failed transactions release their nonce reservation so the sequence is not blocked
+### Use Cases
 
+- **DApp backends** — Offload transaction signing and nonce management from your application
+- **MEV bots** — Low-latency submission for time-sensitive arbitrage and liquidation transactions
+- **Batch operations** — Process large volumes of transactions (airdrops, payroll, etc.) with automatic nonce sequencing
+- **Multi-chain services** — Unified API for cross-chain transaction submission
+
+### Design Philosophy
+
+Lobby is designed around three core principles:
+
+1. **Reliability over speed** — Every transaction is tracked end-to-end with automatic failure recovery
+2. **Transparency** — Detailed status updates at every pipeline stage
+3. **Simplicity** — Clean REST API with standard EIP-1193 request format
+
+### Pipeline Stages
+
+Every transaction submitted to Lobby flows through a five-stage pipeline:
+
+```
+┌─────────────┐
+│   Client    │
+│   Submit    │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    LOBBY PIPELINE                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. RelayHost        → Validate & persist transaction       │
+│  2. Nonce Reserve    → Assign sequential nonce              │
+│  3. Sign             → Generate EIP-1559 signature          │
+│  4. Broadcast        → Submit to blockchain RPC             │
+│  5. Validator        → Confirm on-chain inclusion           │
+│                                                             │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────┐
+│  Confirmed  │
+│  or Failed  │
+└─────────────┘
+```
 ---
 
 ## 2. The Actor Model
@@ -740,16 +789,60 @@ pub enum PipelineStatus {
     Failed { stage: String, reason: String },
 }
 ```
+### Status State Machine
 
-Status transitions are strictly forward (or to `Failed`). The pipeline never moves a status backward.
-
+```
+                    ┌──────────────────┐
+                    │  permit_acquired │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │     accepted     │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │  nonce_reserved  │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │      signed      │
+                    └────────┬─────────┘
+                             │
+                             ▼
+              ┌──────────────┴─────────────┐
+              │                            │
+              ▼                            ▼
+  ┌──────────────────────┐      ┌──────────────────────┐
+  │ nonce_mismatch_      │      │     broadcasted      │
+  │     detected         │      │                      │
+  └──────────┬───────────┘      └──────────┬───────────┘
+             │                             │
+             │ (auto-recovery              │
+             │     steps)                  │
+             │                             ▼
+             └─────────────────► ┌──────────────────────┐
+                                 │  confirmed_on_chain  │ ✓
+                                 └──────────────────────┘
+                                           │
+                         ┌─────────────────┴─────────────────┐
+                         │                                   │
+                         ▼                                   ▼
+                ┌────────────────┐                     ┌──────────────┐
+                │    failed      │                     │   Validator  │
+                │ node-rejection │                     │   timed-out  │
+                └────────────────┘                     └──────────────┘
+                       ✗                                      ⏳
+```
 ---
 
 ## 16. Security Model
 
 ### Current Prototype
 
-Private keys are stored in plaintext in `test_keys.json` and held unencrypted in memory by the `JsonPolicyEngine`. **This is only appropriate for testnet accounts and local development.** The file is `.gitignore`d but must be manually managed by the developer.
+> Private keys are stored in plaintext in `test_keys.json` and held unencrypted in memory by the `JsonPolicyEngine`. **This is only appropriate for testnet accounts and local development.** The file is `.gitignore`d but must be manually managed by the developer.
 
 API keys are stored in environment variables in plaintext. There is no rotation, expiry, or encryption.
 
@@ -853,11 +946,169 @@ The `from_address` in an API key must correspond to an address in `test_keys.jso
 
 ---
 
-## 18. API Overview
+## 18. Production Considerations
+
+### 18.1 Security Best Practices
+
+**API Key Management:**
+- **Never commit API keys to version control** — Use environment variables or secret management services (AWS Secrets Manager, HashiCorp Vault, etc.)
+- **Rotate keys periodically** — Lobby operators should provide key rotation mechanisms
+- **Use separate keys per environment** — Different keys for dev, staging, and production
+- **Monitor key usage** — Track which keys are making requests (future Lobby feature)
+
+**Private Key Custody:**
+
+> ⚠️ **Critical:** The current `JsonPolicyEngine` stores private keys in plaintext JSON files. This is **acceptable only for local development**.
+
+Production deployments **must** use:
+- **Hardware Security Modules (HSM)** — Dedicated cryptographic hardware
+- **Cloud KMS** — AWS KMS, Google Cloud KMS, Azure Key Vault
+- **Secure enclaves** — Intel SGX, ARM TrustZone
+
+Future Lobby versions will support pluggable key custody backends.
+
+---
+
+### 18.2 Rate Limiting & Backpressure
+
+**Pipeline Semaphore:**
+
+Lobby enforces concurrency limits via a semaphore (default: 17 concurrent pipelines). If this limit is exceeded:
+
+```json
+{
+  "error": {
+    "code": -32603,
+    "message": "pipeline semaphore timed out after 5000ms — server is overloaded"
+  }
+}
+```
+
+**Client-side response:**
+- Return `HTTP 429 Too Many Requests` to your end users
+- Implement exponential backoff before retrying
+- Consider implementing client-side request queuing
+
+**Production tuning:**
+
+Adjust semaphore size via environment variable:
+```bash
+PIPELINE_CONCURRENCY=50  # Allow 50 concurrent transactions
+```
+
+**Capacity planning:**
+
+Lobby's throughput depends on:
+- **RPC provider limits** — Alchemy/Infura typically cap at 10-50 req/s per tier
+- **Database connections** — PostgreSQL connection pool (default: 17)
+- **Actor shard count** — More shards = higher parallelism (diminishing returns after ~32)
+
+---
+
+### 18.3 Monitoring & Observability
+
+**Structured Logging:**
+
+Lobby emits structured logs (via `tracing` crate) for every pipeline stage:
+
+```
+2026-03-21T12:34:56.789Z INFO  pipeline{execution_id=550e8400... chain_id=1 from_address=0xaf9ce1...}:
+  elapsed_ms=123 nonce=42 "nonce reserved"
+```
+
+**Key metrics to track:**
+
+| Metric | Description | Alert Threshold |
+|---|---|---|
+| Pipeline latency | Time from submission to confirmation | > 60s (P95) |
+| Nonce reservation failures | Database or sync errors | > 1% error rate |
+| Broadcast failures | RPC rejections or timeouts | > 5% error rate |
+| Validator timeouts | Transactions not confirmed after 5 min | > 10% timeout rate |
+| Stale nonce count | Reserved nonces > 2 minutes old | > 10 active |
+
+**Recommended tools:**
+- **Prometheus** — Metrics collection (future Lobby integration)
+- **Grafana** — Dashboards and alerting
+- **Datadog / New Relic** — APM and distributed tracing
+- **Sentry** — Error tracking and aggregation
+
+---
+
+### 18.4 Database Maintenance
+
+**PostgreSQL Tuning:**
+
+Lobby's database schema uses:
+- **Indexed queries** on `(chain_id, from_address, execution_id)`
+- **Frequent writes** to `nonce_assignments` and `sign_requests` tables
+- **Periodic scans** by Sweeper and Scanner bots
+
+**Recommended settings:**
+```sql
+-- Connection pooling
+max_connections = 100
+shared_buffers = 256MB
+
+-- Write optimization
+synchronous_commit = off  -- Accept risk of 1-2 second data loss on crash
+wal_buffers = 16MB
+
+-- Index efficiency
+random_page_cost = 1.1  -- SSD storage assumed
+```
+
+**Backup strategy:**
+- **Continuous archiving** — PostgreSQL WAL archiving to S3/GCS
+- **Point-in-time recovery** — Daily full backups + WAL replay
+- **Retention policy** — 7 days for transaction records, 30 days for audit logs
+
+---
+
+### 18.5 High Availability
+
+**Redundancy:**
+
+Lobby currently runs as a single-instance service. For production HA:
+
+1. **Database replication** — PostgreSQL streaming replication (primary + standby)
+2. **Load balancer** — Distribute traffic across multiple Lobby instances
+3. **Shared state** — Redis for StatusRegistry (already implemented)
+4. **Stateless actors** — Nonce/Sign/Broadcast actors can run on any instance
+
+**Deployment architecture (future):**
+
+```
+                    ┌──────────────┐
+                    │ Load Balancer│
+                    └───────┬──────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+    ┌────────┐          ┌────────┐          ┌────────┐
+    │ Lobby  │          │ Lobby  │          │ Lobby  │
+    │Instance│          │Instance│          │Instance│
+    │   1    │          │   2    │          │   3    │
+    └────┬───┘          └────┬───┘          └────┬───┘
+         │                   │                   │
+         └───────────────────┼───────────────────┘
+                             ▼
+                    ┌─────────────────┐
+                    │  PostgreSQL HA  │
+                    │ (Primary+Standby)│
+                    └─────────────────┘
+                             ▼
+                    ┌─────────────────┐
+                    │  Redis Cluster  │
+                    │ (StatusRegistry)│
+                    └─────────────────┘
+```
+---
+
+## 19. API Overview
 
 Lobby exposes two HTTP endpoints. Both require `Authorization: Bearer <api_token>` on every request.
 
-### POST /v1/transactions
+### 19.1 POST /v1/transactions
 
 Submits a transaction for processing. Returns immediately with an `execution_id`.
 
@@ -899,7 +1150,7 @@ On success, the response is:
 
 On validation failure, a JSON-RPC error response is returned (HTTP 400/403).
 
-### GET /status/:execution_id
+### 19.2 GET /status/:execution_id
 
 Returns the current pipeline status for the given `execution_id`. Clients should poll this until `status` is `confirmed_on_chain` or `failed`.
 
@@ -915,10 +1166,179 @@ The response is a flat JSON object with a `status` field (snake_case tag) plus a
 
 Returns HTTP 404 if the `execution_id` is unknown or has expired from the registry. Returns HTTP 400 if the `execution_id` is not a valid UUID.
 
-For full API semantics, error codes, and integration examples, see the separate `Client_API_Doc`.
+> For full API semantics, error codes, and integration examples, see the separate [Lobby_API_Doc](Lobby_API_Doc.md)`.
 
 ---
 
-**End of Architecture Guide**
+## 20. Appendices
 
-For API-specific documentation (request formats, error codes, rate limits), see `Client_API_Doc`.
+### 20.1 Glossary
+
+| Term | Definition |
+|---|---|
+| **Execution ID** | UUID v4 identifier assigned to every transaction submission |
+| **Nonce** | Sequential transaction counter per Ethereum account |
+| **EIP-1559** | Ethereum Improvement Proposal introducing base fee + priority fee gas model |
+| **RLP** | Recursive Length Prefix — Ethereum's binary serialization format |
+| **Actor** | Isolated async task with message-passing interface (Tokio async/await) |
+| **Shard** | Partition of key-space routed to specific actor instance |
+| **Semaphore** | Concurrency control primitive (limits max parallel pipelines) |
+| **RelayHost** | Pipeline stage that validates and persists transaction intents |
+| **Cortex** | Central orchestrator that coordinates the five-stage pipeline |
+
+---
+
+### 20.2 Supported Chains
+
+| Chain | Chain ID (dec) | Chain ID (hex) | Explorer |
+|---|---|---|---|
+| **Ethereum Mainnet** | 1 | `0x1` | [etherscan.io](https://etherscan.io) |
+| **Hoodi Testnet** | 560048 | `0x88bb0` | [hoodi.etherscan.io](https://hoodi.etherscan.io/) |
+| **Polygon** | 137 | `0x89` | [polygonscan.com](https://polygonscan.com) |
+| **Arbitrum One** | 42161 | `0xa4b1` | [arbiscan.io](https://arbiscan.io) |
+
+> **Note:** Sepolia testnet (chain ID 11155111) was originally supported but will be deprecated by end of 2026. Hoodi testnet is the recommended replacement for development.
+
+**Adding new chains:**
+
+Contact your Lobby operator to configure RPC endpoints for additional chains. The operator must set:
+
+```bash
+RPC_ENDPOINT_<chain_id>=https://<rpc_url>
+```
+
+---
+
+### 20.3 Gas Parameter Guidelines
+
+Lobby **does not** currently support automatic gas estimation. You must provide:
+- `gas` — Gas limit for transaction execution
+- `maxFeePerGas` — Maximum total fee per gas unit (EIP-1559)
+- `maxPriorityFeePerGas` — Miner tip per gas unit (EIP-1559)
+
+**Recommended approach:**
+
+1. **Use RPC `eth_estimateGas`** to determine appropriate `gas` limit
+2. **Query `eth_feeHistory`** or gas tracker APIs (Etherscan, Blocknative) for current base fee
+3. **Set fees:**
+   - `maxPriorityFeePerGas`: 1-3 gwei (normal priority) or 5-10 gwei (high priority)
+   - `maxFeePerGas`: `(current_base_fee × 2) + maxPriorityFeePerGas`
+
+**Example calculation:**
+
+```python
+# Current network state
+current_base_fee = 30_000_000_000  # 30 gwei
+
+# Conservative settings (fast inclusion)
+max_priority_fee = 2_000_000_000   # 2 gwei tip
+max_fee = (current_base_fee * 2) + max_priority_fee
+# Result: 62 gwei max fee
+
+# Submit to Lobby
+client.submit_transaction(
+    to="0x...",
+    gas=21000,
+    max_fee_per_gas=max_fee,
+    max_priority_fee_per_gas=max_priority_fee
+)
+```
+
+**Common gas limits:**
+
+| Operation | Typical Gas Limit |
+|---|---|
+| Simple ETH transfer | 21,000 |
+| ERC-20 transfer | 65,000 |
+| Uniswap swap | 150,000 - 300,000 |
+| NFT mint | 100,000 - 500,000 |
+| Complex DeFi interaction | 500,000 - 1,000,000 |
+
+---
+
+### 20.4 Running Lobby Locally
+
+**Quick Start:**
+
+```bash
+# 1. Clone repository
+git clone https://github.com/romanticNomad/Lobby.git
+cd lobby
+
+# 2. Start PostgreSQL (Docker)
+docker run -d \
+  --name lobby-postgres \
+  -e POSTGRES_PASSWORD=password \
+  -e POSTGRES_DB=lobby \
+  -p 5432:5432 \
+  postgres:15
+
+# 3. Configure environment
+cat > .env << EOF
+DATABASE_URL=postgresql://postgres:password@localhost/lobby
+SERVER_ADDR=0.0.0.0:3000
+RUST_LOG=info
+
+# API key (example)
+LOBBY_API_KEY_1=lobby_live_dev123:550e8400-e29b-41d4-a716-446655440000:<test_account_from_address>
+
+# RPC endpoints (get keys from Alchemy/Infura)
+RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+RPC_ENDPOINT_560048=https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY
+EOF
+
+# 4. Create test keys
+cat > test_keys.json << EOF
+{
+  "test_account": {
+    "pvt_key": "<test_account_pvt_key>",
+    "pub_key": "<test_account_pub_key>",
+    "address": "test_account_from_address"
+  }
+}
+EOF
+
+# 5. Run migrations
+source .env
+DATABASE_URL=postgresql://postgres:password@localhost/lobby \
+  cargo sqlx migrate run
+
+# 6. Start Lobby
+cargo run --release
+
+# 7. Test submission
+curl -X POST http://localhost:3000/v1/transactions \
+  -H "Authorization: Bearer lobby_live_dev123:550e8400-e29b-41d4-a716-446655440000:test_account_from_address" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "eth_sendTransaction",
+    "params": [{
+      "from": "test_account_from_address",
+      "to": "<to_address>",
+      "value": "0x2386f26fc10000",
+      "chainId": "0x88bb0",
+      "gas": "0x5208",
+      "maxFeePerGas": "0xba43b7400",
+      "maxPriorityFeePerGas": "0x77359400"
+    }],
+    "id": 1
+  }'
+```
+**Expected output:**
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "execution_id": "9d3f7b2a-4c8e-4a1b-9f6d-8e5c3b2a1d0f",
+    "status": "accepted"
+  },
+  "id": 1
+}
+```
+---
+
+*Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
+*Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
+
+> **End of Architecture Guide**
