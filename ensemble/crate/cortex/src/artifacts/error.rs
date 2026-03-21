@@ -12,7 +12,7 @@ use thiserror::Error;
 pub enum CortexError {
     /// The pipeline semaphore was exhausted and the caller timed out waiting
     /// for a permit.  The caller should back off and retry at the submission
-    /// layer (i.e. return HTTP 429 to the DApp).
+    /// layer (i.e. return HTTP 400 / 429 to the DApp).
     #[error("pipeline semaphore timed out after {timeout_ms}ms — server is overloaded")]
     BackpressureTimeout { timeout_ms: u64 },
 
