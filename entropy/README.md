@@ -3,7 +3,7 @@
 **Version:** 0.1.0 (Initial Testing Infrastructure)  
 **Last Updated:** Mar 02, 2026  
 **Target Audience:** Contributors, maintainers, and LLMs working with Lobby's test infrastructure  
-**Prerequisites:** Read [Lobby_Dev_Doc.md](../ensemble/docs/Lobby_Dev_Doc.md) and [Client_API_Doc.md](../ensemble/docs/Client_API_Doc.md) first
+**Prerequisites:** Read [Lobby_Dev_Doc.md](../ensemble/README.md) and [Lobby_API_Doc.md](../ensemble/Lobby_API_Doc.md) first
 
 ---
 
