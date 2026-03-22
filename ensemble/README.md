@@ -3,10 +3,12 @@
 > * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.  
 > * **Do Not** use **Lobby** for mainnet transactions.
 > * For `test keys` generation the user may use my evm account genration tool **[Locket](https://github.com/romanticNomad/Locket)**, the user can simply get a new account with a `cargo run` command.
+>---
 
-> This Doc contains the architectural details of `Lobby` for API-specific documentation (request formats, error codes, rate limits), see [Lobby_API_Doc](docs/Lobby_API_Doc.md).
-
-> For quick `Lobby` bootup guide visit: [Lobby_Bootup](docs/Lobby_Bootup.md).
+> This Doc contains the architectural details of `Lobby`.
+> * For API-specific documentation (request formats, error codes, rate limits), see [Lobby_API_Doc](docs/Lobby_API_Doc.md).
+> * For quick Lobby bootup guide visit: [Lobby_Bootup_Doc](docs/Lobby_Bootup.md).
+> ---
 
 **Version:** 0.1.0 (Prototype)  
 **Last Updates:** March 21 2026  
@@ -771,8 +773,7 @@ It is backed by two layers:
 - **Redis** — distributed persistence via `ConnectionManager`, written asynchronously after every DashMap update
 
 On boot, `StatusRegistry::new(redis_url)` scans all `lobby:status:*` keys from Redis and loads them into the DashMap (crash recovery). New entries are written to both on every `set()` call, with a 1-hour TTL on the Redis key.
-
-Read operations (`get()`) only touch the DashMap — no Redis round-trip.
+Read operations (`get()`) only touch the DashMap, no Redis round-trip.
 
 ### PipelineStatus Variants
 
@@ -816,12 +817,12 @@ pub enum PipelineStatus {
               │                            │
               ▼                            ▼
   ┌──────────────────────┐      ┌──────────────────────┐
-  │ nonce_mismatch_      │      │     broadcasted      │
-  │     detected         │      │                      │
+  │    nonce_mismatch_   │      │     broadcasted      │
+  │      detected        │      │                      │
   └──────────┬───────────┘      └──────────┬───────────┘
              │                             │
-             │ (auto-recovery              │
-             │     steps)                  │
+             │   (auto-recovery            │     
+             │       steps)                │                              
              │                             ▼
              └─────────────────► ┌──────────────────────┐
                                  │  confirmed_on_chain  │ ✓
@@ -1089,12 +1090,11 @@ Lobby currently runs as a single-instance service. For production HA:
     │Instance│          │Instance│          │Instance│
     │   1    │          │   2    │          │   3    │
     └────┬───┘          └────┬───┘          └────┬───┘
-         │                   │                   │
          └───────────────────┼───────────────────┘
                              ▼
                     ┌─────────────────┐
                     │  PostgreSQL HA  │
-                    │ (Primary+Standby)│
+                    │(Primary+Standby)│
                     └─────────────────┘
                              ▼
                     ┌─────────────────┐

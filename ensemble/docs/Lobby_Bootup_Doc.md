@@ -1,14 +1,18 @@
 # Running Lobby Locally
 
+> The user may use thier own test_keys or generate test keys from my evm keys generator **[Locket](https://github.com/romanticNomad/Locket)**.  
+> Simply running the `cargo run` command will generate the test_keys in required format.
+
 ```bash
 # 1. Clone repository
 git clone https://github.com/romanticNomad/Lobby.git
-cd lobby
+cd Lobby/ensemble
 
 # 2. Start PostgreSQL and Redis servers on Docker.
 cd database
 docker compose up -d
 sqlx migrate run
+cd ..
 
 # 3. Configure environment
 cat > .env << EOF
@@ -25,7 +29,7 @@ RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 RPC_ENDPOINT_560048=https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY
 EOF
 
-# 4. Create test keys
+# 4. Create or import test keys.
 cat > test_keys.json << EOF
 {
   "test_account": {
