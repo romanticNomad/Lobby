@@ -6,6 +6,8 @@
 
 > This Doc contains the architectural details of `Lobby` for API-specific documentation (request formats, error codes, rate limits), see [Lobby_API_Doc](docs/Lobby_API_Doc.md).
 
+> For quick `Lobby` bootup guide visit: [Lobby_Bootup](docs/Lobby_Bootup.md).
+
 **Version:** 0.1.0 (Prototype)  
 **Last Updates:** March 21 2026  
 **Target Audience:** Contributors, maintainers, and LLMs working with the Lobby codebase    
@@ -78,13 +80,11 @@ Every transaction submitted to Lobby flows through a five-stage pipeline:
 ┌─────────────────────────────────────────────────────────────┐
 │                    LOBBY PIPELINE                           │
 ├─────────────────────────────────────────────────────────────┤
-│                                                             │
 │  1. RelayHost        → Validate & persist transaction       │
 │  2. Nonce Reserve    → Assign sequential nonce              │
 │  3. Sign             → Generate EIP-1559 signature          │
 │  4. Broadcast        → Submit to blockchain RPC             │
 │  5. Validator        → Confirm on-chain inclusion           │
-│                                                             │
 └──────┬──────────────────────────────────────────────────────┘
        │
        ▼
@@ -1265,18 +1265,16 @@ client.submit_transaction(
 git clone https://github.com/romanticNomad/Lobby.git
 cd lobby
 
-# 2. Start PostgreSQL (Docker)
-docker run -d \
-  --name lobby-postgres \
-  -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=lobby \
-  -p 5432:5432 \
-  postgres:15
+# 2. Start PostgreSQL and Redis servers on Docker.
+cd database
+docker compose up -d
+sqlx migrate run
 
 # 3. Configure environment
 cat > .env << EOF
 DATABASE_URL=postgresql://postgres:password@localhost/lobby
 SERVER_ADDR=0.0.0.0:3000
+REDIS_URL=redis://localhost:6379
 RUST_LOG=info
 
 # API key (example)
@@ -1298,13 +1296,21 @@ cat > test_keys.json << EOF
 }
 EOF
 
-# 5. Run migrations
+# 5. Expose environmnet variables to terminal (Bash)
 source .env
-DATABASE_URL=postgresql://postgres:password@localhost/lobby \
-  cargo sqlx migrate run
 
 # 6. Start Lobby
 cargo run --release
+
+# Expected outcome
+INFO     ｉ [info]: "relation \"_sqlx_migrations\" already exists, skipping"
+INFO     ｉ [info]: api_keys loaded: 1
+INFO     ｉ [info]: rpc_endpoints loaded: [ChainId(560048), ChainId(1)]
+INFO     ｉ [info]: custody accounts loaded: 1
+INFO     ｉ [info]: StatusRegistry loaded | artifacts_count: 0
+INFO     ｉ [info]: cortex online
+INFO     ｉ [info]: bots spawned: monitoring status
+INFO     ｉ [info]: lobby listening at: | address: 0.0.0.0:3000
 
 # 7. Test submission
 curl -X POST http://localhost:3000/v1/transactions \
@@ -1337,7 +1343,6 @@ curl -X POST http://localhost:3000/v1/transactions \
 }
 ```
 ---
-
 *Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
 
