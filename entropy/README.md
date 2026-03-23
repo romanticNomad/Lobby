@@ -222,7 +222,7 @@ impl TestEnvironment {
         
         // Start Lobby with test config
         let lobby_process = Command::new("cargo")
-            .args(["run", "--bin", "lobby"])
+            .args(&["run", "--release","--manifest-path", "../ensemble/Cargo.toml", "--bin", "lobby"])
             .env("DATABASE_URL", format!("postgres://postgres@localhost:{}", pg_port))
             .env("REDIS_URL", format!("redis://localhost:{}", redis_port))
             .env("RPC_ENDPOINT_31337", anvil.endpoint())
@@ -564,22 +564,22 @@ pub struct BenchmarkOrchestrator {
 
 impl BenchmarkOrchestrator {
     pub async fn run(&self) -> Result<BenchmarkResults, Error> {
-        println!("🚀 Starting Anvil devnet...");
+        println!("Starting Anvil devnet...");
         let anvil = self.start_anvil().await?;
         
-        println!("🏗️  Starting Lobby...");
+        println!("Starting Lobby...");
         let lobby = self.start_lobby(&anvil).await?;
         
-        println!("📊 Starting Prometheus...");
+        println!("Starting Prometheus...");
         let prometheus = self.start_prometheus().await?;
         
-        println!("📈 Starting Grafana...");
+        println!("Starting Grafana...");
         let grafana = self.start_grafana().await?;
         
-        println!("⏳ Waiting 5s for warmup...");
+        println!("Waiting 5s for warmup...");
         tokio::time::sleep(Duration::from_secs(5)).await;
         
-        println!("🔥 Starting load generation ({} TPS for {}s)...",
+        println!("Starting load generation ({} TPS for {}s)...",
                  self.load_profile.target_tps,
                  self.load_profile.duration_seconds);
         
@@ -587,15 +587,15 @@ impl BenchmarkOrchestrator {
         self.run_load_generator().await?;
         let elapsed = start.elapsed();
         
-        println!("✅ Load generation complete ({:.2}s)", elapsed.as_secs_f64());
+        println!("Load generation complete ({:.2}s)", elapsed.as_secs_f64());
         
-        println!("📥 Collecting metrics from Prometheus...");
+        println!("Collecting metrics from Prometheus...");
         let metrics = self.collect_metrics(&prometheus).await?;
         
-        println!("📄 Generating report...");
+        println!("Generating report...");
         let report = self.generate_report(metrics).await?;
         
-        println!("🧹 Cleaning up...");
+        println!("Cleaning up...");
         self.cleanup(anvil, lobby, prometheus, grafana).await?;
         
         Ok(report)
@@ -1026,10 +1026,10 @@ Validator:    ~2-4s   (polling for block inclusion, 1s block time)
     
     <h2>Results Summary</h2>
     <table>
-        <tr><td>Achieved TPS</td><td>1,023</td><td>✅</td></tr>
-        <tr><td>P95 Latency</td><td>4.2s</td><td>✅</td></tr>
-        <tr><td>Error Rate</td><td>0.02%</td><td>✅</td></tr>
-        <tr><td>Nonce Conflicts</td><td>0</td><td>✅</td></tr>
+        <tr><td>Achieved TPS</td><td>1,023</td><td></td></tr>
+        <tr><td>P95 Latency</td><td>4.2s</td><td></td></tr>
+        <tr><td>Error Rate</td><td>0.02%</td><td></td></tr>
+        <tr><td>Nonce Conflicts</td><td>0</td><td></td></tr>
     </table>
     
     <h2>Latency Distribution</h2>
@@ -1127,7 +1127,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "⚠️ Lobby performance regression detected! Check GitHub Actions."
+              "text": "Lobby performance regression detected! Check GitHub Actions."
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
@@ -1161,10 +1161,10 @@ def compare(current_file, baseline_file, threshold_pct):
         print(f"{metric}: {current_val} (baseline: {baseline_val}, delta: {regression_pct:.1f}%)")
         
         if regression_pct > threshold_pct:
-            print(f"❌ REGRESSION: {metric} degraded by {regression_pct:.1f}%")
+            print(f"REGRESSION: {metric} degraded by {regression_pct:.1f}%")
             sys.exit(1)
     
-    print("✅ All metrics within acceptable range")
+    print(" All metrics within acceptable range")
 
 if __name__ == '__main__':
     import argparse
@@ -1184,51 +1184,51 @@ if __name__ == '__main__':
 ### 10.1 Writing Integration Tests
 
 **DO:**
-- ✅ Use `testcontainers-rs` for isolated PostgreSQL/Redis/Anvil instances
-- ✅ Test one scenario per test function (focused assertions)
-- ✅ Clean up resources in `Drop` implementations
-- ✅ Use descriptive test names (`concurrent_nonce_requests_are_sequential`)
+-  Use `testcontainers-rs` for isolated PostgreSQL/Redis/Anvil instances
+-  Test one scenario per test function (focused assertions)
+-  Clean up resources in `Drop` implementations
+-  Use descriptive test names (`concurrent_nonce_requests_are_sequential`)
 
 **DON'T:**
-- ❌ Share state between tests (leads to flaky failures)
-- ❌ Hard-code timeouts (use `tokio::time::timeout` with generous limits)
-- ❌ Ignore cleanup (leftover containers waste CI resources)
+- Share state between tests (leads to flaky failures)
+- Hard-code timeouts (use `tokio::time::timeout` with generous limits)
+- Ignore cleanup (leftover containers waste CI resources)
 
 ### 10.2 Benchmark Execution
 
 **DO:**
-- ✅ Run benchmarks on dedicated hardware (no shared CI runners)
-- ✅ Disable CPU frequency scaling (`sudo cpupower frequency-set --governor performance`)
-- ✅ Close background applications (browser, Slack, etc.)
-- ✅ Run multiple iterations (3-5) and report median
-- ✅ Store raw Prometheus data for historical analysis
+-  Run benchmarks on dedicated hardware (no shared CI runners)
+-  Disable CPU frequency scaling (`sudo cpupower frequency-set --governor performance`)
+-  Close background applications (browser, Slack, etc.)
+-  Run multiple iterations (3-5) and report median
+-  Store raw Prometheus data for historical analysis
 
 **DON'T:**
-- ❌ Run benchmarks during active development (code churn invalidates comparisons)
-- ❌ Compare across different hardware (absolute numbers aren't portable)
-- ❌ Cherry-pick best results (report all runs, flag outliers)
+- Run benchmarks during active development (code churn invalidates comparisons)
+- Compare across different hardware (absolute numbers aren't portable)
+- Cherry-pick best results (report all runs, flag outliers)
 
 ### 10.3 Metric Collection
 
 **DO:**
-- ✅ Use histogram buckets appropriate to your latency range (0.001 - 5.0 seconds)
-- ✅ Label metrics by stage/chain/error type for drill-down
-- ✅ Export both rate (TPS) and cumulative counters (total transactions)
+-  Use histogram buckets appropriate to your latency range (0.001 - 5.0 seconds)
+-  Label metrics by stage/chain/error type for drill-down
+-  Export both rate (TPS) and cumulative counters (total transactions)
 
 **DON'T:**
-- ❌ Use high-cardinality labels (e.g., `execution_id` — explodes Prometheus memory)
-- ❌ Scrape more frequently than 15s (unnecessary load on Prometheus)
+- Use high-cardinality labels (e.g., `execution_id` — explodes Prometheus memory)
+- Scrape more frequently than 15s (unnecessary load on Prometheus)
 
 ### 10.4 Result Interpretation
 
 **DO:**
-- ✅ Focus on P95/P99 latency (P50 hides tail behavior)
-- ✅ Compare error rates, not just throughput (10,000 TPS with 50% errors is useless)
-- ✅ Check for memory leaks (monitor Lobby RSS over long runs)
+-  Focus on P95/P99 latency (P50 hides tail behavior)
+-  Compare error rates, not just throughput (10,000 TPS with 50% errors is useless)
+-  Check for memory leaks (monitor Lobby RSS over long runs)
 
 **DON'T:**
-- ❌ Optimize for synthetic benchmarks (real-world traffic is bursty, not steady)
-- ❌ Ignore variance (a benchmark with stddev > 20% needs investigation)
+- Optimize for synthetic benchmarks (real-world traffic is bursty, not steady)
+- Ignore variance (a benchmark with stddev > 20% needs investigation)
 
 ---
 
@@ -1260,17 +1260,17 @@ Broadcast Shards:          17
 ------------------------------------------------------------
 Results Summary
 ------------------------------------------------------------
-✅ Achieved TPS:            1,023  (target: 1,000)
-✅ Total Transactions:      61,380
-✅ Successful:              61,368 (99.98%)
-❌ Failed:                  12     (0.02%)
-✅ Nonce Conflicts:         0
+ Achieved TPS:            1,023  (target: 1,000)
+ Total Transactions:      61,380
+ Successful:              61,368 (99.98%)
+Failed:                  12     (0.02%)
+ Nonce Conflicts:         0
 
 ------------------------------------------------------------
 Latency (End-to-End)
 ------------------------------------------------------------
 P50:     3.2s
-P95:     4.8s  ✅ (target: < 5s)
+P95:     4.8s   (target: < 5s)
 P99:     6.1s
 Max:     8.3s
 
