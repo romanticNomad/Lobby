@@ -13,7 +13,7 @@
 3. [Directory Structure](#3-directory-structure)
 4. [Integration Testing](#4-integration-testing)
 5. [Benchmark Harness](#5-benchmark-harness)
-6. [Observability Stack](#6-observability-stack)
+6. [monitor Stack](#6-monitor-stack)
 7. [Running Tests](#7-running-tests)
 8. [Interpreting Results](#8-interpreting-results)
 9. [CI/CD Integration](#9-cicd-integration)
@@ -29,18 +29,7 @@ Entropy's testing strategy is built on three core principles:
 ### 1.1 Integration-First
 Unit tests validate individual functions; integration tests validate **system behavior**. For a transaction pipeline with 5 actors, 2 databases, and external RPC dependencies, integration tests mirror production reality better than isolated unit tests.
 
-We prioritize:
-- **End-to-end pipeline flows** over actor isolation
-- **Realistic failure scenarios** over synthetic edge cases
-- **Performance under load** over theoretical throughput
-
-### 1.2 Reproducible Performance Benchmarks
-Every benchmark run must be:
-- **Deterministic** — Same input → same result (use local devnets, not flaky public testnets)
-- **Comparable** — Historical results stored in PostgreSQL for regression detection
-- **Transparent** — Full metrics exported to Prometheus, visible in Grafana dashboards
-
-### 1.3 Visual Proof of Performance
+### 1.2 Visual Proof of Performance
 Marketing technical infrastructure requires visual evidence:
 - **Live Grafana dashboards** during benchmark runs (throughput graphs, latency heatmaps)
 - **Interactive HTML reports** with drill-down capability (per-stage latencies, error breakdowns)
@@ -154,22 +143,22 @@ entropy/
 │       └── templates/
 │           └── report.html.tera        # HTML report template
 │
-├── observability/
+├── monitor/
 │   ├── prometheus/
 │   │   └── prometheus.yml              # Prometheus config (scrape targets)
 │   ├── grafana/
 │   │   ├── dashboards/
 │   │   │   ├── lobby-overview.json     # Main dashboard (TPS, latency, errors)
 │   │   │   └── actor-breakdown.json    # Per-actor metrics
-│   │   └── provisioning/
+│   │   └── provisions/
 │   │       ├── datasources.yml         # Auto-configure Prometheus
 │   │       └── dashboards.yml          # Auto-load dashboards
 │   └── queries/
-│       └── benchmark_results.sql       # Schema for storing benchmark runs
+│       └── benchmark.sql               # Schema for storing benchmark runs
 │
 ├── scripts/
 │   ├── setup.sh                        # Install dependencies (Anvil, Prometheus, Grafana)
-│   ├── run_benchmark.sh                # Wrapper script for benchmark execution
+│   ├── benchmark_run.sh                # Wrapper script for benchmark execution
 │   └── cleanup.sh                      # Stop containers, clean test data
 │
 └── results/                            # Generated benchmark outputs
@@ -636,12 +625,12 @@ impl BenchmarkOrchestrator {
 
 ---
 
-## 6. Observability Stack
+## 6. monitor Stack
 
 ### 6.1 Prometheus Configuration
 
 ```yaml
-# observability/prometheus/prometheus.yml
+# monitor/prometheus/prometheus.yml
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -785,7 +774,7 @@ lazy_static! {
 }
 ```
 
-**Save as:** `observability/grafana/dashboards/lobby-overview.json`
+**Save as:** `monitor/grafana/dashboards/lobby-overview.json`
 
 ### 6.4 Docker Compose Stack
 
@@ -841,7 +830,8 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitor
+    /prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - bench_prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -852,8 +842,10 @@ services:
     ports:
       - "3001:3000"
     volumes:
-      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitor
+    /grafana/dashboards:/etc/grafana/provisions/dashboards
+      - ./monitor
+    /grafana/provisions:/etc/grafana/provisions
       - bench_grafana_data:/var/lib/grafana
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -918,7 +910,7 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```bash
 cd entropy
 
-# Start full observability stack
+# Start full monitor stack
 docker compose up -d
 
 # Wait for Grafana to be ready (takes ~10 seconds)
@@ -1359,7 +1351,7 @@ max(rate(lobby_nonce_requests_total[1m])) - min(rate(lobby_nonce_requests_total[
 
 **Contributions Welcome:**
 - Load generator plugins (custom transaction types)
-- Alternative observability stacks (Datadog, New Relic)
+- Alternative monitor stacks (Datadog, New Relic)
 - Real-world transaction replay (from Ethereum mempool dumps)
 
 ---
