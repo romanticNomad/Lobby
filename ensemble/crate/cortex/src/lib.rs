@@ -28,7 +28,7 @@ use crate::{
     state::StatusRegistry,
 };
 use actors::{broadcast, nonce, relayhost, sign, validator};
-use kernel::{
+use primitives::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
     types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus, RpcProviderRegistry},
 };

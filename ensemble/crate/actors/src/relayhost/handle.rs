@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use kernel::{
+use primitives::{
     traits::IntentRelay,
     types::{ClientConfig, Eip1559Transaction, ExecutionId, RelayHostError},
 };

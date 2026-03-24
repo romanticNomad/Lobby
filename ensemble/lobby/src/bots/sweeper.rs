@@ -1,4 +1,4 @@
-use kernel::types::ExecutionId;
+use primitives::types::ExecutionId;
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;

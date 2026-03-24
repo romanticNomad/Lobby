@@ -5,7 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-kernel = { path = "../crate/kernel" }
+primitives = { path = "../crate/primitives" }
 utils = { path = "../crate/utils" }
 actors = { path = "../crate/actors" }
 cortex = { path = "../crate/cortex" }

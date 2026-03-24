@@ -1,5 +1,5 @@
 use crate::relayhost::handle::RelayHostCommand;
-use kernel::types::{ClientConfig, Eip1559Transaction, ExecutionId, RelayHostError};
+use primitives::types::{ClientConfig, Eip1559Transaction, ExecutionId, RelayHostError};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 use utils::eip1559::transaction_lint;

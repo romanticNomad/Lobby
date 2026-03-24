@@ -2,7 +2,7 @@ pub mod auth;
 pub mod handler;
 
 use cortex::{CortextHandle, artifacts::state::StatusRegistry};
-use kernel::types::ApiRegistry;
+use primitives::types::ApiRegistry;
 
 // ============================================================
 // app state

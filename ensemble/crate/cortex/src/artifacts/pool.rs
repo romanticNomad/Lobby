@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use kernel::types::{ChainId, ExecutionId};
+use primitives::types::{ChainId, ExecutionId};
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,

@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use dashmap::DashMap;
-use kernel::types::{ApiRegistry, ClientConfig};
+use primitives::types::{ApiRegistry, ClientConfig};
 use std::{env, str::FromStr, sync::Arc};
 use thiserror::Error;
 use uuid::Uuid;

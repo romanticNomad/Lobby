@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use cortex::{artifacts::error::CortexError, artifacts::state::StatusRegistry};
-use kernel::{
+use primitives::{
     traits::StateStore,
     types::{
         AuthenticatedClient, Eip1193SendTransactionParams, ExecutionId, JsonRpcError,

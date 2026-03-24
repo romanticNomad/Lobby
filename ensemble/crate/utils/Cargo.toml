@@ -8,7 +8,7 @@ license = "Apache-2.0"
 doctest = false
 
 [dependencies]
-kernel = { path = "../kernel" }
+primitives = { path = "../primitives" }
 k256 = { version = "0.13", features = ["ecdsa"] }
 serde = { version = "1", features = ["derive"] }
 alloy = { version = "1.6.0", features = ["full"] }

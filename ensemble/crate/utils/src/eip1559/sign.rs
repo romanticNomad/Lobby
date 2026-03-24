@@ -3,8 +3,10 @@ use k256::{
     ecdsa::{RecoveryId, Signature, SigningKey},
     elliptic_curve::scalar::IsHigh,
 };
-use kernel::traits::EthRlpEncode;
-use kernel::types::{Eip1559Transaction, LocalError, SignedTransaction};
+use primitives::{
+    traits::EthRlpEncode,
+    types::{Eip1559Transaction, LocalError, SignedTransaction},
+};
 use rlp::RlpStream;
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroize;

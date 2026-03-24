@@ -1,7 +1,7 @@
 use alloy::primitives::TxHash;
 use cortex::artifacts::StatusRegistry;
 use dashmap::DashMap;
-use kernel::{
+use primitives::{
     traits::StateStore,
     types::{ChainId, ExecutionId, PipelineStatus, RpcProviderRegistry},
 };

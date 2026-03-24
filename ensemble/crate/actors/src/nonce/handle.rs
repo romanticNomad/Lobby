@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use kernel::{
+use primitives::{
     traits::NonceManager,
     types::{ChainId, ExecutionId, LocalError, NonceState, TxNonce},
 };

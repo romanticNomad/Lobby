@@ -1,6 +1,6 @@
 use crate::sign::SignCommand;
 use alloy::primitives::Address;
-use kernel::{
+use primitives::{
     traits::PolicyEngine,
     types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignState, SignedTransaction},
 };

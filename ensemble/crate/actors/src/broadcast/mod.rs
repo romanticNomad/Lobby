@@ -3,7 +3,7 @@ mod handle;
 
 use engine::*;
 use handle::*;
-use kernel::types::RpcProviderRegistry;
+use primitives::types::RpcProviderRegistry;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 

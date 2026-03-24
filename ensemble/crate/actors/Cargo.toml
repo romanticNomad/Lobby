@@ -5,7 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-kernel = { path = "../kernel" }
+primitives = { path = "../primitives" }
 utils = { path = "../utils" }
 alloy = { version = "1.6.0", features = ["full"] }
 tokio = { version = "1", features = ["full"] }

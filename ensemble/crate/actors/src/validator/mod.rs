@@ -37,7 +37,7 @@ pub mod engine;
 pub mod handle;
 
 use crate::validator::{engine::ValidatorEngine, handle::ValidatorHandle};
-use kernel::types::RpcProviderRegistry;
+use primitives::types::RpcProviderRegistry;
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::sync::mpsc;

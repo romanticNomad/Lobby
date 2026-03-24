@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use kernel::{
+use primitives::{
     traits::Signer,
     types::{ChainId, Eip1559Transaction, ExecutionId, LocalError, SignedTransaction},
 };

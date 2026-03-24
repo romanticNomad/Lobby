@@ -20,7 +20,7 @@
 
 1. [What is Lobby?](#1-what-is-lobby)
 2. [The Actor Model](#2-the-actor-model)
-3. [Kernel: Traits and Types](#3-kernel-traits-and-types)
+3. [: Traits and Types](#3--traits-and-types)
 4. [The Five Actors](#4-the-five-actors)
 5. [Cortex: The Orchestrator](#5-cortex-the-orchestrator)
 6. [Pipeline Workflow](#6-pipeline-workflow)
@@ -121,7 +121,7 @@ impl NonceEngine {
 }
 ```
 
-**`handle.rs`** — The public interface. A cheap-to-clone `mpsc::Sender` wrapper that implements the actor's trait from `kernel`.
+**`handle.rs`** — The public interface. A cheap-to-clone `mpsc::Sender` wrapper that implements the actor's trait from ``.
 
 ```rust 
 #[derive(Clone)]
@@ -151,9 +151,9 @@ The `actors` crate exposes one public `spawn_*_actor` function per actor. Everyt
 
 ---
 
-## 3. Kernel: Traits and Types
+## 3. : Traits and Types
 
-The `kernel` crate contains all shared types, traits, and error enums. It has zero business logic — it is purely a contract definition layer.
+The `` crate contains all shared types, traits, and error enums. It has zero business logic — it is purely a contract definition layer.
 
 ### Core Types
 

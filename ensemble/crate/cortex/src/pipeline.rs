@@ -5,7 +5,7 @@ use crate::{
     artifacts::retry::{RetryDecision, retry_with_backoff},
     state::StatusRegistry,
 };
-use kernel::{
+use primitives::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
     types::{
         BroadcastError, ClientConfig, Eip1559Transaction, ExecutionId, NonceState, PipelineStatus,

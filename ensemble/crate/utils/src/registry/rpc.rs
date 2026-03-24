@@ -2,7 +2,7 @@ use alloy::providers::Provider;
 use alloy::transports::TransportErrorKind;
 use alloy::{providers::ProviderBuilder, rpc::types::TransactionReceipt};
 use dashmap::DashMap;
-use kernel::types::{ChainId, RpcProviderRegistry, TxHash, ValidatorError};
+use primitives::types::{ChainId, RpcProviderRegistry, TxHash, ValidatorError};
 use std::sync::Arc;
 
 // ============================================================

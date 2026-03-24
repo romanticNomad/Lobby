@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, U256, bytes::Bytes};
-use kernel::types::{ChainId, Eip1193SendTransactionParams, Eip1559Transaction, TxNonce};
+use primitives::types::{ChainId, Eip1193SendTransactionParams, Eip1559Transaction, TxNonce};
 use thiserror::Error;
 
 // ============================================================

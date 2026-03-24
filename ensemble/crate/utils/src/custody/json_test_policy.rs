@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use kernel::{traits::PolicyEngine, types::LocalError};
+use primitives::{traits::PolicyEngine, types::LocalError};
 use serde::Deserialize;
 use std::{collections::HashMap, fs::File, io::BufReader, path::PathBuf};
 

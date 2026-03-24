@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use kernel::{
+use primitives::{
     traits::Broadcaster,
     types::{BroadcastError, BroadcastOutcome, ChainId, ExecutionId, SignedTransaction},
 };

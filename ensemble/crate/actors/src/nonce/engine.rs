@@ -1,6 +1,6 @@
 use crate::nonce::NonceCommand;
 use alloy::primitives::Address;
-use kernel::types::{ChainId, ExecutionId, LocalError, NonceState, TxNonce};
+use primitives::types::{ChainId, ExecutionId, LocalError, NonceState, TxNonce};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 

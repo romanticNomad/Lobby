@@ -1,4 +1,4 @@
-use kernel::types::{BroadcastError, LocalError, RelayHostError, ValidatorError};
+use primitives::types::{BroadcastError, LocalError, RelayHostError, ValidatorError};
 use thiserror::Error;
 
 // ============================================================

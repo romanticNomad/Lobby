@@ -4,7 +4,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use kernel::types::{ApiRegistry, AuthenticatedClient};
+use primitives::types::{ApiRegistry, AuthenticatedClient};
 use tracing::warn;
 
 // ============================================================

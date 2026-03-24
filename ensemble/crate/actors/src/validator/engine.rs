@@ -1,5 +1,5 @@
 use crate::validator::{ValidatorConfig, handle::ValidatorCommand};
-use kernel::types::{
+use primitives::types::{
     ChainId, ExecutionId, RpcProviderRegistry, TxHash, ValidatorError, ValidatorOutcome,
 };
 use sqlx::PgPool;
