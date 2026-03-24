@@ -101,7 +101,7 @@ Marketing technical infrastructure requires visual evidence:
 
 ---
 
-## 3. Directory Structure
+## 3. Directory Structure (strategic)
 
 ```
 entropy/
