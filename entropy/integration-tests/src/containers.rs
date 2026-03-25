@@ -69,7 +69,7 @@ pub async fn spawn_anvil_instances() -> Result<Vec<(ChainId, String, ContainerAs
     ];
 
     let mut instances = Vec::new();
-    
+
     for (chain_id, name) in chains {
         let container = spawn_anvil(chain_id)
             .await

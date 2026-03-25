@@ -1,3 +1,30 @@
 [workspace]
 resolver = "3"
 members = ["integration-tests"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+primitives = { path = "../ensemble/crate/primitives" }
+actors = { path = "../ensemble/crate/actors" }
+cortex = { path = "../ensemble/crate/cortex" }
+utils = { path = "../ensemble/crate/utils" }
+tokio = { version = "1.43", features = ["full", "test-util"] }
+alloy = { version = "1.6.0", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "migrate"] }
+redis = { version = "0.26", features = ["tokio-comp", "connection-manager"] }
+testcontainers-modules = { version = "0.11", features = ["postgres", "redis"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.19", features = ["v4", "serde"] }
+testcontainers = "0.23"
+hdrhistogram = "7.5"
+tracing = "0.1"
+serde_json = "1.0"
+rand = "0.8"
+dashmap = "6.1"
+thiserror = "2.0"
+anyhow = "1.0"
