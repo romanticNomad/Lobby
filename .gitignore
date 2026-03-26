@@ -2,3 +2,4 @@ target
 .env
 logs
 test_keys.json
+api_keys
