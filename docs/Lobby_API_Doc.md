@@ -5,18 +5,19 @@
 > * For `test keys` generation the user may use my evm account genration tool **[Locket](https://github.com/romanticNomad/Locket)**, the user can simply get a new account with a `cargo run` command.
 
 **Version:** 0.1.0 (Prototype)  
-**Last Updates:** March 21 2026  
+**Last Updates:** March 26 2026  
 **Target Audience:** Contributors, maintainers, and LLMs working with the Lobby codebase
 
 ---
 
 ## Table of Contents
 
-1. [Authentication & Authorization](#4-authentication--authorization)
-2. [API Endpoints Reference](#5-api-endpoints-reference)
-3. [Transaction Lifecycle & Status Tracking](#6-transaction-lifecycle--status-tracking)
-4. [Error Handling](#7-error-handling)
-5. [Client Implementation Examples](#8-client-implementation-examples)
+1. [Authentication & Authorization](#1-authentication--authorization)
+2. [API Endpoints Reference](#2-api-endpoints-reference)
+3. [Transaction Lifecycle & Status Tracking](#3-transaction-lifecycle--status-tracking)
+4. [Error Handling](#4-error-handling)
+5. [Client Implementation Examples](#5-client-implementation-examples)
+6. [Generating API Keys](#6-generating-api-keys)
 
 ---
 
@@ -1252,6 +1253,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 ---
+## 6. Generating API Keys
+
+### 6.1 The generate_api_keys binary (prensent in lobby/bin)
+
+This Rust binary **generates API keys** for a set of accounts read from a JSON file. Here's the step-by-step flow:
+
+1. Reads `test_keys.json` from the current working directory.
+2. Iterates over each account entry in the JSON object.
+3. For each account, it generates:
+   - A **`client_id`**: a random UUID v4.
+   - An **`api_token`**: the string `lobby_live_` followed by the first 9 characters of a random UUID (e.g. `lobby_live_3f2a1b8c9`).
+   - An **`env_var`**: a numbered environment variable name like `LOBBY_API_KEY_1`, `LOBBY_API_KEY_2`, etc.
+   - An **`api_key_value`**: a composite key in the format `<api_token>:<client_id>:<from_address>`.
+4. Writes all generated keys to `api_keys/api_keys.json`.
+
+---
+
+### 6.2 Input format (`test_keys.json`)
+
+A top-level JSON object where each key is an account name, and each value must contain at least an `"address"` field:
+
+```json
+{
+  "account1": {
+    "pvt_key": "0xe74176d...",
+    "pub_key": "0x045ae5f...",
+    "address": "0xaf9ce11..."
+  },
+  "account2": {
+    "pvt_key": "0x25bf69f...",
+    "pub_key": "0x040d382...",
+    "address": "0x5b35c45..."
+  },
+}
+```
+
+- The top-level value **must** be a JSON object (not an array or primitive).
+- Each account entry **must** have an `"address"` string field — missing it causes a hard error.
+- The account name keys (e.g. `"account_one"`) are read but not used in the output.
+
+---
+
+### 6.3 Expected output (`api_keys/api_keys.json`)
+
+```json
+{
+  "source_file": "test_keys.json",
+  "count": 2,
+  "api_keys": [
+    {
+      "env_var": "LOBBY_API_KEY_1",
+      "api_token": "lobby_live_3f2a1b8c9",
+      "client_id": "550e8400-e29b-41d4-a716-446655440000",
+      "from_address": "0xABCDEF1234567890...",
+      "api_key_value": "lobby_live_3f2a1b8c9:550e8400-e29b-41d4-a716-446655440000:0xABCDEF1234567890..."
+    }
+  ]
+}
+```
+
+Key things to note:
+- `api_token` is only 9 characters of entropy after the `lobby_live_` prefix — this is quite short and is intended only for testing/development .
+- The iteration order of the accounts is not guaranteed (JSON object iteration in Rust's `serde_json` preserves insertion order only with the `preserve_order` feature). The numbering (`LOBBY_API_KEY_1`, etc.) is based on iteration index, so it may not be stable across runs if order isn't preserved .
+
+---
 
 ## Conclusion
 
@@ -1285,4 +1351,5 @@ Lobby simplifies blockchain transaction signing and submission by abstracting aw
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
 
 > **End of API Doc** 
+
 ---
