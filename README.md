@@ -1300,7 +1300,7 @@ EOF
 source .env
 
 # 6. Start Lobby
-cargo run --release
+cargo run --release --bin lobby
 
 # Expected outcome
 INFO     ｉ [info]: "relation \"_sqlx_migrations\" already exists, skipping"
