@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("logs/transactions.log")
+        .open("transactions.log")
         .expect("Failed to open LOG file");
 
     Registry::default()
