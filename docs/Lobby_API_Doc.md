@@ -1278,7 +1278,7 @@ This Rust binary (present in [generate_api_keys](../lobby/src/bin/generate_api_k
 export LOBBY_API_KEY_<N>="<api_token>:<client_id>:<from_address>"
 ```
 and writes the read accounts details into sequenced API_KEYS to the `.env` file.
-> This is only acceptable since, the test_acounts are only for **testning**, in produciton code, the custody accounts and API KEYS needs to be stored in secure environments.
+> This is only acceptable since, the test_acounts are only for **testing**, in produciton code, the custody accounts and API KEYS needs to be stored in secure environments.
 
 ---
 
