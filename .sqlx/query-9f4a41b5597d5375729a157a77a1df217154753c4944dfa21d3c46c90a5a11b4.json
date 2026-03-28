@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO relay_host.transaction_intents (\n                execution_id,\n                client_id,\n                chain_id,\n                from_address,\n                to_address,\n                value,\n                data,\n                gas_limit,\n                max_fee_per_gas,\n                max_priority_fee_per_gas,\n                access_list\n            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Numeric",
+        "Bytea",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f4a41b5597d5375729a157a77a1df217154753c4944dfa21d3c46c90a5a11b4"
+}

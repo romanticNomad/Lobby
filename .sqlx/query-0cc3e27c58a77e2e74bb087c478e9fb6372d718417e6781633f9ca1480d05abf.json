@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE broadcast.broadcast_requests\n                    SET state = 'rejected',\n                        rejection_reason = $1\n                    WHERE execution_id = $2\n                    AND revision = $3\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0cc3e27c58a77e2e74bb087c478e9fb6372d718417e6781633f9ca1480d05abf"
+}

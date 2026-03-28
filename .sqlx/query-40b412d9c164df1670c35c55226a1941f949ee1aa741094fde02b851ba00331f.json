@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO validator.validation_requests\n                (execution_id, revision, chain_id, tx_hash, state)\n            SELECT\n                $1,\n                COALESCE(\n                    (SELECT MAX(revision)\n                     FROM validator.validation_requests\n                     WHERE execution_id = $1),\n                    0\n                ) + 1,\n                $2,\n                $3,\n                'pending'\n            WHERE NOT EXISTS (\n                SELECT 1\n                FROM validator.validation_requests\n                WHERE execution_id = $1\n                AND (\n                    state IN ('included', 'not_included')\n                    OR (\n                        state = 'pending'\n                        AND updated_at > now() - interval '2 minutes'\n                    )\n                )\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40b412d9c164df1670c35c55226a1941f949ee1aa741094fde02b851ba00331f"
+}

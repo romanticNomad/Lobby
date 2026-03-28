@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE nonce.nonce_assignments\n                    SET state = $2\n                    WHERE (execution_id, revision) = (\n                        SELECT execution_id, revision\n                        FROM nonce.nonce_assignments\n                        WHERE execution_id = $1\n                            AND state = 'reserved'\n                        ORDER BY revision DESC\n                        LIMIT 1\n                        FOR UPDATE SKIP LOCKED\n                    )\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        {
+          "Custom": {
+            "name": "nonce.nonce_state",
+            "kind": {
+              "Enum": [
+                "reserved",
+                "finalized",
+                "released",
+                "consumed"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d49bc8081e2e03deb8848b7377a7e5c9df8bcdd6ad8d3ca662b770c8444f2a2"
+}

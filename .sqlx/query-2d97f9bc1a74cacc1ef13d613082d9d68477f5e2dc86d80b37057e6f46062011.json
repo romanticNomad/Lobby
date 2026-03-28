@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE nonce.nonce_assignments\n        SET state = 'released'\n        WHERE (execution_id, revision) IN (\n            SELECT DISTINCT ON (execution_id)\n                execution_id,\n                revision\n            FROM nonce.nonce_assignments\n            WHERE state = 'reserved'\n                AND updated_at < now() - interval '2 minutes 5 seconds'\n            ORDER BY execution_id, revision DESC\n            LIMIT 100\n        )\n        RETURNING nonce, execution_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "execution_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2d97f9bc1a74cacc1ef13d613082d9d68477f5e2dc86d80b37057e6f46062011"
+}

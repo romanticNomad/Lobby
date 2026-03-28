@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE validator.validation_requests\n            SET state = $2\n            WHERE (execution_id, revision) = (\n                SELECT execution_id, revision\n                FROM validator.validation_requests\n                WHERE execution_id = $1\n                    AND state = 'pending'\n                ORDER BY revision DESC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3ce0c1647c39bf5ac8200b615c9d8db2bd6d320fc1d1134793b6955bac9749f"
+}

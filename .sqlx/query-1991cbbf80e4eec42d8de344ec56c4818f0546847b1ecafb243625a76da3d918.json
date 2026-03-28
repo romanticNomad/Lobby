@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT state\n            FROM validator.validation_requests\n            WHERE execution_id = $1\n            ORDER BY revision DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1991cbbf80e4eec42d8de344ec56c4818f0546847b1ecafb243625a76da3d918"
+}

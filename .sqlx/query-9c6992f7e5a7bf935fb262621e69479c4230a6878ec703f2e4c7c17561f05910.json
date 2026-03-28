@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sign.sign_requests\n            SET state = 'failed'\n            WHERE (execution_id, revision) = (\n                SELECT execution_id, revision\n                FROM sign.sign_requests\n                WHERE execution_id = $1\n                AND state = 'signed'\n                ORDER BY revision DESC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c6992f7e5a7bf935fb262621e69479c4230a6878ec703f2e4c7c17561f05910"
+}

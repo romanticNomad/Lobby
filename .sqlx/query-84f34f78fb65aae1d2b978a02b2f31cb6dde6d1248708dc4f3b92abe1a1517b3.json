@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT nonce, state as \"state: NonceState\"\n                    FROM nonce.nonce_assignments\n                    WHERE execution_id = $1\n                        AND state IN ('reserved', 'finalized')\n                    ORDER BY revision DESC\n                    LIMIT 1\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "state: NonceState",
+        "type_info": {
+          "Custom": {
+            "name": "nonce.nonce_state",
+            "kind": {
+              "Enum": [
+                "reserved",
+                "finalized",
+                "released",
+                "consumed"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "84f34f78fb65aae1d2b978a02b2f31cb6dde6d1248708dc4f3b92abe1a1517b3"
+}

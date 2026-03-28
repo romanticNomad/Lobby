@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE sign.sign_requests\n                    SET state = 'signed',\n                        signed_tx = $3\n                    WHERE execution_id = $1\n                    AND revision = $2\n                    AND state = 'reserved'\n                    AND updated_at > now() - interval '5 minutes'\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c519afb012735b8c3d809164bedd5dbce6696fe19a3b5df4003ada5b22478fca"
+}

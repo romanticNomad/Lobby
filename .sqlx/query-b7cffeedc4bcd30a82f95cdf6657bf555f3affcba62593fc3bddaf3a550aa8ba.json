@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT state as \"state: SignState\"\n                FROM sign.sign_requests\n                WHERE execution_id = $1\n                ORDER BY revision DESC\n                LIMIT 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state: SignState",
+        "type_info": {
+          "Custom": {
+            "name": "sign.sign_state",
+            "kind": {
+              "Enum": [
+                "reserved",
+                "signed",
+                "failed"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b7cffeedc4bcd30a82f95cdf6657bf555f3affcba62593fc3bddaf3a550aa8ba"
+}

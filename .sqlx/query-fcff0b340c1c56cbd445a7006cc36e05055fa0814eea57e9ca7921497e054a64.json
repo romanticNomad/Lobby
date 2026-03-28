@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO nonce.nonce_assignments\n                (execution_id, revision, chain_id, from_address, nonce, state)\n            SELECT\n                $1,\n                COALESCE(\n                    (SELECT MAX(revision)\n                    FROM nonce.nonce_assignments\n                    WHERE execution_id = $1),\n                    0\n                ) + 1,\n                $2,\n                $3,\n                $4,\n                'reserved'\n            WHERE NOT EXISTS (\n                SELECT 1\n                FROM nonce.nonce_assignments\n                WHERE execution_id = $1\n                    AND (\n                        state = 'finalized'\n                        OR (\n                            state = 'reserved'\n                            AND updated_at > now() - interval '5 minutes'\n                        )\n                    )\n            )\n            -- Ensure this nonce isn't already reserved by another execution\n            AND NOT EXISTS (\n                SELECT 1\n                FROM nonce.nonce_assignments\n                WHERE chain_id = $2\n                    AND from_address = $3\n                    AND nonce = $4\n                    AND state = 'reserved'\n                    AND updated_at > now() - interval '5 minutes'\n            )\n            RETURNING nonce, revision\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "revision",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "fcff0b340c1c56cbd445a7006cc36e05055fa0814eea57e9ca7921497e054a64"
+}

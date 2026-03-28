@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE broadcast.broadcast_requests\n                    SET state = 'submitted',\n                        tx_hash = $1\n                    WHERE execution_id = $2\n                    AND revision = $3\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff7ee691cd364afa8faca14f2611193a84ec81eeb0d71bb41aad6363b73a48e7"
+}
