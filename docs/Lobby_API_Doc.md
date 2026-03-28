@@ -1253,11 +1253,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 ---
-## 6. Generating API Keys
+## 6. Generating API Keys 
 
-### 6.1 The generate_api_keys binary (prensent in lobby/bin)
+### 6.1 The `generate_api_keys` binary (***only for testing***).
 
-This Rust binary **generates API keys** for a set of accounts read from a JSON file. Here's the step-by-step flow:
+* Run the binary using:
+
+```bash
+cargo run --release --bin generate_api_keys
+```
+
+This Rust binary (present in [generate_api_keys](../lobby/src/bin/generate_api_keys.rs)) **generates API keys** for the set of accounts read from the JSON file `test_keys.json`. Here's the step-by-step flow:
 
 1. Reads `test_keys.json` from the current working directory.
 2. Iterates over each account entry in the JSON object.
@@ -1266,7 +1272,13 @@ This Rust binary **generates API keys** for a set of accounts read from a JSON f
    - An **`api_token`**: the string `lobby_live_` followed by the first 9 characters of a random UUID (e.g. `lobby_live_3f2a1b8c9`).
    - An **`env_var`**: a numbered environment variable name like `LOBBY_API_KEY_1`, `LOBBY_API_KEY_2`, etc.
    - An **`api_key_value`**: a composite key in the format `<api_token>:<client_id>:<from_address>`.
-4. Writes all generated keys to `api_keys/api_keys.json`.
+4. Formats the API key elements into:
+
+```bash
+export LOBBY_API_KEY_<N>="<api_token>:<client_id>:<from_address>"
+```
+and writes the read accounts details into sequenced API_KEYS to the `.env` file.
+> This is only acceptable since, the test_acounts are only for **testning**, in produciton code, the custody accounts and API KEYS needs to be stored in secure environments.
 
 ---
 
@@ -1295,27 +1307,16 @@ A top-level JSON object where each key is an account name, and each value must c
 
 ---
 
-### 6.3 Expected output (`api_keys/api_keys.json`)
+### 6.3 Expected output (`.env`)
 
-```json
-{
-  "source_file": "test_keys.json",
-  "count": 2,
-  "api_keys": [
-    {
-      "env_var": "LOBBY_API_KEY_1",
-      "api_token": "lobby_live_3f2a1b8c9",
-      "client_id": "550e8400-e29b-41d4-a716-446655440000",
-      "from_address": "0xABCDEF1234567890...",
-      "api_key_value": "lobby_live_3f2a1b8c9:550e8400-e29b-41d4-a716-446655440000:0xABCDEF1234567890..."
-    }
-  ]
-}
+```bash
+export LOBBY_API_KEY_1="lobby_live_fe627a779:5310b127-0f51-4e73-ada1-2bfb0ce3d408:0xfea6645..."
 ```
 
 Key things to note:
 - `api_token` is only 9 characters of entropy after the `lobby_live_` prefix — this is quite short and is intended only for testing/development .
-- The iteration order of the accounts is not guaranteed (JSON object iteration in Rust's `serde_json` preserves insertion order only with the `preserve_order` feature). The numbering (`LOBBY_API_KEY_1`, etc.) is based on iteration index, so it may not be stable across runs if order isn't preserved .
+
+> This limit can be increased by modifying the code [generate_api_keys](../lobby/src/bin/generate_api_keys.rs).
 
 ---
 
@@ -1351,5 +1352,4 @@ Lobby simplifies blockchain transaction signing and submission by abstracting aw
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
 
 > **End of API Doc** 
-
 ---
