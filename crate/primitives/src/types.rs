@@ -125,7 +125,7 @@ pub struct TxnAcceptedResult {
     pub status: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsonStatusResponse {
     pub execution_id: String,
     #[serde(flatten)]
