@@ -89,7 +89,7 @@ pub type ApiToken = String;
 // ============================================================
 // JSON-RPC wrappers for Lobby handlers
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
     pub method: String,
