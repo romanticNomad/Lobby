@@ -97,7 +97,7 @@ pub struct JsonRpcRequest {
     pub id: serde_json::Value,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct JsonRpcSuccessResponse {
     pub jsonrpc: String,
     pub result: TxnAcceptedResult,
@@ -119,7 +119,7 @@ pub struct JsonRpcError {
     pub data: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TxnAcceptedResult {
     pub execution_id: ExecutionId,
     pub status: String,
@@ -140,7 +140,7 @@ pub type TxHash = B256;
 // ============================================================
 // idempotency key for lobby operations
 
-#[derive(Clone, Copy, Debug, Serialize, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Hash, PartialEq, Eq, Deserialize)]
 pub struct ExecutionId(pub uuid::Uuid);
 
 impl fmt::Display for ExecutionId {
