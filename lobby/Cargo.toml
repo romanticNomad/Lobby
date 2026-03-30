@@ -16,7 +16,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "ansi"] }
 tracing-forest = { version = "0.3", features = ["tokio", "ansi"] }
 uuid = { version = "1.19", features = ["v4", "serde"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres",] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
 dashmap = "6.1.0"
 tracing = "0.1"
 axum = "0.8.8"
-serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+testcontainers-modules = { version = "0.15", features = ["postgres", "redis", "anvil"] }
+reqwest = { version = "0.12", features = ["json"] }
+rand = "0.8"

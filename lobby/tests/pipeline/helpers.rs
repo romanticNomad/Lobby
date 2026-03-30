@@ -4,8 +4,8 @@
 use alloy::primitives::Address;
 use dashmap::DashMap;
 use primitives::types::{
-    Eip1193SendTransactionParams, ExecutionId, JsonRpcRequest, JsonRpcSuccessResponse,
-    JsonStatusResponse, PipelineStatus,
+    ApiRegistry, ClientConfig, Eip1193SendTransactionParams, ExecutionId, JsonRpcRequest,
+    JsonRpcSuccessResponse, JsonStatusResponse, PipelineStatus,
 };
 use rand::{seq::SliceRandom, thread_rng};
 use reqwest::Client;
@@ -17,9 +17,12 @@ use std::{
     fs::File,
     io::BufReader,
     path::PathBuf,
+    str::FromStr,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::time::sleep;
+use uuid::Uuid;
 
 // ============================================================
 // helper structs
@@ -33,8 +36,8 @@ pub struct TestAccountFormat {
 }
 #[derive(Debug, Clone)]
 pub struct TestAccount {
-    address: Address,
-    pvt_key: String,
+    pub address: Address,
+    pub pvt_key: String,
 }
 impl TestAccount {
     fn new(address: Address, pvt_key: String) -> Self {
@@ -49,7 +52,6 @@ pub struct TransactionSubmission {
     pub from_address: Address,
     pub to_address: Address,
     pub chain_id: u64,
-    pub submitted_at: Instant,
 }
 
 // ============================================================
@@ -127,27 +129,41 @@ pub fn build_transaction_params(
     }
 }
 
-// ============================================================
-// helper functions for transaction handling
+/// Hashmap used for mapping from_addresses to corresponding API keys.
+type ApiKeys = HashMap<Address, String>;
 
-/// Submit a transaction to the lobby submit_transaction handler.
-pub async fn submit_transaction(
-    client: &Client,
-    base_url: &str,
-    params: Eip1193SendTransactionParams,
-) -> Result<ExecutionId, Box<dyn std::error::Error>> {
-    let api_registry = DashMap::new();
+/// Build ApiRegistry for testing
+pub fn build_api_registry() -> Result<(ApiRegistry, ApiKeys), Box<dyn std::error::Error>> {
+    let api_registry: ApiRegistry = Arc::new(DashMap::new());
+    let mut fetched_api_keys = HashMap::new();
 
     for (key, value) in env::vars() {
         if let Some(_n) = key.strip_prefix("LOBBY_API_KEY_") {
             let api_key = value.clone();
             let parts: Vec<&str> = value.split(":").collect();
-            let from_address: Address = parts[2].to_string().parse().unwrap();
-
-            api_registry.insert(from_address, api_key);
+            let api_token = parts[0].to_string();
+            let client_config = ClientConfig {
+                client_id: Uuid::from_str(parts[1]).unwrap(),
+                from_address: Address::from_str(parts[2]).unwrap(),
+            };
+            api_registry.insert(api_token, client_config);
+            fetched_api_keys.insert(Address::from_str(parts[2]).unwrap(), api_key);
         }
     }
 
+    Ok((api_registry, fetched_api_keys))
+}
+
+// ============================================================
+// helper functions for transaction handling
+
+/// Submit a transaction to the lobby submit_transaction handler.
+pub async fn send_transaction(
+    client: &Client,
+    base_url: &str,
+    api_key: String,
+    params: Eip1193SendTransactionParams,
+) -> Result<ExecutionId, Box<dyn std::error::Error + Send + Sync>> {
     let request = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         method: "eth_sendTransaction".to_string(),
@@ -155,14 +171,9 @@ pub async fn submit_transaction(
         id: json!(1),
     };
 
-    let auth_header = api_registry
-        .get(&params.from)
-        .as_deref()
-        .cloned()
-        .unwrap_or_default();
     let response = client
         .post(&format!("{}/v1/transactions", base_url))
-        .header("Authorization", auth_header)
+        .header("Authorization", format!("Bearer {}", api_key))
         .json(&request)
         .send()
         .await?;
