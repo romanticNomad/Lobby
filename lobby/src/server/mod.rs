@@ -6,12 +6,11 @@ use primitives::types::ApiRegistry;
 
 // ============================================================
 // app state
-
 #[derive(Clone)]
-pub(crate) struct AppState {
-    pub(crate) api_registry: ApiRegistry,       // authentication
-    pub(crate) cortex_handler: CortextHandle,   // POST handler
-    pub(crate) status_registry: StatusRegistry, // Get handler
+pub struct AppState {
+    pub api_registry: ApiRegistry,       // authentication
+    pub cortex_handler: CortextHandle,   // POST handler
+    pub status_registry: StatusRegistry, // Get handler
 }
 
 impl AppState {

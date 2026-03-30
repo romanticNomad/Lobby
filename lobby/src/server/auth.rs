@@ -20,7 +20,7 @@ pub enum AuthError {
 // ============================================================
 // authentication and responce handeling
 
-pub(crate) async fn auth_middleware(
+pub async fn auth_middleware(
     State(api_resigrty): State<ApiRegistry>,
     mut req: Request,
     next: Next,

@@ -14,6 +14,7 @@ use axum::{
     routing::{get, post},
 };
 use cortex::{artifacts::config::CortexConfig, spawn_cortex};
+use primitives::types::ChainId;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, fs::OpenOptions, net::SocketAddr};
 use tracing_forest::ForestLayer;
@@ -82,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // rpc-endpoint registry
     let rpc_registry = load_rpc_endpoints_from_env();
-    let chains: Vec<_> = rpc_registry.iter().map(|entry| *entry.key()).collect();
+    let chains: Vec<ChainId> = rpc_registry.iter().map(|entry| *entry.key()).collect();
     if rpc_registry.len() == 0 {
         tracing::warn!(
             "no RPC endpoints found in environment, \

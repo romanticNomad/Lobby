@@ -50,7 +50,7 @@ pub enum HandlerError {
 /// - `400 Bad Request` — invalid JSON-RPC version, unsupported method, or malformed params
 /// - `403 Forbidden` — from_address does not match authenticated account
 /// - `500 Internal Server Error` — internal pipeline error
-pub(crate) async fn submit_transaction(
+pub async fn submit_transaction(
     State(state): State<AppState>,
     Extension(AuthenticatedClient(client_config)): Extension<AuthenticatedClient>,
     Json(request): Json<JsonRpcRequest>,
@@ -131,7 +131,7 @@ pub(crate) async fn submit_transaction(
 /// - `200 OK` — known execution_id, returns `JsonStatusResponse`
 /// - `400 Bad Request` — `execution_id` is not a valid UUID
 /// - `404 Not Found` — execution_id is unknown (not yet submitted or expired)
-pub(crate) async fn get_transaction_status(
+pub async fn get_transaction_status(
     State(registry): State<StatusRegistry>,
     Path(raw_id): Path<String>,
 ) -> Result<Json<JsonStatusResponse>, HandlerError> {
