@@ -188,15 +188,14 @@ pub async fn send_transaction(
 }
 
 /// Poll for transaction status until it reaches a final state.
-///
-/// Returns the final PipelineStatus and the time it took to reach it.
+/// Returns the final `PipelineStatus` and the time it took to reach it.
 pub async fn poll_transaction_status(
     client: &Client,
     base_url: &str,
     execution_id: ExecutionId,
     timeout: Duration,
     poll_interval: Duration,
-) -> Result<(PipelineStatus, Duration), Box<dyn std::error::Error>> {
+) -> Result<(PipelineStatus, Duration), Box<dyn std::error::Error + Send + Sync>> {
     let start = Instant::now();
     let execution_id_str = execution_id.to_string();
 

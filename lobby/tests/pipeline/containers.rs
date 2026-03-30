@@ -49,7 +49,7 @@ impl TestContainers {
             .await?;
         let postgres_port = postgres.get_host_port_ipv4(5432).await?;
         let postgres_endpoint = format!(
-            "postgres://lobby:lobby_test_password@localhost:{}/lobby_test_db",
+            "postgres://lobby:lobby_test_pswd@localhost:{}/lobby_test_db",
             postgres_port
         );
 
@@ -67,7 +67,7 @@ impl TestContainers {
             let anvil = AnvilNode::default().with_chain_id(chain_id).start().await?;
 
             let host_port = anvil.get_host_port_ipv4(ANVIL_PORT).await?;
-            let endpoint = format!("https://localhost:{}", host_port);
+            let endpoint = format!("http://localhost:{}", host_port);
 
             anvil_containers.push(anvil);
             anvil_endpoints.insert(chain_id, endpoint);

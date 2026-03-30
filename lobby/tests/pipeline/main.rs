@@ -12,8 +12,9 @@
 use crate::{
     containers::TestContainers,
     helpers::{
-        TransactionSubmission, build_api_registry, build_transaction_params, load_test_account,
-        select_random_accounts, select_random_chain, send_transaction,
+        TransactionSubmission, build_api_registry, build_transaction_params, is_success_status,
+        load_test_account, poll_transaction_status, select_random_accounts, select_random_chain,
+        send_transaction,
     },
 };
 use alloy::{
@@ -33,8 +34,11 @@ use lobby::{
     scanner::spawn_scanner_bot,
     spawn_sweeper_bot,
 };
-use primitives::types::{ChainId, RpcProviderRegistry};
-use std::{sync::Arc, time::Duration};
+use primitives::types::{ChainId, PipelineStatus, RpcProviderRegistry};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::{sync::Mutex, task::JoinSet};
 use tracing::{Level, info};
 
@@ -46,7 +50,7 @@ mod helpers;
 // ============================================================
 
 const TRANSACTION_COUNT: usize = 100;
-const SUBMISSION_DEADLINE_MS: u64 = 1000;
+// const SUBMISSION_DEADLINE_MS: u64 = 1000;
 const POLL_TIMEOUT_SECS: u64 = 120;
 const POLL_INTERVAL_MS: u64 = 50;
 
@@ -146,7 +150,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     let listner = tokio::net::TcpListener::bind("0.0.0.0:3000".to_string()).await?;
     let base_url = format!("http://127.0.0.1:3000");
 
-    let _server_handler = tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         axum::serve(listner, app).await.unwrap();
     });
 
@@ -161,6 +165,8 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
     let submissions = Arc::new(Mutex::new(Vec::new()));
     let mut joinset = JoinSet::new();
+
+    let submission_start = Instant::now();
 
     for i in 0..TRANSACTION_COUNT {
         let client = client.clone();
@@ -205,14 +211,129 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let submission_duration = submission_start.elapsed();
     let actual_submissions = submissions.lock().await.len();
-    tracing::info!(
-        "{}/{} transactions submitted",
+
+    info!(
+        "{}/{} transactions submitted in {:?}",
+        actual_submissions, TRANSACTION_COUNT, submission_duration
+    );
+
+    assert_eq!(
+        actual_submissions, TRANSACTION_COUNT,
+        "Only {}/{} transactions were submitted successfully",
         actual_submissions, TRANSACTION_COUNT
     );
 
     // verify all tranasctions were submitted
     assert_eq!(actual_submissions, TRANSACTION_COUNT);
 
+    // ============================================================
+    // poll for transaction status
+
+    let submissions_list = submissions.lock().await.clone();
+    let results = Arc::new(Mutex::new(Vec::new()));
+    let mut poll_joinset = JoinSet::new();
+
+    for submission in submissions_list {
+        let client = client.clone();
+        let base_url = base_url.clone();
+        let results = results.clone();
+
+        poll_joinset.spawn(async move {
+            match poll_transaction_status(
+                &client,
+                &base_url,
+                submission.execution_id,
+                Duration::from_secs(POLL_TIMEOUT_SECS),
+                Duration::from_millis(POLL_INTERVAL_MS),
+            )
+            .await
+            {
+                Ok((status, _)) => {
+                    let success = is_success_status(&status);
+                    results.lock().await.push((submission, status, success));
+                }
+                Err(e) => {
+                    tracing::info!("Polling failed for {}: {}", submission.execution_id, e);
+                    results.lock().await.push((
+                        submission,
+                        PipelineStatus::Failed {
+                            stage: "polling".to_string(),
+                            reason: e.to_string(),
+                        },
+                        false,
+                    ));
+                }
+            }
+        });
+    }
+
+    // Wait for all polling to complete
+    while let Some(result) = poll_joinset.join_next().await {
+        if let Err(e) = result {
+            tracing::info!("Polling task panicked: {}", e);
+        }
+    }
+
+    // ============================================================
+    // calculating statistics
+
+    let results_list = results.lock().await.clone();
+    let test_results = calculate_statistics(&results_list);
+
+    print_results(&test_results);
+
+    let success_rate =
+        (test_results.successful as f64 / test_results.total_transactions as f64) * 100.0;
+    tracing::info!("\n SUCCESS RATE: {:.2}%", success_rate);
+    assert_eq!(
+        test_results.successful, TRANSACTION_COUNT,
+        "Test failed: Only {}/{} transactions succeeded ({:.2}%)",
+        test_results.successful, TRANSACTION_COUNT, success_rate
+    );
+
+    // Cleanup
+    drop(server_handle);
+
     Ok(())
 }
+
+// ============================================================
+// statistics processing helper
+
+/// Calculate statistics from test results.
+fn calculate_statistics(results: &[(TransactionSubmission, PipelineStatus, bool)]) -> TestResults {
+    let total = results.len();
+    let successful = results.iter().filter(|(_, _, s)| *s).count();
+    let failed = total - successful;
+
+    TestResults {
+        total_transactions: total,
+        successful,
+        failed,
+    }
+}
+
+// ============================================================
+// preety formatting of results
+
+/// Print test results in a formatted table.
+fn print_results(results: &TestResults) {
+    tracing::info!("\n╔══════════════════════════════════════════════════════════════╗");
+    tracing::info!("║           HEALTHY PATH TEST - RESULTS REPORT                 ║");
+    tracing::info!("╠══════════════════════════════════════════════════════════════╣");
+    tracing::info!(
+        "║ Total Transactions:    {:>39} ║",
+        results.total_transactions
+    );
+    tracing::info!("║ Successful:            {:>39} ║", results.successful);
+    tracing::info!("║ Failed:               {:>39} ║", results.failed);
+    tracing::info!(
+        "║ Success Rate:         {:>38.2}% ║",
+        (results.successful as f64 / results.total_transactions as f64) * 100.0
+    );
+    tracing::info!("╚══════════════════════════════════════════════════════════════╝");
+}
+
+// ============================================================
