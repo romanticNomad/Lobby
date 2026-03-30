@@ -27,16 +27,18 @@
 
 Lobby uses **Bearer token authentication** with structured API keys:
 
-```
+```bash
 lobby_live_<random_string>:<client_id>:<from_address>
 ```
 
 **Example:**
-```
+
+```bash
 lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:<test_account_from_address>
 ```
 
 **Components:**
+
 | Part | Type | Description |
 |---|---|---|
 | `lobby_live_<random>` | API token | Server-side lookup key |
@@ -48,6 +50,7 @@ lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:<test_account_from_add
 ### 1.2 Authentication Flow
 
 **Request:**
+
 ```http
 POST /v1/transactions
 Authorization: Bearer lobby_live_abc123xyz:550e8400-e29b-41d4-a716-446655440000:<test_account_from_address>
@@ -55,6 +58,7 @@ Content-Type: application/json
 ```
 
 **Server-Side Validation:**
+
 1. Parse `Authorization` header → extract API token (`lobby_live_abc123xyz`)
 2. Lookup token in `ApiRegistry` → retrieve `ClientConfig { client_id, from_address }`
 3. Attach `ClientConfig` to request as `AuthenticatedClient` extension
@@ -75,11 +79,12 @@ Content-Type: application/json
 
 Each API key is **permanently bound** to a single `from_address`. This ensures:
 
-- **No cross-account signing** — Key for address A cannot sign transactions from address B
-- **Audit trail** — Every transaction is traceable to a specific client account
-- **Key rotation** — Compromised keys can be revoked without affecting other accounts
+* **No cross-account signing** — Key for address A cannot sign transactions from address B
+* **Audit trail** — Every transaction is traceable to a specific client account
+* **Key rotation** — Compromised keys can be revoked without affecting other accounts
 
 **Validation:**
+
 ```rust
 // Server-side check in submit_transaction handler
 if from_address != client_config.from_address {
@@ -97,11 +102,13 @@ if from_address != client_config.from_address {
 API keys are provisioned by the Lobby operator. For local development:
 
 1. Add an entry to your `.env` file:
+
    ```bash
    LOBBY_API_KEY_1=lobby_live_mytoken:550e8400-e29b-41d4-a716-446655440000:0xYOUR_TEST_ADDRESS
    ```
 
 2. Ensure the `from_address` matches an entry in `test_keys.json`:
+
    ```json
    {
      "account1": {
@@ -123,12 +130,14 @@ For production deployments, contact your Lobby operator for secure key provision
 **Endpoint:** `POST /v1/transactions`
 
 **Headers:**
+
 ```http
 Authorization: Bearer <api_key>
 Content-Type: application/json
 ```
 
 **Request Body:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -177,6 +186,7 @@ Lobby performs the following checks before accepting a transaction:
 | `chainId` in supported chains | `"unsupported chain_id"` |
 
 **Success Response (202 Accepted):**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -189,6 +199,7 @@ Lobby performs the following checks before accepting a transaction:
 ```
 
 **Response Fields:**
+
 | Field | Description |
 |---|---|
 | `execution_id` | UUID for status tracking — **save this immediately** |
@@ -208,11 +219,13 @@ Lobby performs the following checks before accepting a transaction:
 **Endpoint:** `GET /status/{execution_id}`
 
 **Headers:**
+
 ```http
 Authorization: Bearer <api_key>
 ```
 
 **Path Parameter:**
+
 | Name | Type | Description |
 |---|---|---|
 | `execution_id` | UUID v4 | Execution ID from submission response |
@@ -222,6 +235,7 @@ Authorization: Bearer <api_key>
 The response structure varies based on the current pipeline stage:
 
 **In-Progress (permit_acquired, accepted, nonce_reserved, signed):**
+
 ```json
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -230,6 +244,7 @@ The response structure varies based on the current pipeline stage:
 ```
 
 **Broadcasted:**
+
 ```json
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -240,6 +255,7 @@ The response structure varies based on the current pipeline stage:
 ```
 
 **Confirmed (Terminal State):**
+
 ```json
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -249,6 +265,7 @@ The response structure varies based on the current pipeline stage:
 ```
 
 **Failed (Terminal State):**
+
 ```json
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -259,6 +276,7 @@ The response structure varies based on the current pipeline stage:
 ```
 
 **Nonce Mismatch Detected (Transient State):**
+
 ```json
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -267,9 +285,11 @@ The response structure varies based on the current pipeline stage:
   "attempted_nonce": "41"
 }
 ```
+
 *This state indicates Lobby is syncing with the blockchain. The next poll will show either `signed` (after re-signing) or `failed`.*
 
 **Validator Timed Out (Terminal State):**
+
 ```json
 {
   "execution_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -277,9 +297,11 @@ The response structure varies based on the current pipeline stage:
   "message": "validator timed out, wait for confirmation"
 }
 ```
+
 *Scanner Bot will continue polling RPC. Check status again in a few minutes.*
 
 **Error Response (404 Not Found):**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -341,9 +363,10 @@ def poll_transaction(execution_id: str) -> dict:
 ```
 
 **Polling Frequency:**
-- **Interval:** 3-5 seconds
-- **Timeout:** 5 minutes (matches Lobby's validator timeout)
-- **Backoff:** Not necessary (constant interval is fine)
+
+* **Interval:** 3-5 seconds
+* **Timeout:** 5 minutes (matches Lobby's validator timeout)
+* **Backoff:** Not necessary (constant interval is fine)
 
 **State Retention:**
 
@@ -354,6 +377,7 @@ def poll_transaction(execution_id: str) -> dict:
 ### 3.3 Terminal State Handling
 
 **Confirmed Transaction:**
+
 ```json
 {
   "status": "confirmed_on_chain",
@@ -362,11 +386,13 @@ def poll_transaction(execution_id: str) -> dict:
 ```
 
 **Action:** Transaction succeeded. You can:
-- View on block explorer (Etherscan, Polygonscan, etc.)
-- Stop polling
-- Store `tx_hash` for record-keeping
+
+* View on block explorer (Etherscan, Polygonscan, etc.)
+* Stop polling
+* Store `tx_hash` for record-keeping
 
 **Failed Transaction:**
+
 ```json
 {
   "status": "failed",
@@ -387,6 +413,7 @@ def poll_transaction(execution_id: str) -> dict:
 | `validator` | Transaction reverted | Check contract logic / calldata |
 
 **Validator Timeout:**
+
 ```json
 {
   "status": "validator_timed_out",
@@ -395,14 +422,16 @@ def poll_transaction(execution_id: str) -> dict:
 ```
 
 **Action:** Transaction was broadcast but validator gave up waiting. This can happen if:
-- High network congestion (transaction stuck in mempool)
-- Nonce gap created by external wallet (transaction blocked behind missing nonce)
-- RPC node temporarily unavailable
+
+* High network congestion (transaction stuck in mempool)
+* Nonce gap created by external wallet (transaction blocked behind missing nonce)
+* RPC node temporarily unavailable
 
 **What to do:**
-- Wait 5-10 minutes and poll status again (Scanner Bot may find the transaction)
-- Check block explorer manually for `tx_hash` (if available in earlier `broadcasted` status)
-- If transaction is truly lost, you can safely resubmit (nonce has been marked `consumed`)
+
+* Wait 5-10 minutes and poll status again (Scanner Bot may find the transaction)
+* Check block explorer manually for `tx_hash` (if available in earlier `broadcasted` status)
+* If transaction is truly lost, you can safely resubmit (nonce has been marked `consumed`)
 
 ---
 
@@ -443,6 +472,7 @@ All errors follow the JSON-RPC 2.0 specification:
 ### 4.3 Common Error Scenarios
 
 **Invalid Transaction Parameters:**
+
 ```json
 {
   "error": {
@@ -451,9 +481,11 @@ All errors follow the JSON-RPC 2.0 specification:
   }
 }
 ```
+
 **Fix:** Ensure `maxPriorityFeePerGas` < `maxFeePerGas`
 
 **Address Mismatch:**
+
 ```json
 {
   "error": {
@@ -466,9 +498,11 @@ All errors follow the JSON-RPC 2.0 specification:
   }
 }
 ```
+
 **Fix:** Use the `from_address` bound to your API key
 
 **Unsupported Chain:**
+
 ```json
 {
   "error": {
@@ -477,9 +511,11 @@ All errors follow the JSON-RPC 2.0 specification:
   }
 }
 ```
+
 **Fix:** See [Supported Chains](#102-supported-chains) for valid chain IDs
 
 **Missing RPC Provider:**
+
 ```json
 {
   "error": {
@@ -488,6 +524,7 @@ All errors follow the JSON-RPC 2.0 specification:
   }
 }
 ```
+
 **Server logs will show:** `Provider error: ChainId(56)` (BSC not configured)
 
 **Fix:** Contact Lobby operator to add RPC endpoint for desired chain
@@ -497,6 +534,7 @@ All errors follow the JSON-RPC 2.0 specification:
 ### 4.4 Client-Side Retry Logic
 
 **Retryable Errors (HTTP 500, 503):**
+
 ```python
 import time
 
@@ -516,15 +554,17 @@ def submit_with_retry(transaction, max_retries=3):
 **Non-Retryable Errors (4xx):**
 
 Do **not** retry client errors (400, 401, 403, 404). These indicate:
-- Invalid request format → Fix your code
-- Authentication failure → Fix your API key
-- Validation failure → Fix transaction parameters
+
+* Invalid request format → Fix your code
+* Authentication failure → Fix your API key
+* Validation failure → Fix transaction parameters
 
 **Idempotency Considerations:**
 
 Lobby generates a unique `execution_id` for every submission. If you retry a failed submission, you will create a **new transaction** with a **new execution ID**.
 
 To avoid duplicate submissions:
+
 1. Store the `execution_id` immediately after receiving `202 Accepted`
 2. On retry, poll the original `execution_id` first to check if it's still processing
 3. Only resubmit if the original transaction reached a terminal `failed` state
@@ -738,6 +778,7 @@ if __name__ == "__main__":
 ```
 
 **Output Example:**
+
 ```
 ✓ Transaction accepted: 9d3f7b2a-4c8e-4a1b-9f6d-8e5c3b2a1d0f
 [0.1s] accepted
@@ -1252,10 +1293,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
----
-## 6. Generating API Keys 
 
-### 6.1 The `generate_api_keys` binary (***only for testing***).
+---
+
+## 6. Generating API Keys
+
+### 6.1 The `generate_api_keys` binary (***only for testing***)
 
 * Run the binary using:
 
@@ -1268,15 +1311,16 @@ This Rust binary (present in [generate_api_keys](../lobby/src/bin/generate_api_k
 1. Reads `test_keys.json` from the current working directory.
 2. Iterates over each account entry in the JSON object.
 3. For each account, it generates:
-   - A **`client_id`**: a random UUID v4.
-   - An **`api_token`**: the string `lobby_live_` followed by the first 9 characters of a random UUID (e.g. `lobby_live_3f2a1b8c9`).
-   - An **`env_var`**: a numbered environment variable name like `LOBBY_API_KEY_1`, `LOBBY_API_KEY_2`, etc.
-   - An **`api_key_value`**: a composite key in the format `<api_token>:<client_id>:<from_address>`.
+   * A **`client_id`**: a random UUID v4.
+   * An **`api_token`**: the string `lobby_live_` followed by the first 9 characters of a random UUID (e.g. `lobby_live_3f2a1b8c9`).
+   * An **`env_var`**: a numbered environment variable name like `LOBBY_API_KEY_1`, `LOBBY_API_KEY_2`, etc.
+   * An **`api_key_value`**: a composite key in the format `<api_token>:<client_id>:<from_address>`.
 4. Formats the API key elements into:
 
 ```bash
 export LOBBY_API_KEY_<N>="<api_token>:<client_id>:<from_address>"
 ```
+
 and writes the read accounts details into sequenced API_KEYS to the `.env` file.
 > This is only acceptable since, the test_acounts are only for **testing**, in produciton code, the custody accounts and API KEYS needs to be stored in secure environments.
 
@@ -1301,9 +1345,9 @@ A top-level JSON object where each key is an account name, and each value must c
 }
 ```
 
-- The top-level value **must** be a JSON object (not an array or primitive).
-- Each account entry **must** have an `"address"` string field — missing it causes a hard error.
-- The account name keys (e.g. `"account_one"`) are read but not used in the output.
+* The top-level value **must** be a JSON object (not an array or primitive).
+* Each account entry **must** have an `"address"` string field — missing it causes a hard error.
+* The account name keys (e.g. `"account_one"`) are read but not used in the output.
 
 ---
 
@@ -1314,7 +1358,8 @@ export LOBBY_API_KEY_1="lobby_live_fe627a779:5310b127-0f51-4e73-ada1-2bfb0ce3d40
 ```
 
 Key things to note:
-- `api_token` is only 9 characters of entropy after the `lobby_live_` prefix — this is quite short and is intended only for testing/development .
+
+* `api_token` is only 9 characters of entropy after the `lobby_live_` prefix — this is quite short and is intended only for testing/development .
 
 > This limit can be increased by modifying the code [generate_api_keys](../lobby/src/bin/generate_api_keys.rs).
 
@@ -1326,11 +1371,11 @@ Lobby simplifies blockchain transaction signing and submission by abstracting aw
 
 **Key Takeaways:**
 
-- **Fire-and-forget submission** — Receive `execution_id` immediately, poll for status asynchronously
-- **Automatic nonce sequencing** — No race conditions, no manual nonce tracking
-- **Built-in retry logic** — Transient failures (RPC timeouts, DB hiccups) are handled transparently
-- **Multi-chain support** — Single API for Ethereum, Polygon, Arbitrum, and testnets
-- **Production-ready architecture** — Actor sharding, semaphore backpressure, database persistence
+* **Fire-and-forget submission** — Receive `execution_id` immediately, poll for status asynchronously
+* **Automatic nonce sequencing** — No race conditions, no manual nonce tracking
+* **Built-in retry logic** — Transient failures (RPC timeouts, DB hiccups) are handled transparently
+* **Multi-chain support** — Single API for Ethereum, Polygon, Arbitrum, and testnets
+* **Production-ready architecture** — Actor sharding, semaphore backpressure, database persistence
 
 **Next Steps:**
 
@@ -1342,14 +1387,14 @@ Lobby simplifies blockchain transaction signing and submission by abstracting aw
 
 **Resources:**
 
-- **GitHub Repository:** [github.com/romanticNomad/Lobby](https://github.com/romanticNomad/Lobby)
-- **Issue Tracker:** [github.com/romanticNomad/Lobby/issues](https://github.com/romanticNomad/Lobby/issues)
-- **License:** Apache 2.0
+* **GitHub Repository:** [github.com/romanticNomad/Lobby](https://github.com/romanticNomad/Lobby)
+* **Issue Tracker:** [github.com/romanticNomad/Lobby/issues](https://github.com/romanticNomad/Lobby/issues)
+* **License:** Apache 2.0
 
 ---
 
 *Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
 
-> **End of API Doc** 
+> **End of API Doc**
 ---

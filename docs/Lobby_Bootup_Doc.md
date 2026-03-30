@@ -75,7 +75,9 @@ curl -X POST http://localhost:3000/v1/transactions \
     "id": 1
   }'
 ```
+
 **Expected output:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -86,9 +88,10 @@ curl -X POST http://localhost:3000/v1/transactions \
   "id": 1
 }
 ```
+
 ---
 *Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
 
-> **End of Lobby Bootup Guide** 
+> **End of Lobby Bootup Guide**
 ---
