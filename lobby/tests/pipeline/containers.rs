@@ -15,6 +15,7 @@ use testcontainers_modules::{
 };
 use tokio::time::{Duration, sleep};
 
+#[allow(dead_code)]
 pub struct TestContainers {
     pub postgres: ContainerAsync<Postgres>,
     pub postgres_endpoint: String,
@@ -58,11 +59,7 @@ impl TestContainers {
             let endpoint = format!("http://127.0.0.1:{}", port);
 
             verify_anvil_ready(&endpoint).await?;
-            tracing::info!(
-                "Anvil fork for chain {} on port {} online",
-                chain_id,
-                port
-            );
+            tracing::info!("Anvil fork for chain {} on port {} online", chain_id, port);
 
             anvil_processes.push(child);
             anvil_endpoints.insert(chain_id, endpoint.clone());
@@ -76,10 +73,6 @@ impl TestContainers {
             anvil_processes,
             anvil_endpoints,
         })
-    }
-
-    pub fn get_rpc_from_chain(&self, chain_id: u64) -> Option<String> {
-        self.anvil_endpoints.get(&chain_id).as_deref().cloned()
     }
 
     pub async fn fund_test_accounts(
@@ -160,6 +153,7 @@ async fn verify_anvil_ready(endpoint: &str) -> Result<(), Box<dyn std::error::Er
         }
         sleep(Duration::from_millis(200)).await;
     }
+    
     Err(format!("Anvil timeout at {}", endpoint).into())
 }
 

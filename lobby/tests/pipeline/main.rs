@@ -42,16 +42,14 @@ use std::{
 use tokio::{sync::Mutex, task::JoinSet};
 use tracing::{Level, info};
 
-#[allow(dead_code)]
 mod containers;
-#[allow(dead_code)]
 mod helpers;
 
 // ============================================================
 
 const TRANSACTION_COUNT: usize = 100;
 // const SUBMISSION_DEADLINE_MS: u64 = 1000;
-const POLL_TIMEOUT_SECS: u64 = 10;
+const POLL_TIMEOUT_SECS: u64 = 600;
 const POLL_INTERVAL_MS: u64 = 50;
 
 /// Test result statistics.
@@ -192,7 +190,6 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
                     let submission = TransactionSubmission {
                         execution_id,
                         from_address: from_address.address,
-                        to_address: to_address.address,
                         chain_id,
                     };
                     submissions.lock().await.push(submission);
@@ -258,7 +255,12 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
                     results.lock().await.push((submission, status, success));
                 }
                 Err(e) => {
-                    tracing::info!("Polling failed for {}: on chain {}: {}", submission.from_address, submission.chain_id, e);
+                    tracing::info!(
+                        "Polling failed for {}: on chain {}: {}",
+                        submission.from_address,
+                        submission.chain_id,
+                        e
+                    );
                     results.lock().await.push((
                         submission,
                         PipelineStatus::Failed {

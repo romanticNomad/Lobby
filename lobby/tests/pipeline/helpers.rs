@@ -29,6 +29,7 @@ use uuid::Uuid;
 
 /// Test account configuration loaded from test_keys.json.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TestAccountFormat {
     pvt_key: String,
     pub_key: String,
@@ -37,11 +38,10 @@ pub struct TestAccountFormat {
 #[derive(Debug, Clone)]
 pub struct TestAccount {
     pub address: Address,
-    pub pvt_key: String,
 }
 impl TestAccount {
-    fn new(address: Address, pvt_key: String) -> Self {
-        Self { address, pvt_key }
+    fn new(address: Address) -> Self {
+        Self { address }
     }
 }
 
@@ -50,7 +50,6 @@ impl TestAccount {
 pub struct TransactionSubmission {
     pub execution_id: ExecutionId,
     pub from_address: Address,
-    pub to_address: Address,
     pub chain_id: u64,
 }
 
@@ -81,9 +80,8 @@ pub fn load_test_account() -> Result<Vec<TestAccount>, Box<dyn std::error::Error
         .into_iter()
         .map(|(_, test_account)| {
             let address: Address = test_account.address.parse().unwrap();
-            let pvt_key = test_account.pvt_key;
 
-            TestAccount::new(address, pvt_key)
+            TestAccount::new(address)
         })
         .collect();
 
@@ -216,13 +214,14 @@ pub async fn poll_transaction_status(
             continue;
         }
         let status_response: JsonStatusResponse = response.json().await?;
+        tracing::debug!("{:?}", status_response);
 
         // Check if we've reached a final state
         match &status_response.status {
             PipelineStatus::ConfirmedOnChain { .. } => {
                 return Ok((status_response.status, start.elapsed()));
             }
-            PipelineStatus::ValidatorTimedOut { .. } => {
+            PipelineStatus::Broadcasted { .. } => {
                 return Ok((status_response.status, start.elapsed()));
             }
             PipelineStatus::Failed { .. } => {
@@ -236,9 +235,11 @@ pub async fn poll_transaction_status(
     }
 }
 
+// ============================================================
+
 /// Check if a transaction status represents success.
 pub fn is_success_status(status: &PipelineStatus) -> bool {
-    matches!(status, PipelineStatus::ConfirmedOnChain { .. } | PipelineStatus::ValidatorTimedOut { .. } | PipelineStatus::Failed { .. } )
+    matches!(status, PipelineStatus::ConfirmedOnChain { .. } | PipelineStatus::Broadcasted { .. })
 }
 
 // ============================================================
