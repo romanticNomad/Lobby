@@ -12,7 +12,7 @@ use testcontainers_modules::{
     redis::Redis,
     testcontainers::{ContainerAsync, ImageExt, runners::AsyncRunner},
 };
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 // ============================================================
 // Container setup
@@ -48,17 +48,21 @@ impl TestContainers {
             .with_env_var("POSTGRES_DB", "lobby_test_db")
             .start()
             .await?;
-
+        
         let postgres_port = postgres.get_host_port_ipv4(5432).await?;
         let postgres_endpoint = format!(
             "postgres://lobby:lobby_test_pswd@localhost:{}/lobby_test_db",
             postgres_port
         );
+        
+        tracing::info!("PostgreSQL started on port {}", postgres_port);
 
         // Redis Container
         let redis = Redis::default().start().await?;
         let redis_port = redis.get_host_port_ipv4(6379).await?;
         let redis_endpoint = format!("redis://localhost:{}", redis_port);
+        
+        tracing::info!("Redis started on port {}", redis_port);
 
         // Start local Anvil processes instead of Docker containers
         let mut anvil_processes = Vec::new();
@@ -67,18 +71,22 @@ impl TestContainers {
         // Find available ports and start Anvil processes
         for chain_id in [1, 137, 42161] {
             let port = find_available_port().await?;
+            tracing::info!("Starting local Anvil for chain {} on port {}...", chain_id, port);
+            
             let child = start_anvil_process(chain_id, port)?;
-
+            
             // Give Anvil a moment to start
             sleep(Duration::from_millis(300)).await;
-
+            
             let endpoint = format!("http://127.0.0.1:{}", port);
-
+            
             // Verify it's actually ready
             verify_anvil_ready(&endpoint).await?;
-
+            
             anvil_processes.push(child);
-            anvil_endpoints.insert(chain_id, endpoint);
+            anvil_endpoints.insert(chain_id, endpoint.clone());
+            
+            tracing::info!("Anvil for chain {} ready at {}", chain_id, endpoint);
         }
 
         Ok(Self {
@@ -131,17 +139,17 @@ fn start_anvil_process(chain_id: u64, port: u16) -> Result<Child, Box<dyn std::e
         .arg("--port").arg(port.to_string())
         .arg("--fork-block-number").arg("0") // Start from genesis, no forking
         .arg("--block-time").arg("0") // Instant mining
-        .stdout(Stdio::piped()) // Suppress output (change to Stdio::piped() for debugging)
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null()) // Suppress output (change to Stdio::piped() for debugging)
+        .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| -> Box<dyn std::error::Error> {
+        .map_err(|e| -> Box<dyn std::error::Error>{
             if e.kind() == std::io::ErrorKind::NotFound {
                 format!("'anvil' command not found. Is Foundry installed? Try: cargo install --git https://github.com/foundry-rs/foundry --locked forge cast anvil chisel").into()
             } else {
                 format!("Failed to start anvil: {}", e).into()
             }
         })?;
-
+    
     Ok(child)
 }
 
@@ -153,15 +161,12 @@ async fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
             return Ok(port);
         }
     }
-
     Err("No available ports found".into())
 }
 
 /// Check if a port is available.
 async fn is_port_available(port: u16) -> bool {
-    tokio::net::TcpListener::bind(("127.0.0.1", port))
-        .await
-        .is_ok()
+    tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok()
 }
 
 /// Verify that Anvil is actually ready to accept connections.
@@ -173,17 +178,16 @@ async fn verify_anvil_ready(endpoint: &str) -> Result<(), Box<dyn std::error::Er
         "params": [],
         "id": 1
     });
-
+    
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(10);
-
+    
     while start.elapsed() < timeout {
-        match client
-            .post(endpoint)
+        match client.post(endpoint)
             .json(&body)
             .timeout(Duration::from_secs(1))
             .send()
-            .await
+            .await 
         {
             Ok(resp) if resp.status().is_success() => {
                 return Ok(());
@@ -193,12 +197,8 @@ async fn verify_anvil_ready(endpoint: &str) -> Result<(), Box<dyn std::error::Er
             }
         }
     }
-
-    Err(format!(
-        "Anvil at {} failed to become ready within {:?}",
-        endpoint, timeout
-    )
-    .into())
+    
+    Err(format!("Anvil at {} failed to become ready within {:?}", endpoint, timeout).into())
 }
 
 // ============================================================
@@ -211,9 +211,6 @@ impl Drop for TestContainers {
             let _ = process.kill();
             let _ = process.wait();
         }
-
         tracing::info!("All local Anvil processes terminated");
     }
 }
-
-// ============================================================
