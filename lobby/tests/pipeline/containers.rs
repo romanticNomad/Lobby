@@ -125,9 +125,7 @@ fn start_anvil_process(
         .arg(chain_id.to_string())
         .arg("--port")
         .arg(port.to_string())
-        .arg("--block-time")
-        .arg("0") // Instant mining for tests
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::inherit()) // Show errors in terminal if fork fails
         .spawn()
         .map_err(|e| -> Box<dyn std::error::Error> {

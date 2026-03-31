@@ -119,9 +119,9 @@ pub fn build_transaction_params(
     Eip1193SendTransactionParams {
         from,
         to: Some(to),
-        gas: None,
-        max_fee_per_gas: None,
-        max_priority_fee_per_gas: None,
+        gas: Some(format!("0x{:x}", 21000 as u64)),
+        max_fee_per_gas: Some(format!("0x{:x}", 50_000_000_000 as u128)),
+        max_priority_fee_per_gas: Some(format!("0x{:x}", 2_000_000_000 as u128)),
         value: Some(value_hex),
         data: None,
         chain_id: format!("0x{:x}", chain_id),
