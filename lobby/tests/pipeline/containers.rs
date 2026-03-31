@@ -54,16 +54,15 @@ impl TestContainers {
             let rpc_url = get_rpc_url_for_chain(chain_id)?;
             let port = find_available_port().await?;
 
+            let child = start_anvil_process(chain_id, port, &rpc_url)?;
+            let endpoint = format!("http://127.0.0.1:{}", port);
+
+            verify_anvil_ready(&endpoint).await?;
             tracing::info!(
-                "Starting Anvil fork for chain {} on port {}...",
+                "Anvil fork for chain {} on port {} online",
                 chain_id,
                 port
             );
-
-            let child = start_anvil_process(chain_id, port, &rpc_url)?;
-
-            let endpoint = format!("http://127.0.0.1:{}", port);
-            verify_anvil_ready(&endpoint).await?;
 
             anvil_processes.push(child);
             anvil_endpoints.insert(chain_id, endpoint.clone());

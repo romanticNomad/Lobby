@@ -51,7 +51,7 @@ mod helpers;
 
 const TRANSACTION_COUNT: usize = 100;
 // const SUBMISSION_DEADLINE_MS: u64 = 1000;
-const POLL_TIMEOUT_SECS: u64 = 120;
+const POLL_TIMEOUT_SECS: u64 = 10;
 const POLL_INTERVAL_MS: u64 = 50;
 
 /// Test result statistics.
@@ -239,12 +239,15 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
         let client = client.clone();
         let base_url = base_url.clone();
         let results = results.clone();
+        let api_keys = api_keys.clone();
 
         poll_joinset.spawn(async move {
+            let api_key = api_keys.get(&submission.from_address).unwrap().clone();
             match poll_transaction_status(
                 &client,
                 &base_url,
                 submission.execution_id,
+                api_key,
                 Duration::from_secs(POLL_TIMEOUT_SECS),
                 Duration::from_millis(POLL_INTERVAL_MS),
             )
@@ -255,7 +258,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
                     results.lock().await.push((submission, status, success));
                 }
                 Err(e) => {
-                    tracing::info!("Polling failed for {}: {}", submission.execution_id, e);
+                    tracing::info!("Polling failed for {}: on chain {}: {}", submission.from_address, submission.chain_id, e);
                     results.lock().await.push((
                         submission,
                         PipelineStatus::Failed {
@@ -320,17 +323,17 @@ fn calculate_statistics(results: &[(TransactionSubmission, PipelineStatus, bool)
 
 /// Print test results in a formatted table.
 fn print_results(results: &TestResults) {
-    tracing::info!("\n╔══════════════════════════════════════════════════════════════╗");
+    tracing::info!("╔══════════════════════════════════════════════════════════════╗");
     tracing::info!("║           HEALTHY PATH TEST - RESULTS REPORT                 ║");
     tracing::info!("╠══════════════════════════════════════════════════════════════╣");
     tracing::info!(
-        "║ Total Transactions:    {:>39} ║",
+        "║ Total Transactions:  {:>39} ║",
         results.total_transactions
     );
-    tracing::info!("║ Successful:            {:>39} ║", results.successful);
-    tracing::info!("║ Failed:               {:>39} ║", results.failed);
+    tracing::info!("║ Successful:          {:>39} ║", results.successful);
+    tracing::info!("║ Failed:              {:>39} ║", results.failed);
     tracing::info!(
-        "║ Success Rate:         {:>38.2}% ║",
+        "║ Success Rate:        {:>38.2}% ║",
         (results.successful as f64 / results.total_transactions as f64) * 100.0
     );
     tracing::info!("╚══════════════════════════════════════════════════════════════╝");

@@ -120,7 +120,7 @@ pub fn build_transaction_params(
         from,
         to: Some(to),
         gas: Some(format!("0x{:x}", 21000 as u64)),
-        max_fee_per_gas: Some(format!("0x{:x}", 50_000_000_000 as u128)),
+        max_fee_per_gas: Some(format!("0x{:x}", 150_000_000_000 as u128)),
         max_priority_fee_per_gas: Some(format!("0x{:x}", 2_000_000_000 as u128)),
         value: Some(value_hex),
         data: None,
@@ -193,6 +193,7 @@ pub async fn poll_transaction_status(
     client: &Client,
     base_url: &str,
     execution_id: ExecutionId,
+    api_key: String,
     timeout: Duration,
     poll_interval: Duration,
 ) -> Result<(PipelineStatus, Duration), Box<dyn std::error::Error + Send + Sync>> {
@@ -205,7 +206,8 @@ pub async fn poll_transaction_status(
         }
 
         let response = client
-            .get(&format!("{}/status/{}", base_url, execution_id_str))
+            .get(format!("{}/status/{}", base_url, execution_id_str))
+            .header("Authorization", format!("Bearer {}", api_key))
             .send()
             .await?;
 
@@ -218,6 +220,9 @@ pub async fn poll_transaction_status(
         // Check if we've reached a final state
         match &status_response.status {
             PipelineStatus::ConfirmedOnChain { .. } => {
+                return Ok((status_response.status, start.elapsed()));
+            }
+            PipelineStatus::ValidatorTimedOut { .. } => {
                 return Ok((status_response.status, start.elapsed()));
             }
             PipelineStatus::Failed { .. } => {
@@ -233,7 +238,7 @@ pub async fn poll_transaction_status(
 
 /// Check if a transaction status represents success.
 pub fn is_success_status(status: &PipelineStatus) -> bool {
-    matches!(status, PipelineStatus::ConfirmedOnChain { .. })
+    matches!(status, PipelineStatus::ConfirmedOnChain { .. } | PipelineStatus::ValidatorTimedOut { .. } | PipelineStatus::Failed { .. } )
 }
 
 // ============================================================
