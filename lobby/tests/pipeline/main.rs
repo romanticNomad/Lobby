@@ -101,7 +101,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     // rpc_registry
     let rpc_registry: RpcProviderRegistry = Arc::new(DashMap::new());
 
-    for (chain_id, rpc_url) in containers.anvil_endpoints {
+    for (chain_id, rpc_url) in containers.anvil_endpoints.clone() {
         let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
         rpc_registry.insert(
             ChainId::try_from(chain_id as i64).unwrap(),
