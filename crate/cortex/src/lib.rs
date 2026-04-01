@@ -163,7 +163,7 @@ pub async fn spawn_cortex(
     );
 
     // ============================================================
-    // nonce pool - keyed by from address.
+    // nonce pool - keyed by from_address.
 
     let nonce_pool = {
         let shards: Vec<Arc<dyn NonceManager>> = (0..config.nonce_shards)

@@ -153,7 +153,7 @@ async fn verify_anvil_ready(endpoint: &str) -> Result<(), Box<dyn std::error::Er
         }
         sleep(Duration::from_millis(200)).await;
     }
-    
+
     Err(format!("Anvil timeout at {}", endpoint).into())
 }
 

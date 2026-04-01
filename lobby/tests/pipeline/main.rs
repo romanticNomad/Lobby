@@ -36,11 +36,13 @@ use lobby::{
 };
 use primitives::types::{ChainId, PipelineStatus, RpcProviderRegistry};
 use std::{
+    fs::OpenOptions,
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{sync::Mutex, task::JoinSet};
 use tracing::{Level, info};
+use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod containers;
 mod helpers;
@@ -49,7 +51,7 @@ mod helpers;
 
 const TRANSACTION_COUNT: usize = 100;
 // const SUBMISSION_DEADLINE_MS: u64 = 1000;
-const POLL_TIMEOUT_SECS: u64 = 600;
+const POLL_TIMEOUT_SECS: u64 = 60;
 const POLL_INTERVAL_MS: u64 = 50;
 
 /// Test result statistics.
@@ -60,13 +62,34 @@ struct TestResults {
     failed: usize,
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 5)]
 async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================
     // test state requirements
 
     // initialize tracing subscriber for structured logging
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("transactions.log")
+        .expect("Failed to open log file");
+
+    let file_layer = fmt::layer()
+        .with_writer(file)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_ids(true);
+
+    let stdout_layer = fmt::layer()
+        .with_ansi(true)
+        .with_target(true);
+
+    Registry::default()
+        .with(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
+        .with(file_layer) 
+        .with(stdout_layer) 
+        .init();
     info!("starting pipeline test");
 
     // container setup
@@ -210,7 +233,6 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
 
     let submission_duration = submission_start.elapsed();
     let actual_submissions = submissions.lock().await.len();
-
     info!(
         "{}/{} transactions submitted in {:?}",
         actual_submissions, TRANSACTION_COUNT, submission_duration
@@ -254,18 +276,17 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
                     let success = is_success_status(&status);
                     results.lock().await.push((submission, status, success));
                 }
-                Err(e) => {
+                Err(_) => {
                     tracing::info!(
-                        "Polling failed for {}: on chain {}: {}",
-                        submission.from_address,
-                        submission.chain_id,
-                        e
+                        "Polling timeout exceeded for id: {} on chain: {}",
+                        submission.execution_id,
+                        submission.chain_id
                     );
                     results.lock().await.push((
                         submission,
                         PipelineStatus::Failed {
                             stage: "polling".to_string(),
-                            reason: e.to_string(),
+                            reason: "Polling timeout exceeded for id".to_string(),
                         },
                         false,
                     ));
@@ -300,7 +321,6 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // Cleanup
     drop(server_handle);
-
     Ok(())
 }
 

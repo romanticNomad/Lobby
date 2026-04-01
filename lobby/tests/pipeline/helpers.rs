@@ -213,6 +213,7 @@ pub async fn poll_transaction_status(
             sleep(poll_interval).await;
             continue;
         }
+
         let status_response: JsonStatusResponse = response.json().await?;
         tracing::debug!("{:?}", status_response);
 
@@ -221,9 +222,9 @@ pub async fn poll_transaction_status(
             PipelineStatus::ConfirmedOnChain { .. } => {
                 return Ok((status_response.status, start.elapsed()));
             }
-            PipelineStatus::Broadcasted { .. } => {
-                return Ok((status_response.status, start.elapsed()));
-            }
+            // PipelineStatus::Broadcasted { .. } => {
+            //     return Ok((status_response.status, start.elapsed()));
+            // }
             PipelineStatus::Failed { .. } => {
                 return Ok((status_response.status, start.elapsed()));
             }
@@ -239,7 +240,10 @@ pub async fn poll_transaction_status(
 
 /// Check if a transaction status represents success.
 pub fn is_success_status(status: &PipelineStatus) -> bool {
-    matches!(status, PipelineStatus::ConfirmedOnChain { .. } | PipelineStatus::Broadcasted { .. })
+    matches!(
+        status,
+        PipelineStatus::ConfirmedOnChain { .. } | PipelineStatus::Broadcasted { .. }
+    )
 }
 
 // ============================================================
