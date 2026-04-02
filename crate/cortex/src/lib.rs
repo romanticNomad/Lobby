@@ -35,7 +35,7 @@ use primitives::{
 use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
-use utils::registry::load_rpc_endpoints_from_env;
+use utils::rpc::load_rpc_endpoints_from_env;
 
 // ============================================================
 // Cortex (orchestrator) struct.

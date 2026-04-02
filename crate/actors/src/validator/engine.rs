@@ -5,7 +5,7 @@ use primitives::types::{
 use sqlx::PgPool;
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
-use utils::registry::rpc;
+use utils::rpc;
 
 // ============================================================
 

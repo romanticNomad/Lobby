@@ -145,7 +145,7 @@ async fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
             return Ok(port);
         }
     }
-    
+
     Err("No available ports found".into())
 }
 

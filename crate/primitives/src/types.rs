@@ -3,11 +3,10 @@ use alloy::{
     primitives::{Address, B256, U256, bytes::Bytes},
     providers::Provider,
 };
-use tokio::sync::Semaphore;
 use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::{fmt, hash::Hash, sync::Arc, time::Instant};
+use std::{fmt, hash::Hash, sync::Arc};
 use thiserror::Error;
 
 // ============================================================
@@ -58,27 +57,12 @@ pub struct Eip1559Transaction {
 
 // ============================================================
 
-#[derive(Clone)]
-/// Managed RPC provider with built-in connection limiting
-pub struct ManagedRpcProvider {
-    provider: Arc<dyn Provider + Send + Sync>,
-    /// Limits concurrent requests to prevent exhaustion
-    semaphore: Arc<Semaphore>,
-    /// Tracks failure rate for circuit breaking
-    failure_tracker: Arc<DashMap<String, FailureWindow>>,
-}
-
-#[derive(Debug, Clone)]
-struct FailureWindow {
-    failures: Vec<Instant>,
-    last_reset: Instant,
-}
-
-/// Shared RPC provider registry used by Broadcast and Validator actors separately.
+/// Shared RPC provider registry used by both Broadcast and Validator actors.
 ///
 /// This is a type alias for a concurrent HashMap (DashMap) that maps ChainId
-/// to an `ManagedRpcProvider` instance. That manages rate-limits and tracks failed connections.
-pub type RpcProviderRegistry = Arc<DashMap<ChainId, ManagedRpcProvider>>;
+/// to an Alloy provider instance.  The provider is wrapped in `Arc` so it can
+/// be cheaply cloned into actor tasks.
+pub type RpcProviderRegistry = Arc<DashMap<ChainId, Arc<dyn Provider + Send + Sync>>>;
 
 // ============================================================
 // client configuration loaded from environment variables and
