@@ -1,6 +1,6 @@
 target
 .env
-transactions.log
+*.log
 test_keys.json
 api_keys
 context
