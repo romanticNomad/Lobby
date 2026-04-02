@@ -14,6 +14,7 @@ serde = { version = "1", features = ["derive"] }
 alloy = { version = "1.6.0", features = ["full"] }
 uuid = { version ="1.19", features = ["v4", "serde"] }
 tower-http = { version = "0.6", features = ["trace"] }
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 serde_json = "1.0.149"
 hex = "0.4"

@@ -97,7 +97,7 @@ impl CortextHandle {
         .map_err(|_| CortexError::BackpressureTimeout {
             timeout_ms: orch.cortex_config.pipeline_semaphore_timeout.as_millis() as u64,
         })?
-        .expect("semaphore should never be closed");
+        .expect("pipeline: semaphore is closed");
 
         tracing::debug!(
             execution_id = ?execution_id,
