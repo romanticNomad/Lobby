@@ -1,10 +1,14 @@
 //! Helper functions for healthy_path_test.
 //! Handles transaction generation, submission, and status polling.
 
-use alloy::primitives::Address;
+use alloy::{
+    primitives::Address,
+    providers::{Provider, ProviderBuilder},
+};
+use cortex::RpcProviderStack;
 use dashmap::DashMap;
 use primitives::types::{
-    ApiRegistry, ClientConfig, Eip1193SendTransactionParams, ExecutionId, JsonRpcRequest,
+    ApiRegistry, ChainId, ClientConfig, Eip1193SendTransactionParams, ExecutionId, JsonRpcRequest,
     JsonRpcSuccessResponse, JsonStatusResponse, PipelineStatus,
 };
 use rand::{seq::SliceRandom, thread_rng};
@@ -51,6 +55,39 @@ pub struct TransactionSubmission {
     pub execution_id: ExecutionId,
     pub from_address: Address,
     pub chain_id: u64,
+}
+
+/// migration code to gerenrate RpcProviderStack for this test suite.
+pub fn rpc_provider_stack_build(
+    anvil_endpoints: DashMap<u64, String>,
+) -> Result<RpcProviderStack, Box<dyn std::error::Error>> {
+    let broadcast_registry = Arc::new(DashMap::new());
+    let validator_registry = Arc::new(DashMap::new());
+
+    for (chain_id, rpc_url) in anvil_endpoints {
+        // Each actor gets its own connection pool (default: 100 connections)
+
+        let broadcast_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+
+        let validation_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+
+        let chain = ChainId::try_from(chain_id as i64)?;
+
+        broadcast_registry.insert(
+            chain,
+            Arc::new(broadcast_provider) as Arc<dyn Provider + Send + Sync>,
+        );
+
+        validator_registry.insert(
+            chain,
+            Arc::new(validation_provider) as Arc<dyn Provider + Send + Sync>,
+        );
+    }
+
+    Ok(RpcProviderStack {
+        broadcast_registry,
+        validator_registry,
+    })
 }
 
 // ============================================================

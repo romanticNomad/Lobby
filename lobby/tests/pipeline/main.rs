@@ -13,20 +13,16 @@ use crate::{
     containers::TestContainers,
     helpers::{
         TransactionSubmission, build_api_registry, build_transaction_params, is_success_status,
-        load_test_account, poll_transaction_status, select_random_accounts, select_random_chain,
-        send_transaction,
+        load_test_account, poll_transaction_status, rpc_provider_stack_build,
+        select_random_accounts, select_random_chain, send_transaction,
     },
 };
-use alloy::{
-    primitives::Address,
-    providers::{Provider, ProviderBuilder},
-};
+use alloy::primitives::Address;
 use axum::{
     Router, middleware,
     routing::{get, post},
 };
 use cortex::{artifacts::CortexConfig, spawn_cortex};
-use dashmap::DashMap;
 use lobby::{
     AppState,
     auth::auth_middleware,
@@ -34,7 +30,7 @@ use lobby::{
     scanner::spawn_scanner_bot,
     spawn_sweeper_bot,
 };
-use primitives::types::{ChainId, PipelineStatus, RpcProviderRegistry};
+use primitives::types::PipelineStatus;
 use std::{
     fs::OpenOptions,
     sync::Arc,
@@ -62,7 +58,7 @@ struct TestResults {
     failed: usize,
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 5)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 16)]
 async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================
     // test state requirements
@@ -81,14 +77,12 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
         .with_target(true)
         .with_thread_ids(true);
 
-    let stdout_layer = fmt::layer()
-        .with_ansi(true)
-        .with_target(true);
+    let stdout_layer = fmt::layer().with_ansi(true).with_target(true);
 
     Registry::default()
         .with(EnvFilter::from_default_env().add_directive(Level::INFO.into()))
-        .with(file_layer) 
-        .with(stdout_layer) 
+        .with(file_layer)
+        .with(stdout_layer)
         .init();
     info!("starting pipeline test");
 
@@ -120,15 +114,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     // lobby server
 
     // rpc_registry
-    let rpc_registry: RpcProviderRegistry = Arc::new(DashMap::new());
-
-    for (chain_id, rpc_url) in containers.anvil_endpoints.clone() {
-        let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-        rpc_registry.insert(
-            ChainId::try_from(chain_id as i64).unwrap(),
-            Arc::new(provider) as Arc<dyn Provider + Send + Sync>,
-        );
-    }
+    let rpc_provider_stack = rpc_provider_stack_build(containers.anvil_endpoints.clone())?;
 
     // fetch api_keys and build api_registry
     let (api_registry, api_keys) = build_api_registry()?;
@@ -144,7 +130,8 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let cortex_config = CortexConfig::from_env()?;
-    let contex_handler = spawn_cortex(db_pool.clone(), rpc_registry.clone(), cortex_config).await;
+    let contex_handler =
+        spawn_cortex(db_pool.clone(), rpc_provider_stack.clone(), cortex_config).await;
     let status_registry = contex_handler.status_registry();
 
     // Spawn background bots
@@ -152,7 +139,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     spawn_scanner_bot(
         db_pool.clone(),
         status_registry.clone(),
-        rpc_registry.clone(),
+        rpc_provider_stack.validator_registry.clone(),
     );
 
     // Build app state

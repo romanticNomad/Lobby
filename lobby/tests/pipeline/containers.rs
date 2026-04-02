@@ -117,6 +117,15 @@ fn start_anvil_process(
         .arg(chain_id.to_string())
         .arg("--port")
         .arg(port.to_string())
+        .arg("--host")
+        .arg("0.0.0.0")
+        // .arg("--max-connections")
+        // .arg("500"
+        // .arg("--timeout")
+        // .arg("500")
+        .arg("--no-rate-limit")
+        .arg("--block-time")
+        .arg("1")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit()) // Show errors in terminal if fork fails
         .spawn()
@@ -136,6 +145,7 @@ async fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
             return Ok(port);
         }
     }
+    
     Err("No available ports found".into())
 }
 
