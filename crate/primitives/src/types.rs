@@ -58,27 +58,27 @@ pub struct Eip1559Transaction {
 
 // ============================================================
 
-// #[derive(Clone)]
-// /// Managed RPC provider with built-in connection limiting
-// pub struct ManagedRpcProvider {
-//     provider: Arc<dyn Provider + Send + Sync>,
-//     /// Limits concurrent requests to prevent exhaustion
-//     semaphore: Arc<Semaphore>,
-//     /// Tracks failure rate for circuit breaking
-//     failure_tracker: Arc<DashMap<String, FailureWindow>>,
-// }
+#[derive(Clone)]
+/// Managed RPC provider with built-in connection limiting
+pub struct ManagedRpcProvider {
+    provider: Arc<dyn Provider + Send + Sync>,
+    /// Limits concurrent requests to prevent exhaustion
+    semaphore: Arc<Semaphore>,
+    /// Tracks failure rate for circuit breaking
+    failure_tracker: Arc<DashMap<String, FailureWindow>>,
+}
 
-// #[derive(Debug, Clone)]
-// struct FailureWindow {
-//     failures: Vec<Instant>,
-//     last_reset: Instant,
-// }
+#[derive(Debug, Clone)]
+struct FailureWindow {
+    failures: Vec<Instant>,
+    last_reset: Instant,
+}
 
 /// Shared RPC provider registry used by Broadcast and Validator actors separately.
 ///
 /// This is a type alias for a concurrent HashMap (DashMap) that maps ChainId
 /// to an `ManagedRpcProvider` instance. That manages rate-limits and tracks failed connections.
-pub type RpcProviderRegistry = Arc<DashMap<ChainId, Arc<dyn Provider + Send + Sync>>>;
+pub type RpcProviderRegistry = Arc<DashMap<ChainId, ManagedRpcProvider>>;
 
 // ============================================================
 // client configuration loaded from environment variables and
