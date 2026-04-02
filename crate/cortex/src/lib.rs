@@ -33,6 +33,7 @@ use primitives::{
     types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus, RpcProviderRegistry},
 };
 use sqlx::PgPool;
+use utils::registry::load_rpc_endpoints_from_env;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
 
@@ -145,13 +146,36 @@ impl CortextHandle {
 }
 
 // ============================================================
+
+/// RpcProviderStack builder for orchestration of `Validator`` and `Broadcaster``
+/// 
+/// Separate registries prevent connection pool exhaustion.
+#[derive(Clone)]
+pub struct RpcProviderStack {
+    /// Used ONLY by broadcaster/signer (write operations)
+    pub broadcast_registry: RpcProviderRegistry,
+    /// Used ONLY by validator (read operations - polling receipts)
+    pub validator_registry: RpcProviderRegistry,
+}
+
+impl RpcProviderStack {
+    pub fn new() -> Self {
+        // separate http clients for Broadcaster and Validator
+        let broadcast_registry = load_rpc_endpoints_from_env();
+        let validator_registry = load_rpc_endpoints_from_env();
+
+        Self { broadcast_registry, validator_registry }
+    }
+}
+
+// ============================================================
 // Cortex (orchestrator) boot function
 
 /// Spawn all actor shards and assemble the `OrchestratorHandle`.
 /// panics if number of shards in config = 0.
 pub async fn spawn_cortex(
     db: PgPool,
-    provider: RpcProviderRegistry,
+    provider: RpcProviderStack,
     config: CortexConfig,
 ) -> CortextHandle {
     tracing::debug!(
@@ -200,7 +224,7 @@ pub async fn spawn_cortex(
             .map(|i| {
                 let handle = broadcast::spawn_broadcast_actor(
                     db.clone(),
-                    Arc::clone(&provider),
+                    Arc::clone(&provider.broadcast_registry),
                     config.actor_buffer,
                 );
                 tracing::debug!(shard = i, "broadcast actor spawned");
@@ -227,7 +251,7 @@ pub async fn spawn_cortex(
     let validator_handle = {
         let handle = validator::spawn_validator_actor(
             db.clone(),
-            Arc::clone(&provider),
+            Arc::clone(&provider.validator_registry),
             validator::ValidatorConfig::default(),
             config.actor_buffer,
         );

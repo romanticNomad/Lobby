@@ -13,7 +13,7 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use cortex::{artifacts::config::CortexConfig, spawn_cortex};
+use cortex::{RpcProviderStack, artifacts::config::CortexConfig, spawn_cortex};
 use primitives::types::ChainId;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, fs::OpenOptions, net::SocketAddr};
@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // rpc-endpoint registry
     let rpc_registry = load_rpc_endpoints_from_env();
+    let rpc_provider_stack = RpcProviderStack::new();
     let chains: Vec<ChainId> = rpc_registry.iter().map(|entry| *entry.key()).collect();
     if rpc_registry.len() == 0 {
         tracing::warn!(
@@ -98,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // cortex handler
     let config = CortexConfig::from_env()?;
-    let cortex_handler = spawn_cortex(db_pool.clone(), rpc_registry.clone(), config).await;
+    let cortex_handler = spawn_cortex(db_pool.clone(), rpc_provider_stack.clone(), config).await;
 
     // status registry
     let status_registry = cortex_handler.status_registry();
