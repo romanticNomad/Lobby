@@ -33,9 +33,9 @@ use primitives::{
     types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus, RpcProviderRegistry},
 };
 use sqlx::PgPool;
-use utils::registry::load_rpc_endpoints_from_env;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
+use utils::registry::load_rpc_endpoints_from_env;
 
 // ============================================================
 // Cortex (orchestrator) struct.
@@ -148,7 +148,7 @@ impl CortextHandle {
 // ============================================================
 
 /// RpcProviderStack builder for orchestration of `Validator`` and `Broadcaster``
-/// 
+///
 /// Separate registries prevent connection pool exhaustion.
 #[derive(Clone)]
 pub struct RpcProviderStack {
@@ -164,7 +164,10 @@ impl RpcProviderStack {
         let broadcast_registry = load_rpc_endpoints_from_env();
         let validator_registry = load_rpc_endpoints_from_env();
 
-        Self { broadcast_registry, validator_registry }
+        Self {
+            broadcast_registry,
+            validator_registry,
+        }
     }
 }
 

@@ -68,7 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_connections(17)
         .connect(&database_url)
         .await?;
-
     sqlx::migrate!("../database/migrations")
         .run(&db_pool)
         .await?;
@@ -112,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     spawn_scanner_bot(
         db_pool.clone(),
         status_registry.clone(),
-        rpc_registry.clone(),
+        rpc_provider_stack.validator_registry.clone(),
     );
 
     tracing::info!("bots spawned: monitoring status");
@@ -122,7 +121,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // AppState
     let state = AppState::new(api_registry, cortex_handler, status_registry);
-
     let app = Router::new()
         // Transaction submission (fire-and-forget, returns immediately with execution_id)
         .route("/v1/transactions", post(submit_transaction))
