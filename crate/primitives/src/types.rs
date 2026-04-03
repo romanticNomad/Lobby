@@ -383,6 +383,9 @@ pub enum BroadcastError {
         nonce_on_chain: TxNonce,
         attempted_nonce: TxNonce,
     },
+    /// RPC connection timedout
+    #[error("RPC connection timedout: {0}")]
+    RpcConnectionError(String),
 }
 
 #[derive(Debug, Error)]
@@ -399,6 +402,9 @@ pub enum ValidatorError {
     /// fallback internal code error
     #[error("internal error: {0}")]
     Internal(String),
+    /// RPC connection timedout
+    #[error("RPC connection timedout: {0}")]
+    RpcConnectionError(String),
 }
 
 // ============================================================
