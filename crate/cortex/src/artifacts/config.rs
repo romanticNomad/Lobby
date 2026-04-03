@@ -46,7 +46,10 @@ pub struct CortexConfig {
     pub broadcast_shards: usize,
     pub actor_buffer: usize,
     pub pipeline_concurrency: usize,
+    pub rpc_broadcast_concurrency: usize,
+    pub rpc_validator_concurrecny: usize,
     pub pipeline_semaphore_timeout: Duration,
+    pub rpc_semaphore_timeout: Duration,
     pub retry: RetryConfig,
 }
 
@@ -60,9 +63,15 @@ impl CortexConfig {
             broadcast_shards: parse_env("BROADCAST_SHARDS", 17)?,
             actor_buffer: parse_env("ACTOR_BUFFER_SIZE", 64)?,
             pipeline_concurrency: parse_env("PIPELINE_CONCURRENCY", 17)?,
+            rpc_broadcast_concurrency: parse_env("RPC_BROADCAST_CONCURRENCY", 50)?,
+            rpc_validator_concurrecny: parse_env("RPC_VALIDATOR_CONCURRENCY", 200)?,
             pipeline_semaphore_timeout: Duration::from_millis(parse_env(
                 "PIPELINE_SEMAPHORE_TIMEOUT_MS",
                 5_000u64,
+            )?),
+            rpc_semaphore_timeout: Duration::from_millis(parse_env(
+                "RPC_SEMAPHORE_TIMEOUT_MS",
+                10_000u64,
             )?),
             retry: RetryConfig::default(),
         })
@@ -83,6 +92,7 @@ pub enum ConfigError {
 }
 
 // ============================================================
+
 /// Parse an environment variable into a given type
 fn parse_env<T>(key: &'static str, default: T) -> Result<T, ConfigError>
 where

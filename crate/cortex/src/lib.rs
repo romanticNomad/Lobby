@@ -27,15 +27,18 @@ use crate::{
     pipeline::{PipelineContext, run_pipeline},
     state::StatusRegistry,
 };
-use actors::{broadcast, nonce, relayhost, sign, validator};
+use actors::{
+    broadcast::{self, BroadcastConfig},
+    nonce, relayhost, sign, validator,
+};
 use primitives::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
-    types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus, RpcProviderRegistry},
+    types::{ClientConfig, Eip1559Transaction, ExecutionId, PipelineStatus},
 };
 use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
-use utils::rpc::load_rpc_endpoints_from_env;
+use utils::rpc::RpcProviderStack;
 
 // ============================================================
 // Cortex (orchestrator) struct.
@@ -146,32 +149,6 @@ impl CortextHandle {
 }
 
 // ============================================================
-
-/// RpcProviderStack builder for orchestration of `Validator`` and `Broadcaster``
-///
-/// Separate registries prevent connection pool exhaustion.
-#[derive(Clone)]
-pub struct RpcProviderStack {
-    /// Used ONLY by broadcaster/signer (write operations)
-    pub broadcast_registry: RpcProviderRegistry,
-    /// Used ONLY by validator (read operations - polling receipts)
-    pub validator_registry: RpcProviderRegistry,
-}
-
-impl RpcProviderStack {
-    pub fn new() -> Self {
-        // separate http clients for Broadcaster and Validator
-        let broadcast_registry = load_rpc_endpoints_from_env();
-        let validator_registry = load_rpc_endpoints_from_env();
-
-        Self {
-            broadcast_registry,
-            validator_registry,
-        }
-    }
-}
-
-// ============================================================
 // Cortex (orchestrator) boot function
 
 /// Spawn all actor shards and assemble the `OrchestratorHandle`.
@@ -222,12 +199,18 @@ pub async fn spawn_cortex(
     // ============================================================
     // broadcast pool - keyed by chain_id.
 
+    let broadcast_config = BroadcastConfig::new(
+        config.rpc_broadcast_concurrency,
+        config.rpc_semaphore_timeout,
+    );
+
     let broadcast_pool = {
         let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shards)
             .map(|i| {
                 let handle = broadcast::spawn_broadcast_actor(
                     db.clone(),
                     Arc::clone(&provider.broadcast_registry),
+                    broadcast_config.clone(),
                     config.actor_buffer,
                 );
                 tracing::debug!(shard = i, "broadcast actor spawned");
@@ -251,11 +234,16 @@ pub async fn spawn_cortex(
     // ============================================================
     // validator handle
 
+    let validator_config = validator::ValidatorConfig::new(
+        config.rpc_validator_concurrecny,
+        config.rpc_semaphore_timeout,
+    );
+
     let validator_handle = {
         let handle = validator::spawn_validator_actor(
             db.clone(),
             Arc::clone(&provider.validator_registry),
-            validator::ValidatorConfig::default(),
+            validator_config,
             config.actor_buffer,
         );
         tracing::debug!("validate actor spawned");

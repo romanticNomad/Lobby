@@ -40,7 +40,7 @@ pub(crate) struct PipelineContext {
     // retry
     pub retry_config: RetryConfig,
 
-    // tracing
+    // status polling
     pub status: StatusRegistry,
 }
 
