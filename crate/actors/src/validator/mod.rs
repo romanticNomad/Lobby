@@ -48,16 +48,31 @@ use tokio::sync::mpsc;
 /// Configuration for the transaction validation process.
 pub struct ValidatorConfig {
     /// How often to poll the RPC node for a transaction receipt.
-    pub poll_interval: Duration,
+    poll_interval: Duration,
 
     /// Maximum time to wait for a transaction to be included before giving up.
     /// After this timeout, the transaction is considered NotIncluded.
-    /// **Disclaimer**: Timout duration must be more that 5 min, since the actor lease in DB statys for 5 minutes.
-    pub timeout: Duration,
+    timeout: Duration,
 
     /// Number of block confirmations required before a transaction is
     /// considered definitively included (protection against shallow reorgs).
-    pub required_confirmations: u64,
+    required_confirmations: u64,
+
+    /// Number of allowed concurrent RPC calls
+    rpc_concurrency: usize,
+
+    /// Timeout for RPC calls
+    rpc_timeout: Duration,
+}
+
+impl ValidatorConfig {
+    pub fn new(rpc_concurrency: usize, rpc_timeout: Duration) -> Self {
+        Self {
+            rpc_concurrency,
+            rpc_timeout,
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for ValidatorConfig {
@@ -66,6 +81,8 @@ impl Default for ValidatorConfig {
             poll_interval: Duration::from_secs(2),
             timeout: Duration::from_secs(300),
             required_confirmations: 0, // safe value should be >3 for chain reorg protection.
+            rpc_concurrency: 200,
+            rpc_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -79,11 +96,11 @@ impl Default for ValidatorConfig {
 pub fn spawn_validator_actor(
     db: PgPool,
     rpc_registry: RpcProviderRegistry,
-    config: ValidatorConfig,
+    validator_config: ValidatorConfig,
     buffer: usize,
 ) -> ValidatorHandle {
     let (tx, rx) = mpsc::channel(buffer);
-    let engine = ValidatorEngine::new(db, config, rpc_registry, rx);
+    let engine = ValidatorEngine::new(db, validator_config, rpc_registry, rx);
 
     tokio::spawn(async move {
         engine.run().await;

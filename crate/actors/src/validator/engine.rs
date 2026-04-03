@@ -5,7 +5,7 @@ use primitives::types::{
 use sqlx::PgPool;
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
-use utils::rpc;
+use utils::rpc::{self, ManagedRpcProviderRegistry};
 
 // ============================================================
 
@@ -15,22 +15,25 @@ use utils::rpc;
 /// for transaction receipts until the transaction is confirmed or times out.
 pub struct ValidatorEngine {
     db: PgPool,
-    config: ValidatorConfig,
-    rpc_registry: RpcProviderRegistry,
+    validator_config: ValidatorConfig,
+    managed_provider: ManagedRpcProviderRegistry,
     rx: mpsc::Receiver<ValidatorCommand>,
 }
 
 impl ValidatorEngine {
     pub fn new(
         db: PgPool,
-        config: ValidatorConfig,
+        validator_config: ValidatorConfig,
         rpc_registry: RpcProviderRegistry,
         rx: mpsc::Receiver<ValidatorCommand>,
     ) -> Self {
+        let managed_provider =
+            ManagedRpcProviderRegistry::new(rpc_registry, validator_config.rpc_concurrency)
+                .unwrap();
         Self {
             db,
-            config,
-            rpc_registry,
+            validator_config,
+            managed_provider,
             rx,
         }
     }
@@ -55,6 +58,15 @@ impl ValidatorEngine {
                         %chain_id,
                         %tx_hash,
                     );
+
+                    let _permit = self
+                        .managed_provider
+                        .aquire_permit(self.validator_config.rpc_timeout)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::error!("failed to acquire permit: {:?}", e);
+                            panic!("semaphore error: {:?}", e);
+                        });
 
                     let result = self
                         .handle_validation(chain_id, execution_id, tx_hash)
@@ -93,7 +105,7 @@ impl ValidatorEngine {
 
         loop {
             //check timeout
-            if start.elapsed() > self.config.timeout {
+            if start.elapsed() > self.validator_config.timeout {
                 tracing::warn!(
                     elapsed_time = start.elapsed().as_secs(),
                     "validation timed out"
@@ -104,7 +116,7 @@ impl ValidatorEngine {
             }
 
             // fetch receipt
-            match rpc::get_transaction_receipt(&self.rpc_registry, chain_id, tx_hash).await {
+            match rpc::get_transaction_receipt(&self.managed_provider, chain_id, tx_hash).await {
                 Ok(Some(receipt)) => {
                     // transaction is mined -> check status
                     // status=0
@@ -117,11 +129,11 @@ impl ValidatorEngine {
 
                     // confirmation
                     let current_block =
-                        rpc::get_block_number(&self.rpc_registry, chain_id, tx_hash).await?;
+                        rpc::get_block_number(&self.managed_provider, chain_id, tx_hash).await?;
                     let tx_block = receipt.block_number.unwrap_or(0);
                     let confirmations = current_block.saturating_sub(tx_block);
 
-                    if confirmations > self.config.required_confirmations {
+                    if confirmations > self.validator_config.required_confirmations {
                         tracing::debug!(
                             block_number = tx_block,
                             confirmations,
@@ -136,7 +148,7 @@ impl ValidatorEngine {
                     } else {
                         tracing::debug!(
                             confirmations,
-                            required = self.config.required_confirmations,
+                            required = self.validator_config.required_confirmations,
                             "waiting to more confirmations"
                         );
                     }
@@ -156,7 +168,7 @@ impl ValidatorEngine {
             }
 
             // sleep before next poll
-            tokio::time::sleep(self.config.poll_interval).await;
+            tokio::time::sleep(self.validator_config.poll_interval).await;
         }
     }
 
@@ -188,7 +200,6 @@ impl ValidatorEngine {
             }),
 
             "not_included" => Some(ValidatorOutcome::NotIncluded),
-
             _ => None,
         }))
     }
