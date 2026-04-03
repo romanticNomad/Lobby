@@ -13,14 +13,16 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use cortex::{RpcProviderStack, artifacts::config::CortexConfig, spawn_cortex};
+use cortex::{artifacts::config::CortexConfig, spawn_cortex};
 use primitives::types::ChainId;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, fs::OpenOptions, net::SocketAddr};
 use tracing_forest::ForestLayer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use utils::{
-    api::load_api_key_from_env, custody::export_custody_key_count, rpc::load_rpc_endpoints_from_env,
+    api::load_api_key_from_env,
+    custody::export_custody_key_count,
+    rpc::{RpcProviderStack, load_rpc_endpoints_from_env},
 };
 
 // ============================================================
@@ -136,7 +138,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listner = tokio::net::TcpListener::bind(address).await?;
 
     axum::serve(listner, app).await?;
-
     Ok(())
 }
 

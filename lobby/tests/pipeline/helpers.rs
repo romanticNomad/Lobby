@@ -5,7 +5,6 @@ use alloy::{
     primitives::Address,
     providers::{Provider, ProviderBuilder},
 };
-use cortex::RpcProviderStack;
 use dashmap::DashMap;
 use primitives::types::{
     ApiRegistry, ChainId, ClientConfig, Eip1193SendTransactionParams, ExecutionId, JsonRpcRequest,
@@ -26,6 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::time::sleep;
+use utils::rpc::RpcProviderStack;
 use uuid::Uuid;
 
 // ============================================================
@@ -66,18 +66,14 @@ pub fn rpc_provider_stack_build(
 
     for (chain_id, rpc_url) in anvil_endpoints {
         // Each actor gets its own connection pool (default: 100 connections)
-
         let broadcast_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-
         let validation_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-
         let chain = ChainId::try_from(chain_id as i64)?;
 
         broadcast_registry.insert(
             chain,
             Arc::new(broadcast_provider) as Arc<dyn Provider + Send + Sync>,
         );
-
         validator_registry.insert(
             chain,
             Arc::new(validation_provider) as Arc<dyn Provider + Send + Sync>,
