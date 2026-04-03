@@ -1,9 +1,10 @@
 use alloy::providers::Provider;
-use alloy::transports::TransportErrorKind;
 use alloy::{providers::ProviderBuilder, rpc::types::TransactionReceipt};
 use dashmap::DashMap;
 use primitives::types::{ChainId, RpcProviderRegistry, TxHash, ValidatorError};
 use std::sync::Arc;
+
+use crate::rpc::ManagedRpcProviderRegistry;
 
 // ============================================================
 // rpc registry builder
@@ -65,46 +66,53 @@ pub fn load_rpc_endpoints_from_env() -> RpcProviderRegistry {
 ///
 /// Returns `None` if the transaction is not yet mined (still pending).
 pub async fn get_transaction_receipt(
-    registry: &RpcProviderRegistry,
+    registry: &ManagedRpcProviderRegistry,
     chain_id: ChainId,
     tx_hash: TxHash,
 ) -> Result<Option<TransactionReceipt>, ValidatorError> {
-    let provider = registry.get(&chain_id).ok_or_else(|| ValidatorError::Rpc {
-        tx_hash,
-        message: format!(
-            "utils::rpc error: no rpc provider registered for chain_id: {}",
-            chain_id
-        ),
-    })?;
-
-    provider.get_transaction_receipt(tx_hash).await.map_err(
-        |e: alloy::transports::RpcError<TransportErrorKind>| ValidatorError::Rpc {
+    let provider = registry
+        .provider(&chain_id)
+        .map_err(|e| ValidatorError::Rpc {
             tx_hash,
-            message: format!("utils::rpc error: {}", e.to_string()),
-        },
-    )
+            message: format!("utils::rpc error: {:?}", e),
+        })?;
+
+    let result = provider
+        .get_transaction_receipt(tx_hash)
+        .await
+        .map_err(|e| {
+            registry.record_failure("get_transaction_reciept");
+            ValidatorError::Rpc {
+                tx_hash,
+                message: format!("utils::rpc error: {:?}", e),
+            }
+        })?;
+
+    Ok(result)
 }
 
 /// Fetch the current block number on the given chain.
 pub async fn get_block_number(
-    registry: &RpcProviderRegistry,
+    registry: &ManagedRpcProviderRegistry,
     chain_id: ChainId,
     tx_hash: TxHash,
 ) -> Result<u64, ValidatorError> {
-    let provider = registry.get(&chain_id).ok_or_else(|| ValidatorError::Rpc {
-        tx_hash,
-        message: format!(
-            "utils::rpc error: no rpc provider register for chain_id: {}",
-            chain_id
-        ),
+    let provider = registry
+        .provider(&chain_id)
+        .map_err(|e| ValidatorError::Rpc {
+            tx_hash,
+            message: format!("utils::rpc error: {:?}", e),
+        })?;
+
+    let result = provider.get_block_number().await.map_err(|e| {
+        registry.record_failure("get_block_number");
+        ValidatorError::Rpc {
+            tx_hash,
+            message: format!("utils::rpc error: {:?}", e),
+        }
     })?;
 
-    provider.get_block_number().await.map_err(
-        |e: alloy::transports::RpcError<TransportErrorKind>| ValidatorError::Rpc {
-            tx_hash,
-            message: format!("utils::rpc error: {}", e.to_string()),
-        },
-    )
+    Ok(result)
 }
 
 // ============================================================

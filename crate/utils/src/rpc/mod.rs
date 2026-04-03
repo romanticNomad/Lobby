@@ -20,6 +20,12 @@ pub struct ManagedRpcProviderRegistry {
     failure_tracker: Arc<DashMap<String, FailureWindow>>,
 }
 
+#[derive(Debug)]
+pub enum RpcError {
+    Timeout(Duration),
+    ProviderNotFound(ChainId),
+}
+
 /// Tracks failure rate for circuit breaking
 struct FailureWindow {
     failures: Vec<Instant>,
@@ -45,26 +51,26 @@ impl ManagedRpcProviderRegistry {
     pub async fn aquire_permit(
         &self,
         rpc_timeout: Duration,
-    ) -> Result<OwnedSemaphorePermit, Box<dyn std::error::Error>> {
+    ) -> Result<OwnedSemaphorePermit, RpcError> {
         let permit = tokio::time::timeout(rpc_timeout, Arc::clone(&self.semaphore).acquire_owned())
-            .await?
+            .await
+            .map_err(|_| RpcError::Timeout(rpc_timeout))?
             .expect("Rpc: Semaphore is closed");
-
         Ok(permit)
     }
 
     /// fetch provider from `ManagedRpcProviderRegistry` using the given `ChainId`
     pub fn provider(
         &self,
-        chain_id: ChainId,
-    ) -> Result<Arc<dyn Provider + Send + Sync>, Box<dyn std::error::Error>> {
-        let provider = &self
+        chain_id: &ChainId,
+    ) -> Result<Arc<dyn Provider + Send + Sync>, RpcError> {
+        let provider = self
             .providers
-            .get(&chain_id)
-            .expect("Rpc: chain_id not found")
+            .get(chain_id)
+            .ok_or(RpcError::ProviderNotFound(*chain_id))?
             .clone();
 
-        Ok(Arc::clone(provider))
+        Ok(provider)
     }
 
     /// Record failure for circuit breaker logic
@@ -92,6 +98,32 @@ impl ManagedRpcProviderRegistry {
                 failures = entry.failures.len(),
                 "High RPC failure rate detected - possible connection exhaustion"
             );
+        }
+    }
+}
+
+// ============================================================
+
+/// RpcProviderStack builder for orchestration of `Validator`` and `Broadcaster``
+///
+/// Separate registries prevent connection pool exhaustion.
+#[derive(Clone)]
+pub struct RpcProviderStack {
+    /// Used ONLY by broadcaster/signer (write operations)
+    pub broadcast_registry: RpcProviderRegistry,
+    /// Used ONLY by validator (read operations - polling receipts)
+    pub validator_registry: RpcProviderRegistry,
+}
+
+impl RpcProviderStack {
+    pub fn new() -> Self {
+        // separate http clients for Broadcaster and Validator
+        let broadcast_registry = load_rpc_endpoints_from_env();
+        let validator_registry = load_rpc_endpoints_from_env();
+
+        Self {
+            broadcast_registry,
+            validator_registry,
         }
     }
 }
