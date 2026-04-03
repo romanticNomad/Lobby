@@ -20,8 +20,7 @@ use std::{env, fs::OpenOptions, net::SocketAddr};
 use tracing_forest::ForestLayer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use utils::{
-    custody::export_custody_key_count,
-    registry::{load_api_key_from_env, load_rpc_endpoints_from_env},
+    api::load_api_key_from_env, custody::export_custody_key_count, rpc::load_rpc_endpoints_from_env,
 };
 
 // ============================================================

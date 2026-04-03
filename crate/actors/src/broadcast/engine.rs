@@ -1,4 +1,4 @@
-use crate::broadcast::BroadcastCommand;
+use crate::broadcast::{BroadcastCommand, BroadcastConfig};
 use alloy::primitives::Address;
 use primitives::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
@@ -6,13 +6,15 @@ use primitives::types::{
 };
 use sqlx::PgPool;
 use tokio::sync::mpsc;
+use utils::rpc::ManagedRpcProviderRegistry;
 
 // =========================================================
 // BroadcastEngine struct declaration with provider details
 
 pub struct BroadcastEngine {
     db: PgPool,
-    provider: RpcProviderRegistry,
+    config: BroadcastConfig,
+    managed_provider: ManagedRpcProviderRegistry,
     rx: mpsc::Receiver<BroadcastCommand>,
 }
 
@@ -20,9 +22,17 @@ impl BroadcastEngine {
     pub fn new(
         db: PgPool,
         provider: RpcProviderRegistry,
+        broadcast_config: BroadcastConfig,
         rx: mpsc::Receiver<BroadcastCommand>,
     ) -> Self {
-        Self { db, provider, rx }
+        let managed_provider =
+            ManagedRpcProviderRegistry::new(provider, broadcast_config.rpc_concurrency).unwrap();
+        Self {
+            db,
+            config: broadcast_config,
+            managed_provider,
+            rx,
+        }
     }
 
     /// Fetch the current nonce for an address from the RPC provider.
@@ -32,17 +42,20 @@ impl BroadcastEngine {
         from_address: Address,
     ) -> Result<TxNonce, BroadcastError> {
         let provider = self
-            .provider
-            .get(&chain_id)
-            .map(|entry| entry.value().clone())
-            .ok_or(BroadcastError::MissingProvider { chain_id })?;
+            .managed_provider
+            .provider(&chain_id)
+            .map_err(|_| BroadcastError::MissingProvider { chain_id })?;
 
         let nonce_u64 = provider
             .get_transaction_count(from_address)
             .pending() // Use pending to get the most up-to-date nonce
             .await
-            .map_err(|e| BroadcastError::Unexpected {
-                message: format!("failed to fetch nonce from RPC: {e}"),
+            .map_err(|e| {
+                self.managed_provider
+                    .record_failure("get_transaction_count");
+                BroadcastError::Unexpected {
+                    message: format!("failed to fetch nonce from RPC: {e}"),
+                }
             })?;
 
         Ok(TxNonce(alloy::primitives::U256::from(nonce_u64)))
@@ -63,9 +76,19 @@ impl BroadcastEngine {
                     txn,
                     reply_tx,
                 } => {
+                    let _permit = self
+                        .managed_provider
+                        .aquire_permit(self.config.rpc_timeout)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::error!("Failed to acquire permit: {:?}", e);
+                            panic!("semaphore error: {:?}", e);
+                        });
+
                     let result: Result<BroadcastOutcome, BroadcastError> = self
                         .handle_broadcast(chain_id, from_address, execution_id, txn)
                         .await;
+
                     let _ = reply_tx.send(result);
                 }
             }
@@ -180,10 +203,9 @@ impl BroadcastEngine {
         // fetching provider and sending transaction
 
         let provider = self
-            .provider
-            .get(&chain_id)
-            .map(|entry| entry.value().clone())
-            .ok_or(BroadcastError::MissingProvider { chain_id })?;
+            .managed_provider
+            .provider(&chain_id)
+            .map_err(|_| BroadcastError::MissingProvider { chain_id })?;
 
         let send_txn = provider.send_raw_transaction(&txn.rlp).await;
 
@@ -253,6 +275,7 @@ impl BroadcastEngine {
                 }
 
                 // Other deterministic errors
+                self.managed_provider.record_failure("send_raw_transaction");
 
                 sqlx::query!(
                     r#"
