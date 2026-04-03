@@ -45,7 +45,7 @@ mod helpers;
 
 // ============================================================
 
-const TRANSACTION_COUNT: usize = 100;
+const TRANSACTION_COUNT: usize = 1000;
 // const SUBMISSION_DEADLINE_MS: u64 = 1000;
 const POLL_TIMEOUT_SECS: u64 = 60;
 const POLL_INTERVAL_MS: u64 = 50;
