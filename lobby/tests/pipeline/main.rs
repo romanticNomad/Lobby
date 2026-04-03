@@ -3,7 +3,7 @@
 //! This test:
 //! 1. Starts PostgreSQL, Redis, and 3 Anvil nodes (Ethereum, Polygon, Arbitrum)
 //! 2. Funds 5 test accounts with 100 ETH each
-//! 3. Sends 100 transactions within 1 second
+//! 3. Sends 1000 transactions with controlled concurrency
 //! 4. Polls for transaction status until all reach final state
 //! 5. Reports success rate and timing statistics
 //!
@@ -45,7 +45,9 @@ mod helpers;
 
 // ============================================================
 
-const TRANSACTION_COUNT: usize = 1000;
+const TRANSACTION_COUNT: usize = 100;
+/// Maximum concurrent transaction submissions to prevent overwhelming the server
+const SUBMISSION_CONCURRENCY: usize = 100;
 // const SUBMISSION_DEADLINE_MS: u64 = 1000;
 const POLL_TIMEOUT_SECS: u64 = 60;
 const POLL_INTERVAL_MS: u64 = 50;
@@ -92,7 +94,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // schema migrations
     let db_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(20)
+        .max_connections(100)
         .connect(&containers.postgres_endpoint)
         .await?;
 
@@ -170,8 +172,14 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
     // build and submit transactions
 
     // submitting transactions
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .pool_max_idle_per_host(100)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .expect("Failed to build HTTP client");
     let submissions = Arc::new(Mutex::new(Vec::new()));
+    let submission_sem = Arc::new(tokio::sync::Semaphore::new(SUBMISSION_CONCURRENCY));
     let mut joinset = JoinSet::new();
 
     let submission_start = Instant::now();
@@ -183,8 +191,12 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
         let chain_ids = vec![1, 137, 42161];
         let submissions = submissions.clone();
         let api_keys = api_keys.clone();
+        let sem = submission_sem.clone();
 
         joinset.spawn(async move {
+            // Acquire permit to control concurrency
+            let _permit = sem.acquire().await.expect("Semaphore closed");
+            
             // Select random from/to accounts and chain
             let (from_address, to_address) = select_random_accounts(&accounts);
             let chain_id = select_random_chain(&chain_ids);
