@@ -30,12 +30,12 @@ pub(crate) struct PipelineContext {
 
     // actor handles
     pub relayhost_handle: Arc<dyn IntentRelay>,
-    pub validator_handle: Arc<dyn Validator>,
 
     // actor pools
     pub nonce_pool: Arc<ShardPool<dyn NonceManager>>,
     pub sign_pool: Arc<ShardPool<dyn Signer>>,
     pub broadcast_pool: Arc<ShardPool<dyn Broadcaster>>,
+    pub validator_pool: Arc<ShardPool<dyn Validator>>,
 
     // retry
     pub retry_config: RetryConfig,
@@ -403,7 +403,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // validator
 
-        let v = Arc::clone(&ctx.validator_handle);
+        // getting the validator handle from shard pool (sequenced by chain_id)
+        let validator_handle = ctx.validator_pool.get(&ByChainId(&chain_id));
+        let v = Arc::clone(&validator_handle);
         let validation =
             match { async move { v.validate(chain_id, execution_id, tx_hash).await } }.await {
                 Ok(outcome) => outcome,

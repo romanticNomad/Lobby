@@ -53,7 +53,7 @@ struct Cortex {
     nonce: Arc<ShardPool<dyn NonceManager>>,
     sign: Arc<ShardPool<dyn Signer>>,
     broadcast: Arc<ShardPool<dyn Broadcaster>>,
-    validator: Arc<dyn Validator>,
+    validator: Arc<ShardPool<dyn Validator>>,
     semaphore: Arc<Semaphore>,
 }
 
@@ -119,10 +119,10 @@ impl CortextHandle {
             client_config,
             txn,
             relayhost_handle: Arc::clone(&orch.relayhost),
-            validator_handle: Arc::clone(&orch.validator),
             nonce_pool: Arc::clone(&orch.nonce),
             sign_pool: Arc::clone(&orch.sign),
             broadcast_pool: Arc::clone(&orch.broadcast),
+            validator_pool: Arc::clone(&orch.validator),
             retry_config: orch.cortex_config.retry.clone(),
             status: orch.status_registry.clone(),
         };
@@ -162,6 +162,7 @@ pub async fn spawn_cortex(
         nonce_shards = config.nonce_shards,
         sign_shards = config.sign_shards,
         broadcast_shards = config.broadcast_shards,
+        validator_shards = config.validator_shards,
         pipeline = config.pipeline_concurrency,
         "spawning cortex actor pools: "
     );
@@ -232,23 +233,28 @@ pub async fn spawn_cortex(
     };
 
     // ============================================================
-    // validator handle
+    // validator pool - keyed by chain_id.
 
     let validator_config = validator::ValidatorConfig::new(
         config.rpc_validator_concurrecny,
         config.rpc_semaphore_timeout,
     );
 
-    let validator_handle = {
-        let handle = validator::spawn_validator_actor(
-            db.clone(),
-            Arc::clone(&provider.validator_registry),
-            validator_config,
-            config.actor_buffer,
-        );
-        tracing::debug!("validate actor spawned");
+    let validator_pool = {
+        let shards: Vec<Arc<dyn Validator>> = (0..config.validator_shards)
+            .map(|i| {
+                let handle = validator::spawn_validator_actor(
+                    db.clone(),
+                    Arc::clone(&provider.validator_registry),
+                    validator_config.clone(),
+                    config.actor_buffer,
+                );
+                tracing::debug!(shard = i, "validator actor spawned");
+                Arc::new(handle) as Arc<dyn Validator>
+            })
+            .collect();
 
-        Arc::new(handle) as Arc<dyn Validator>
+        Arc::new(ShardPool::new(shards))
     };
 
     // ============================================================
@@ -274,7 +280,7 @@ pub async fn spawn_cortex(
         nonce: nonce_pool,
         sign: sign_pool,
         broadcast: broadcast_pool,
-        validator: validator_handle,
+        validator: validator_pool,
     });
 
     tracing::info!("cortex online");
