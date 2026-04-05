@@ -13,13 +13,13 @@
 //!
 //! ## Usage
 //! ```rust
-//! use validator::{spawn_validator_actor, ValidationConfig, RpcProviderRegistry};
+//! use validator::{spawn_validator_actor, ValidationConfig, RpcEndpointRegistry};
 //! use sqlx::PgPool;
 //! use std::sync::Arc;
 //! use dashmap::DashMap;
 //!
 //! let db_pool: PgPool = /* ... */;
-//! let rpc_registry: RpcProviderRegistry = /* shared with broadcast actor */;
+//! let rpc_registry: RpcEndpointRegistry = /* shared with broadcast actor */;
 //! let config = ValidationConfig::default();
 //!
 //! let handle = spawn_validator_actor(
@@ -37,10 +37,10 @@ pub mod engine;
 pub mod handle;
 
 use crate::validator::{engine::ValidatorEngine, handle::ValidatorHandle};
-use primitives::types::RpcProviderRegistry;
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use utils::rpc::RpcEndpointRegistry;
 
 // ============================================================
 
@@ -95,7 +95,7 @@ impl Default for ValidatorConfig {
 /// until the last handle is dropped (which closes the mpsc channel).
 pub fn spawn_validator_actor(
     db: PgPool,
-    rpc_registry: RpcProviderRegistry,
+    rpc_registry: RpcEndpointRegistry,
     validator_config: ValidatorConfig,
     buffer: usize,
 ) -> ValidatorHandle {

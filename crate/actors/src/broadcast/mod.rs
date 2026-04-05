@@ -3,10 +3,10 @@ mod handle;
 
 use engine::*;
 use handle::*;
-use primitives::types::RpcProviderRegistry;
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use utils::rpc::RpcEndpointRegistry;
 
 // ============================================================
 
@@ -42,7 +42,7 @@ impl Default for BroadcastConfig {
 /// Broadcast actor initiator.
 pub fn spawn_broadcast_actor(
     db: PgPool,
-    provider: RpcProviderRegistry,
+    provider: RpcEndpointRegistry,
     broadcast_config: BroadcastConfig,
     buffer_size: usize,
 ) -> BroadcastHandle {

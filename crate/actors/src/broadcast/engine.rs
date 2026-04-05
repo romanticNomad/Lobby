@@ -1,12 +1,11 @@
 use crate::broadcast::{BroadcastCommand, BroadcastConfig};
 use alloy::primitives::Address;
 use primitives::types::{
-    BroadcastError, BroadcastOutcome, ChainId, ExecutionId, RpcProviderRegistry, SignedTransaction,
-    TxHash, TxNonce,
+    BroadcastError, BroadcastOutcome, ChainId, ExecutionId, SignedTransaction, TxHash, TxNonce,
 };
 use sqlx::PgPool;
 use tokio::sync::mpsc;
-use utils::rpc::ManagedRpcProviderRegistry;
+use utils::rpc::{ManagedRpcProviderRegistry, RpcCallContext, RpcEndpointRegistry};
 
 // =========================================================
 // BroadcastEngine struct declaration with provider details
@@ -21,7 +20,7 @@ pub struct BroadcastEngine {
 impl BroadcastEngine {
     pub fn new(
         db: PgPool,
-        provider: RpcProviderRegistry,
+        provider: RpcEndpointRegistry,
         broadcast_config: BroadcastConfig,
         rx: mpsc::Receiver<BroadcastCommand>,
     ) -> Self {
@@ -36,27 +35,39 @@ impl BroadcastEngine {
     }
 
     /// Fetch the current nonce for an address from the RPC provider.
+    /// Uses sticky session routing to maintain nonce consistency.
     async fn fetch_current_nonce(
         &self,
         chain_id: ChainId,
         from_address: Address,
     ) -> Result<TxNonce, BroadcastError> {
-        let provider = self
+        // Use sticky session routing for nonce management
+        let (permit, ctx) = self
             .managed_provider
-            .provider(&chain_id)
+            .acquire_permit_and_select(&chain_id, Some(from_address), self.config.rpc_timeout)
+            .await
             .map_err(|_| BroadcastError::MissingProvider { chain_id })?;
 
-        let nonce_u64 = provider
+        let start = std::time::Instant::now();
+        let nonce_u64 = ctx
+            .provider
             .get_transaction_count(from_address)
             .pending() // Use pending to get the most up-to-date nonce
             .await
             .map_err(|e| {
                 self.managed_provider
-                    .record_failure("get_transaction_count");
+                    .record_endpoint_failure(&chain_id, &ctx.endpoint_id);
                 BroadcastError::Unexpected {
                     message: format!("failed to fetch nonce from RPC: {e}"),
                 }
             })?;
+
+        // Record success for metrics
+        self.managed_provider
+            .record_success(&chain_id, &ctx.endpoint_id, start.elapsed());
+
+        // Permit is dropped here automatically
+        drop(permit);
 
         Ok(TxNonce(alloy::primitives::U256::from(nonce_u64)))
     }
@@ -76,18 +87,30 @@ impl BroadcastEngine {
                     txn,
                     reply_tx,
                 } => {
-                    let _permit = self
+                    // Acquire permit and select endpoint with sticky session
+                    let result = match self
                         .managed_provider
-                        .aquire_permit(self.config.rpc_timeout)
+                        .acquire_permit_and_select(
+                            &chain_id,
+                            Some(from_address),
+                            self.config.rpc_timeout,
+                        )
                         .await
-                        .unwrap_or_else(|e| {
+                    {
+                        Ok((permit, ctx)) => {
+                            let result: Result<BroadcastOutcome, BroadcastError> = self
+                                .handle_broadcast(chain_id, from_address, execution_id, txn, ctx)
+                                .await;
+                            drop(permit);
+                            result
+                        }
+                        Err(e) => {
                             tracing::error!("Failed to acquire permit: {:?}", e);
-                            panic!("semaphore error: {:?}", e);
-                        });
-
-                    let result: Result<BroadcastOutcome, BroadcastError> = self
-                        .handle_broadcast(chain_id, from_address, execution_id, txn)
-                        .await;
+                            Err(BroadcastError::Unexpected {
+                                message: format!("semaphore error: {:?}", e),
+                            })
+                        }
+                    };
 
                     let _ = reply_tx.send(result);
                 }
@@ -104,7 +127,12 @@ impl BroadcastEngine {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
+        ctx: RpcCallContext,
     ) -> Result<BroadcastOutcome, BroadcastError> {
+        // Track endpoint for metrics
+        let endpoint_id = ctx.endpoint_id.clone();
+        let provider = ctx.provider;
+        let start = std::time::Instant::now();
         // =========================================================
         // setting types for db
 
@@ -202,11 +230,6 @@ impl BroadcastEngine {
         // =========================================================
         // fetching provider and sending transaction
 
-        let provider = self
-            .managed_provider
-            .provider(&chain_id)
-            .map_err(|_| BroadcastError::MissingProvider { chain_id })?;
-
         let send_txn = provider.send_raw_transaction(&txn.rlp).await;
 
         // =========================================================
@@ -215,6 +238,11 @@ impl BroadcastEngine {
         match send_txn {
             Ok(pending_tx) => {
                 let tx_hash = pending_tx.tx_hash();
+
+                // Record success for metrics
+                self.managed_provider
+                    .record_success(&chain_id, &endpoint_id, start.elapsed());
+
                 sqlx::query!(
                     r#"
                     UPDATE broadcast.broadcast_requests
@@ -275,7 +303,8 @@ impl BroadcastEngine {
                 }
 
                 // Other deterministic errors
-                self.managed_provider.record_failure("send_raw_transaction");
+                self.managed_provider
+                    .record_endpoint_failure(&chain_id, &endpoint_id);
 
                 sqlx::query!(
                     r#"
