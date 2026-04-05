@@ -28,8 +28,8 @@ impl Default for RetryConfig {
     fn default() -> Self {
         Self {
             max_attempts: 2,
-            base_delay: Duration::from_millis(50),  // Was 100 - faster retry for high TPS
-            max_delay: Duration::from_millis(150),  // Was 200 - reduced max delay
+            base_delay: Duration::from_millis(50), // Was 100 - faster retry for high TPS
+            max_delay: Duration::from_millis(150), // Was 200 - reduced max delay
         }
     }
 }
