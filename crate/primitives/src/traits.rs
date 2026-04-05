@@ -71,6 +71,7 @@ pub trait Validator: Send + Sync {
     async fn validate(
         &self,
         chain_id: ChainId,
+        from_address: Address,
         execution_id: ExecutionId,
         tx_hash: TxHash,
     ) -> Result<ValidatorOutcome, ValidatorError>;
