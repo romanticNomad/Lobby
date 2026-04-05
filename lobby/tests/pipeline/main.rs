@@ -45,12 +45,12 @@ mod helpers;
 
 // ============================================================
 
-const TRANSACTION_COUNT: usize = 100;
+const TRANSACTION_COUNT: usize = 500;
 /// Maximum concurrent transaction submissions to prevent overwhelming the server
 const SUBMISSION_CONCURRENCY: usize = 100;
 // const SUBMISSION_DEADLINE_MS: u64 = 1000;
 const POLL_TIMEOUT_SECS: u64 = 60;
-const POLL_INTERVAL_MS: u64 = 50;
+const POLL_INTERVAL_MS: u64 = 1000;
 
 /// Test result statistics.
 #[derive(Debug)]
@@ -94,7 +94,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // schema migrations
     let db_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(100)
+        .max_connections(1000)
         .connect(&containers.postgres_endpoint)
         .await?;
 
@@ -173,7 +173,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // submitting transactions
     let client = reqwest::Client::builder()
-        .pool_max_idle_per_host(100)
+        .pool_max_idle_per_host(1000)
         .pool_idle_timeout(Duration::from_secs(30))
         .timeout(Duration::from_secs(30))
         .build()
@@ -196,7 +196,7 @@ async fn pipeline_test() -> Result<(), Box<dyn std::error::Error>> {
         joinset.spawn(async move {
             // Acquire permit to control concurrency
             let _permit = sem.acquire().await.expect("Semaphore closed");
-            
+
             // Select random from/to accounts and chain
             let (from_address, to_address) = select_random_accounts(&accounts);
             let chain_id = select_random_chain(&chain_ids);

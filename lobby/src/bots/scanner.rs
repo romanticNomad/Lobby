@@ -3,11 +3,12 @@ use cortex::artifacts::StatusRegistry;
 use dashmap::DashMap;
 use primitives::{
     traits::StateStore,
-    types::{ChainId, ExecutionId, PipelineStatus, RpcProviderRegistry},
+    types::{ChainId, ExecutionId, PipelineStatus},
 };
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::time::interval;
+use utils::rpc::RpcEndpointRegistry;
 use uuid::Uuid;
 
 // ============================================================
@@ -28,7 +29,7 @@ struct TimedOutTransaction {
 /// It runs continuously, scanning every 30 seconds for up to 100 timed-out
 /// transactions, and updates both the database and StatusRegistry when a
 /// transaction is found on-chain.
-pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcProviderRegistry) {
+pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcEndpointRegistry) {
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(30));
 
@@ -48,7 +49,7 @@ pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcProviderRegi
 async fn scanner_handler(
     db: &PgPool,
     state: &StatusRegistry,
-    rpc: &RpcProviderRegistry,
+    rpc: &RpcEndpointRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let timed_out_txn: Vec<TimedOutTransaction> = fetch_timed_out_txn(&db).await?;
 
@@ -133,7 +134,7 @@ async fn process_chain(
     txns: Vec<TimedOutTransaction>,
     db: &PgPool,
     state: &StatusRegistry,
-    rpc: &RpcProviderRegistry,
+    rpc: &RpcEndpointRegistry,
 ) {
     tracing::debug!(
         "tracing_bot: processing {} txn for chain_id {}",
@@ -141,10 +142,27 @@ async fn process_chain(
         chain_id
     );
 
-    let provider = match rpc.get(&chain_id) {
-        Some(p) => p.clone(),
+    // Get the pool for this chain and use the first endpoint
+    let pool = match rpc.get(&chain_id) {
+        Some(p) => p,
         None => {
-            tracing::error!("no provider for chain_id: {}", chain_id);
+            tracing::error!("no provider pool for chain_id: {}", chain_id);
+            return;
+        }
+    };
+
+    // Use the first healthy endpoint, or the first endpoint if none are healthy
+    let provider = pool
+        .endpoints
+        .iter()
+        .find(|(_, metadata)| metadata.is_healthy())
+        .map(|(provider, _)| provider.clone())
+        .or_else(|| pool.endpoints.first().map(|(provider, _)| provider.clone()));
+
+    let provider = match provider {
+        Some(p) => p,
+        None => {
+            tracing::error!("no endpoints in pool for chain_id: {}", chain_id);
             return;
         }
     };

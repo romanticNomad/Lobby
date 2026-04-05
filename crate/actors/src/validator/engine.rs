@@ -1,11 +1,10 @@
 use crate::validator::{ValidatorConfig, handle::ValidatorCommand};
-use primitives::types::{
-    ChainId, ExecutionId, RpcProviderRegistry, TxHash, ValidatorError, ValidatorOutcome,
-};
+use alloy::primitives::Address;
+use primitives::types::{ChainId, ExecutionId, TxHash, ValidatorError, ValidatorOutcome};
 use sqlx::PgPool;
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
-use utils::rpc::{self, ManagedRpcProviderRegistry};
+use utils::rpc::{self, ManagedRpcProviderRegistry, RpcEndpointRegistry};
 
 // ============================================================
 
@@ -24,7 +23,7 @@ impl ValidatorEngine {
     pub fn new(
         db: PgPool,
         validator_config: ValidatorConfig,
-        rpc_registry: RpcProviderRegistry,
+        rpc_registry: RpcEndpointRegistry,
         rx: mpsc::Receiver<ValidatorCommand>,
     ) -> Self {
         let managed_provider =
@@ -48,6 +47,7 @@ impl ValidatorEngine {
             match cmd {
                 ValidatorCommand::Validate {
                     chain_id,
+                    from_address,
                     execution_id,
                     tx_hash,
                     reply_tx,
@@ -59,19 +59,36 @@ impl ValidatorEngine {
                         %tx_hash,
                     );
 
-                    let _permit = self
+                    // Acquire permit and select endpoint using sticky session routing
+                    // This ensures we poll the same endpoint that broadcast used
+                    let (permit, ctx) = match self
                         .managed_provider
-                        .aquire_permit(self.validator_config.rpc_timeout)
+                        .acquire_permit_and_select(
+                            &chain_id,
+                            Some(from_address),
+                            self.validator_config.rpc_timeout,
+                        )
                         .await
-                        .unwrap_or_else(|e| {
+                    {
+                        Ok(result) => result,
+                        Err(e) => {
                             tracing::error!("failed to acquire permit: {:?}", e);
                             panic!("semaphore error: {:?}", e);
-                        });
+                        }
+                    };
+
+                    // Store endpoint_id for metrics
+                    let endpoint_id = ctx.endpoint_id.clone();
 
                     let result = self
-                        .handle_validation(chain_id, execution_id, tx_hash)
+                        .handle_validation(chain_id, from_address, execution_id, tx_hash)
                         .instrument(span)
                         .await;
+
+                    // Drop permit after validation completes
+                    drop(permit);
+                    // endpoint_id is available for metrics if needed
+                    let _ = endpoint_id;
 
                     let _ = reply_tx.send(result);
                 }
@@ -87,6 +104,7 @@ impl ValidatorEngine {
     async fn handle_validation(
         &self,
         chain_id: ChainId,
+        from_address: Address,
         execution_id: ExecutionId,
         tx_hash: TxHash,
     ) -> Result<ValidatorOutcome, ValidatorError> {
@@ -115,8 +133,15 @@ impl ValidatorEngine {
                 return Ok(ValidatorOutcome::Timeout);
             }
 
-            // fetch receipt
-            match rpc::get_transaction_receipt(&self.managed_provider, chain_id, tx_hash).await {
+            // fetch receipt using sticky session routing
+            match rpc::get_transaction_receipt(
+                &self.managed_provider,
+                chain_id,
+                tx_hash,
+                Some(from_address),
+            )
+            .await
+            {
                 Ok(Some(receipt)) => {
                     // transaction is mined -> check status
                     // status=0
@@ -127,9 +152,14 @@ impl ValidatorEngine {
                         return Err(ValidatorError::Reverted { tx_hash });
                     }
 
-                    // confirmation
-                    let current_block =
-                        rpc::get_block_number(&self.managed_provider, chain_id, tx_hash).await?;
+                    // confirmation using sticky session routing
+                    let current_block = rpc::get_block_number(
+                        &self.managed_provider,
+                        chain_id,
+                        tx_hash,
+                        Some(from_address),
+                    )
+                    .await?;
                     let tx_block = receipt.block_number.unwrap_or(0);
                     let confirmations = current_block.saturating_sub(tx_block);
 
