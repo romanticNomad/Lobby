@@ -26,6 +26,7 @@ use std::{
 };
 use tokio::time::sleep;
 use utils::rpc::RpcProviderStack;
+use utils::rpc::{EndpointMetadata, RpcEndpointPool};
 use uuid::Uuid;
 
 // ============================================================
@@ -57,26 +58,64 @@ pub struct TransactionSubmission {
     pub chain_id: u64,
 }
 
-/// migration code to gerenrate RpcProviderStack for this test suite.
+/// Build RpcProviderStack with endpoint pools for testing.
+/// Supports multiple endpoints per chain for load balancing.
 pub fn rpc_provider_stack_build(
-    anvil_endpoints: DashMap<u64, String>,
+    anvil_endpoints: DashMap<u64, Vec<String>>,
 ) -> Result<RpcProviderStack, Box<dyn std::error::Error>> {
+    // use utils::rpc::RpcEndpointRegistry;
+
     let broadcast_registry = Arc::new(DashMap::new());
     let validator_registry = Arc::new(DashMap::new());
 
-    for (chain_id, rpc_url) in anvil_endpoints {
-        // Each actor gets its own connection pool (default: 100 connections)
-        let broadcast_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-        let validation_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+    for entry in anvil_endpoints.iter() {
+        let chain_id = *entry.key();
+        let endpoints = entry.value();
         let chain = ChainId::try_from(chain_id as i64)?;
 
-        broadcast_registry.insert(
-            chain,
-            Arc::new(broadcast_provider) as Arc<dyn Provider + Send + Sync>,
-        );
-        validator_registry.insert(
-            chain,
-            Arc::new(validation_provider) as Arc<dyn Provider + Send + Sync>,
+        // Build pool endpoints for broadcast
+        let mut broadcast_pool_endpoints = Vec::new();
+        // Build pool endpoints for validator
+        let mut validator_pool_endpoints = Vec::new();
+
+        for (idx, rpc_url) in endpoints.iter().enumerate() {
+            let suffix = ["A", "B"][idx].to_string();
+            let endpoint_id = format!("{}_{}", chain_id, suffix);
+
+            // Broadcast provider
+            let broadcast_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+            let broadcast_metadata = EndpointMetadata::new(endpoint_id.clone(), rpc_url.clone());
+            broadcast_pool_endpoints.push((
+                Arc::new(broadcast_provider) as Arc<dyn Provider + Send + Sync>,
+                broadcast_metadata,
+            ));
+
+            // Validator provider (separate instance)
+            let validator_provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+            let validator_metadata = EndpointMetadata::new(endpoint_id, rpc_url.clone());
+            validator_pool_endpoints.push((
+                Arc::new(validator_provider) as Arc<dyn Provider + Send + Sync>,
+                validator_metadata,
+            ));
+        }
+
+        // Create pools
+        let broadcast_pool = RpcEndpointPool {
+            chain_id: chain,
+            endpoints: broadcast_pool_endpoints,
+        };
+        let validator_pool = RpcEndpointPool {
+            chain_id: chain,
+            endpoints: validator_pool_endpoints,
+        };
+
+        broadcast_registry.insert(chain, broadcast_pool);
+        validator_registry.insert(chain, validator_pool);
+
+        tracing::info!(
+            chain_id = chain_id,
+            endpoint_count = endpoints.len(),
+            "Created endpoint pool for chain"
         );
     }
 

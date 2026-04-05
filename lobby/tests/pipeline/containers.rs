@@ -22,7 +22,8 @@ pub struct TestContainers {
     pub redis: ContainerAsync<Redis>,
     pub redis_endpoint: String,
     pub anvil_processes: Vec<Child>,
-    pub anvil_endpoints: DashMap<u64, String>,
+    /// Maps chain_id to list of endpoints (multiple per chain for load balancing)
+    pub anvil_endpoints: DashMap<u64, Vec<String>>,
 }
 
 impl TestContainers {
@@ -46,23 +47,34 @@ impl TestContainers {
         let redis_port = redis.get_host_port_ipv4(6379).await?;
         let redis_endpoint = format!("redis://localhost:{}", redis_port);
 
-        // 3. Setup Anvil Forks
+        // 3. Setup Anvil Forks - 5 instances per chain for load balancing
         let mut anvil_processes = Vec::new();
         let anvil_endpoints = DashMap::new();
 
         // Chain IDs: 1 (Mainnet), 137 (Polygon), 42161 (Arbitrum)
         for chain_id in [1, 137, 42161] {
             let rpc_url = get_rpc_url_for_chain(chain_id)?;
-            let port = find_available_port().await?;
+            let mut endpoints_for_chain = Vec::new();
 
-            let child = start_anvil_process(chain_id, port, &rpc_url)?;
-            let endpoint = format!("http://127.0.0.1:{}", port);
+            // Spawn 2 Anvil instances per chain
+            for suffix in ["A", "B"] {
+                let port = find_available_port().await?;
+                let child = start_anvil_process(chain_id, port, &rpc_url)?;
+                let endpoint = format!("http://127.0.0.1:{}", port);
 
-            verify_anvil_ready(&endpoint).await?;
-            tracing::info!("Anvil fork for chain {} on port {} online", chain_id, port);
+                verify_anvil_ready(&endpoint).await?;
+                tracing::info!(
+                    "Anvil fork for chain {} endpoint {} on port {} online",
+                    chain_id,
+                    suffix,
+                    port
+                );
 
-            anvil_processes.push(child);
-            anvil_endpoints.insert(chain_id, endpoint.clone());
+                anvil_processes.push(child);
+                endpoints_for_chain.push(endpoint);
+            }
+
+            anvil_endpoints.insert(chain_id, endpoints_for_chain);
         }
 
         Ok(Self {
@@ -82,9 +94,12 @@ impl TestContainers {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let amount_wei = U256::from(amount_eth) * U256::from(10).pow(U256::from(18));
         for entry in &self.anvil_endpoints {
-            let provider = ProviderBuilder::new().connect_http(entry.value().parse()?);
-            for account in accounts {
-                provider.anvil_set_balance(*account, amount_wei).await?;
+            let endpoints = entry.value();
+            for endpoint in endpoints {
+                let provider = ProviderBuilder::new().connect_http(endpoint.parse()?);
+                for account in accounts {
+                    provider.anvil_set_balance(*account, amount_wei).await?;
+                }
             }
         }
         Ok(())
@@ -120,9 +135,9 @@ fn start_anvil_process(
         .arg("--host")
         .arg("0.0.0.0")
         // .arg("--max-connections")
-        // .arg("500"
-        // .arg("--timeout")
         // .arg("500")
+        // .arg("--timeout")
+        // .arg("50000")
         .arg("--no-rate-limit")
         .arg("--block-time")
         .arg("1")
