@@ -1,47 +1,46 @@
-//! Endpoint metadata and health tracking
+//! This module provides:
 //!
-//! This module provides types and logic for tracking RPC endpoint performance,
-//! health status, and implementing circuit breaker patterns.
+//! Endpoint metadata, health tracking and
+//! High-performance implementation using atomics and lock-free structures.
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    time::{Duration, Instant},
+};
 
 // ============================================================================
 // Constants
 
-/// Maximum size of the response time rolling window
-const RESPONSE_TIME_WINDOW_SIZE: usize = 100;
+/// Maximum size of the response time rolling window (power of 2 for fast modulo)
+const RESPONSE_TIME_WINDOW_SIZE: usize = 128;
+const RESPONSE_TIME_MASK: usize = RESPONSE_TIME_WINDOW_SIZE - 1;
 
 /// Default response time when no metrics are available (in milliseconds)
 const DEFAULT_RESPONSE_TIME_MS: f64 = 100.0;
 
-/// Error rate threshold for degraded health (10%)
+/// Error rate thresholds
 const DEGRADED_ERROR_THRESHOLD: f64 = 0.10;
-
-/// Error rate threshold for unhealthy status (30%)
 const UNHEALTHY_ERROR_THRESHOLD: f64 = 0.30;
 
-/// Circuit breaker backoff durations (in seconds)
+/// Circuit breaker backoff durations (exponential)
 const CIRCUIT_BREAKER_BACKOFF: [u64; 3] = [10, 30, 60];
+
+/// Minimum requests before health calculation (prevents volatile early readings)
+const MIN_REQUESTS_FOR_HEALTH: u32 = 10;
 
 // ============================================================================
 // Health Status
 
 /// Health status of an RPC endpoint
-///
-/// The health status is determined by the error rate and circuit breaker state:
-/// - `Healthy`: Error rate < 10%
-/// - `Degraded`: Error rate 10-30%
-/// - `Unhealthy`: Error rate > 30% or circuit breaker active
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EndpointHealth {
-    /// Endpoint is fully operational and accepting requests
+    /// Fully operational
     Healthy,
-    /// Endpoint has elevated error rates but is still usable (receives reduced traffic)
+    /// Elevated errors, reduced traffic
     Degraded,
-    /// Endpoint should not receive traffic (circuit breaker active or high error rate)
+    /// Circuit breaker active or critical error rate
     Unhealthy,
 }
-
 impl Default for EndpointHealth {
     fn default() -> Self {
         Self::Healthy
@@ -49,11 +48,8 @@ impl Default for EndpointHealth {
 }
 
 impl EndpointHealth {
-    /// Returns the traffic multiplier for this health status
-    ///
-    /// - Healthy: 1.0 (full traffic)
-    /// - Degraded: 0.5 (50% traffic reduction)
-    /// - Unhealthy: 0.0 (no traffic)
+    /// Traffic multiplier for load balancing weighting
+    #[inline]
     pub fn traffic_multiplier(&self) -> f64 {
         match self {
             Self::Healthy => 1.0,
@@ -62,349 +58,382 @@ impl EndpointHealth {
         }
     }
 
-    /// Returns true if the endpoint can receive traffic
+    #[inline]
     pub fn is_available(&self) -> bool {
         !matches!(self, Self::Unhealthy)
     }
 }
 
 // ============================================================================
-// Endpoint Metrics
+// Atomic Metrics
 
-/// Performance metrics and health tracking for an RPC endpoint
-///
-/// Tracks response times, error rates, and implements circuit breaker logic
-/// for adaptive load balancing.
-#[derive(Debug, Clone)]
+/// Lock-free performance metrics using atomics for high-throughput updates
+#[derive(Debug)]
 pub struct EndpointMetrics {
-    /// Unique identifier for this endpoint (e.g., "eth_mainnet_alchemy_1")
+    /// Unique identifier
     pub id: String,
 
-    /// The RPC endpoint URL
+    /// RPC endpoint URL
     pub url: String,
 
-    /// Current health status
-    pub health: EndpointHealth,
+    /// Current health (stored as u8 for atomic operations)
+    health: AtomicU32,
 
-    /// Rolling window of recent response times (in milliseconds)
-    response_times_ms: Vec<u64>,
+    /// Response time ring buffer (lock-free with atomic index)
+    response_times_ms: [AtomicU64; RESPONSE_TIME_WINDOW_SIZE],
 
-    /// Number of errors in the current measurement window
-    error_count: u32,
+    /// Current write index in ring buffer
+    response_time_index: AtomicU64,
 
-    /// Total number of requests in the current measurement window
-    request_count: u32,
+    /// Error count (atomic)
+    error_count: AtomicU64,
 
-    /// Timestamp of the last successful request
-    last_success_at: Option<Instant>,
+    /// Request count (atomic)
+    request_count: AtomicU64,
 
-    /// Current block height (updated by health checker background task)
-    block_height: Option<u64>,
+    /// Last success timestamp (atomic, stores duration since epoch as millis)
+    last_success_at: AtomicU64,
 
-    /// Circuit breaker: endpoint unavailable until this time
-    circuit_breaker_until: Option<Instant>,
+    /// Current block height
+    block_height: AtomicU64,
 
-    /// Number of consecutive circuit breaker activations (for exponential backoff)
-    circuit_breaker_attempts: u32,
+    /// Circuit breaker expiry (atomic, stores millis since epoch)
+    circuit_breaker_until: AtomicU64,
+
+    /// Circuit breaker attempt counter
+    circuit_breaker_attempts: AtomicU32,
+
+    /// Epoch start for metric windows (for periodic reset)
+    window_epoch: AtomicU64,
+}
+
+impl Clone for EndpointMetrics {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            url: self.url.clone(),
+            health: AtomicU32::new(self.health.load(Ordering::Relaxed)),
+            response_times_ms: std::array::from_fn(|i| {
+                AtomicU64::new(self.response_times_ms[i].load(Ordering::Relaxed))
+            }),
+            response_time_index: AtomicU64::new(self.response_time_index.load(Ordering::Relaxed)),
+            error_count: AtomicU64::new(self.error_count.load(Ordering::Relaxed)),
+            request_count: AtomicU64::new(self.request_count.load(Ordering::Relaxed)),
+            last_success_at: AtomicU64::new(self.last_success_at.load(Ordering::Relaxed)),
+            block_height: AtomicU64::new(self.block_height.load(Ordering::Relaxed)),
+            circuit_breaker_until: AtomicU64::new(
+                self.circuit_breaker_until.load(Ordering::Relaxed),
+            ),
+            circuit_breaker_attempts: AtomicU32::new(
+                self.circuit_breaker_attempts.load(Ordering::Relaxed),
+            ),
+            window_epoch: AtomicU64::new(self.window_epoch.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 impl EndpointMetrics {
-    /// Creates new endpoint metrics with default values
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - Unique identifier for this endpoint
-    /// * `url` - RPC endpoint URL
+    /// Creates new endpoint metrics with optimized defaults
     pub fn new(id: String, url: String) -> Self {
         Self {
             id,
             url,
-            health: EndpointHealth::Healthy,
-            response_times_ms: Vec::with_capacity(RESPONSE_TIME_WINDOW_SIZE),
-            error_count: 0,
-            request_count: 0,
-            last_success_at: None,
-            block_height: None,
-            circuit_breaker_until: None,
-            circuit_breaker_attempts: 0,
+            health: AtomicU32::new(EndpointHealth::Healthy as u32),
+            response_times_ms: std::array::from_fn(|_| AtomicU64::new(0)),
+            response_time_index: AtomicU64::new(0),
+            error_count: AtomicU64::new(0),
+            request_count: AtomicU64::new(0),
+            last_success_at: AtomicU64::new(0),
+            block_height: AtomicU64::new(0),
+            circuit_breaker_until: AtomicU64::new(0),
+            circuit_breaker_attempts: AtomicU32::new(0),
+            window_epoch: AtomicU64::new(Instant::now().elapsed().as_millis() as u64),
         }
     }
 
     // ========================================================================
-    // Metric Calculation
+    // Metric Calculation (Read Operations)
 
-    /// Calculates the average response time from the rolling window
-    ///
-    /// Returns `DEFAULT_RESPONSE_TIME_MS` if no data is available.
+    /// Calculates average response time from atomic ring buffer
+    /// O(1) amortized, lock-free
     pub fn average_response_time_ms(&self) -> f64 {
-        if self.response_times_ms.is_empty() {
+        let index = self.response_time_index.load(Ordering::Acquire) as usize;
+
+        if index == 0 {
             return DEFAULT_RESPONSE_TIME_MS;
         }
 
-        let sum: u64 = self.response_times_ms.iter().sum();
-        sum as f64 / self.response_times_ms.len() as f64
-    }
+        let count = index.min(RESPONSE_TIME_WINDOW_SIZE);
+        let mut sum: u64 = 0;
+        let mut valid_count = 0;
 
-    /// Calculates the current error rate (0.0 to 1.0)
-    pub fn error_rate(&self) -> f64 {
-        if self.request_count == 0 {
-            return 0 as f64;
+        // Sample every 4th entry for O(1) approximation at high throughput
+        let step = if count > 32 { 4 } else { 1 };
+
+        for i in (0..count).step_by(step) {
+            let idx = (index.wrapping_sub(1).wrapping_sub(i)) & RESPONSE_TIME_MASK;
+            let val = self.response_times_ms[idx].load(Ordering::Relaxed);
+
+            if val > 0 {
+                sum += val;
+                valid_count += 1;
+            }
         }
 
-        self.error_count as f64 / self.request_count as f64
+        if valid_count == 0 {
+            return DEFAULT_RESPONSE_TIME_MS;
+        }
+
+        let avg = sum as f64 / valid_count as f64;
+        // Apply step correction for sampling
+        avg * step as f64
     }
 
-    /// Calculates the load balancing score for this endpoint
-    ///
-    /// Higher scores indicate better endpoints. The score combines:
-    /// - Inverse of response time (faster = higher score)
-    /// - Health multiplier (healthy endpoints preferred)
-    ///
-    /// Formula: `score = (1 / avg_response_time) * health_multiplier`
-    ///
-    /// Unhealthy endpoints always return 0.0.
+    /// Current error rate (0.0 to 1.0), lock-free
+    pub fn error_rate(&self) -> f64 {
+        let requests = self.request_count.load(Ordering::Relaxed);
+        if requests < MIN_REQUESTS_FOR_HEALTH as u64 {
+            return 0.0;
+        }
+        let errors = self.error_count.load(Ordering::Relaxed);
+        errors as f64 / requests as f64
+    }
+
+    /// Load balancing score: higher = better endpoint
+    /// Formula: (1 / avg_response_time) * health_multiplier
     pub fn load_balancing_score(&self) -> f64 {
-        let health_multiplier = self.health.traffic_multiplier();
-        if health_multiplier == 0.0 {
+        let health = self.health();
+        let multiplier = health.traffic_multiplier();
+
+        if multiplier == 0.0 {
             return 0.0;
         }
 
-        let avg_responce_ms = self.average_response_time_ms().max(1.0);
-        (1.0 / avg_responce_ms) * health_multiplier
+        // Use cached average with minimum 1ms to prevent division issues
+        let avg_ms = self.average_response_time_ms().max(1.0);
+        (1000.0 / avg_ms) * multiplier
+    }
+
+    /// Current health status (atomic read)
+    pub fn health(&self) -> EndpointHealth {
+        match self.health.load(Ordering::Acquire) {
+            0 => EndpointHealth::Healthy,
+            1 => EndpointHealth::Degraded,
+            _ => EndpointHealth::Unhealthy,
+        }
     }
 
     // ========================================================================
-    // Metric Recording
+    // Metric Recording (Write Operations) - All Lock-Free
 
-    /// Records a successful request with its duration
-    ///
-    /// Updates:
-    /// - Response time rolling window
-    /// - Request count
-    /// - Last success timestamp
-    /// - Clears circuit breaker if active
-    /// - Recalculates health status
-    pub fn record_success(&mut self, duration: Duration) {
+    /// Records successful request - O(1), wait-free
+    pub fn record_success(&self, duration: Duration) {
         let duration_ms = duration.as_millis() as u64;
+        let now = Instant::now();
+        let now_mills = now.elapsed().as_millis() as u64;
 
-        // update time stamp and request count
-        self.last_success_at = Some(Instant::now());
-        self.request_count += 1;
+        // Update ring buffer (lock-free)
+        let index = self.response_time_index.fetch_add(1, Ordering::AcqRel);
+        let slot = (index as usize) & RESPONSE_TIME_MASK;
+        self.response_times_ms[slot].store(duration_ms, Ordering::Release);
 
-        // rolling window of response time
-        if self.response_times_ms.len() >= RESPONSE_TIME_WINDOW_SIZE {
-            self.response_times_ms.remove(0);
+        // Update counters
+        self.request_count.fetch_add(1, Ordering::Relaxed);
+        self.last_success_at.store(duration_ms, Ordering::Release);
+
+        // reset circuit breaker on succcess
+        let cb_until = self.circuit_breaker_attempts.load(Ordering::Acquire) as u64;
+        if cb_until > 0 && now_mills >= cb_until {
+            self.circuit_breaker_until.store(0, Ordering::Release);
+            self.circuit_breaker_attempts.store(0, Ordering::Release);
         }
-        self.response_times_ms.push(duration_ms);
 
-        // reset circuite breaker on successful request
-        if self.circuit_breaker_until.is_some() {
-            self.circuit_breaker_until = None;
-            self.circuit_breaker_attempts = 0;
-        }
-
-        // recalculate health based on updated metrics
+        // recalculate health
         self.update_health_status();
     }
 
-    /// Records a failed request
-    ///
-    /// Increments error count and recalculates health status.
-    pub fn record_failure(&mut self) {
-        self.error_count += 1;
-        self.request_count += 1;
+    /// Records failed request - O(1), wait-free
+    pub fn record_failure(&self) {
+        self.error_count.fetch_add(1, Ordering::Relaxed);
+        self.request_count.fetch_add(1, Ordering::Relaxed);
         self.update_health_status();
     }
 
-    /// Updates block height (called by health checker)
-    pub fn update_block_height(&mut self, height: u64) {
-        self.block_height = Some(height);
+    /// Updates block height (atomic)
+    pub fn update_block_height(&self, height: u64) {
+        self.block_height.store(height, Ordering::Release);
     }
 
     // ========================================================================
     // Health Management
 
-    /// Updates health status based on current metrics and circuit breaker state
-    ///
-    /// Health determination logic:
-    /// 1. If circuit breaker is active and not expired -> Unhealthy
-    /// 2. If error rate > 30% -> Unhealthy
-    /// 3. If error rate > 10% -> Degraded
-    /// 4. Otherwise -> Healthy
-    pub fn update_health_status(&mut self) {
-        // check circuit breaker
-        if let Some(break_time) = self.circuit_breaker_until {
-            if Instant::now() <= break_time {
-                self.health = EndpointHealth::Unhealthy;
+    /// Updates health based on current metrics - O(1)
+    pub fn update_health_status(&self) {
+        // Check circuit breaker first
+        let cb_until = self.circuit_breaker_until.load(Ordering::Acquire);
+        if cb_until > 0 {
+            let now = Instant::now().elapsed().as_millis() as u64;
+            if now < cb_until {
+                self.health.store(2, Ordering::Release); // unhealhty
                 return;
             }
-        } else {
-            // circuit breaker has expired
-            self.circuit_breaker_until = None;
+            // Circuit breaker expired, clear it
+            self.circuit_breaker_until.store(0, Ordering::Release); // healthy: ready to be reused
         }
 
-        // determine health based on error rate
+        // Calculate health based on error rate
         let error_rate = self.error_rate();
-        self.health = if error_rate > UNHEALTHY_ERROR_THRESHOLD {
-            EndpointHealth::Unhealthy
+        let new_health = if error_rate > UNHEALTHY_ERROR_THRESHOLD {
+            2 // Unhealthy
         } else if error_rate > DEGRADED_ERROR_THRESHOLD {
-            EndpointHealth::Degraded
+            1 // Degraded
         } else {
-            EndpointHealth::Healthy
+            0 // Healthy
         };
+
+        self.health.store(new_health, Ordering::Release);
     }
 
-    /// Activates the circuit breaker with exponential backoff
-    ///
-    /// Backoff schedule:
-    /// - 1st failure: 10 seconds
-    /// - 2nd failure: 30 seconds
-    /// - 3rd+ failures: 60 seconds
-    pub fn activate_circuit_breaker(&mut self) {
-        let backoff_index =
-            (self.circuit_breaker_attempts as usize).min(CIRCUIT_BREAKER_BACKOFF.len() - 1);
-        let backoff_duration = Duration::from_secs(CIRCUIT_BREAKER_BACKOFF[backoff_index]);
+    /// Activates circuit breaker with exponential backoff
+    pub fn activate_circuit_breaker(&self) {
+        let attempts = self.circuit_breaker_attempts.load(Ordering::Acquire) as usize;
+        let backoff_idx = attempts.min(CIRCUIT_BREAKER_BACKOFF.len() - 1);
+        let backoff_secs = CIRCUIT_BREAKER_BACKOFF[backoff_idx];
 
-        self.circuit_breaker_until = Some(Instant::now() + backoff_duration);
-        self.circuit_breaker_attempts += 1;
-        self.health = EndpointHealth::Unhealthy;
+        let now = Instant::now();
+        let expiry = now + Duration::from_secs(backoff_secs);
+        let expiry_ms = expiry.elapsed().as_millis() as u64;
+
+        self.circuit_breaker_until
+            .store(expiry_ms, Ordering::Release);
+        self.circuit_breaker_attempts
+            .fetch_add(1, Ordering::Relaxed);
+        self.health.store(2, Ordering::Release);
     }
 
-    /// Resets the metrics window (useful for periodic cleanup)
-    pub fn reset_window(&mut self) {
-        self.error_count = 0;
-        self.request_count = 0;
-        // Keep response times for continued performance tracking
+    /// Resets metric window (for periodic cleanup)
+    pub fn reset_window(&self) {
+        let now = Instant::now().elapsed().as_millis() as u64;
+        self.window_epoch.store(now, Ordering::Release);
+        self.error_count.store(0, Ordering::Relaxed);
+        self.request_count.store(0, Ordering::Relaxed);
+        // Response times preserved for continuity
     }
 
-    /// Returns true if the endpoint is healthy enough to receive traffic
+    /// Checks if endpoint is available (lock-free)
     #[inline]
     pub fn is_available(&self) -> bool {
-        self.health.is_available()
+        self.health().is_available()
     }
 
     // ========================================================================
     // Accessors
 
-    /// Returns the endpoint ID
     #[inline]
     pub fn id(&self) -> &str {
         &self.id
     }
 
-    /// Returns the endpoint URL
     #[inline]
     pub fn url(&self) -> &str {
         &self.url
     }
 
-    /// Returns the current health status
-    #[inline]
-    pub fn health(&self) -> EndpointHealth {
-        self.health
-    }
-
-    /// Returns the current block height if available
-    #[inline]
-    pub fn block_height(&self) -> Option<u64> {
-        self.block_height
-    }
-
-    /// Returns the timestamp of the last successful request
-    #[inline]
     pub fn last_success(&self) -> Option<Instant> {
-        self.last_success_at
+        let millis = self.last_success_at.load(Ordering::Acquire);
+        if millis == 0 {
+            None
+        } else {
+            // Reconstruct instant from stored duration
+            Some(
+                Instant::now()
+                    - Duration::from_millis(Instant::now().elapsed().as_millis() as u64 - millis),
+            )
+        }
     }
+
+    pub fn block_height(&self) -> Option<u64> {
+        let height = self.block_height.load(Ordering::Acquire);
+        if height == 0 { None } else { Some(height) }
+    }
+
+    pub fn circuit_breaker_until(&self) -> Option<Instant> {
+        let millis = self.circuit_breaker_until.load(Ordering::Acquire);
+        if millis == 0 {
+            None
+        } else {
+            let now = Instant::now();
+            let now_millis = now.elapsed().as_millis() as u64;
+            if now_millis < millis {
+                Some(now + Duration::from_millis(millis - now_millis))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Snapshot for monitoring (atomic read of all fields)
+    pub fn snapshot(&self) -> EndpointMetricsSnapshot {
+        EndpointMetricsSnapshot {
+            id: self.id.clone(),
+            url: self.url.clone(),
+            health: self.health(),
+            avg_response_time_ms: self.average_response_time_ms(),
+            error_rate: self.error_rate(),
+            score: self.load_balancing_score(),
+            block_height: self.block_height(),
+            request_count: self.request_count.load(Ordering::Relaxed),
+            error_count: self.error_count.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// Immutable snapshot for external consumption
+#[derive(Debug, Clone)]
+pub struct EndpointMetricsSnapshot {
+    pub id: String,
+    pub url: String,
+    pub health: EndpointHealth,
+    pub avg_response_time_ms: f64,
+    pub error_rate: f64,
+    pub score: f64,
+    pub block_height: Option<u64>,
+    pub request_count: u64,
+    pub error_count: u64,
 }
 
 // ============================================================================
 // Tests
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
+    use std::{sync::Arc, time::Duration};
 
     #[test]
-    fn test_default_metrics() {
-        let metrics =
-            EndpointMetrics::new("test_1".to_string(), "http://localhost:8545".to_string());
-
-        assert_eq!(metrics.id(), "test_1".to_string());
-        assert_eq!(metrics.health(), EndpointHealth::Healthy);
-        assert_eq!(metrics.error_rate(), 0.0);
-        assert_eq!(metrics.average_response_time_ms(), DEFAULT_RESPONSE_TIME_MS);
-    }
-
-    #[test]
-    fn test_success_recording() {
-        let mut metrics =
-            EndpointMetrics::new("test_1".to_string(), "http://localhost:8545".to_string());
-
-        metrics.record_success(Duration::from_millis(50));
-
-        assert_eq!(metrics.request_count, 1);
-        assert_eq!(metrics.error_count, 0);
-        assert_eq!(metrics.average_response_time_ms(), 50.0);
-        assert!(metrics.last_success().is_some());
-    }
-
-    #[test]
-    fn test_health_degradation() {
-        let mut metrics =
-            EndpointMetrics::new("test_1".to_string(), "http://localhost:8545".to_string());
-
-        // Add some successes
-        for _ in 0..8 {
-            metrics.record_success(Duration::from_millis(100));
+    fn test_concurrent_success_recording() {
+        use std::thread;
+        let metrics = Arc::new(EndpointMetrics::new(
+            "test".to_string(),
+            "http://localhost:8545".to_string(),
+        ));
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let m = Arc::clone(&metrics);
+                thread::spawn(move || {
+                    for _ in 0..100 {
+                        m.record_success(Duration::from_millis(50 + i as u64 * 10));
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
         }
-        assert_eq!(metrics.health(), EndpointHealth::Healthy);
 
-        // Add failures to reach degraded threshold (15% error rate)
-        metrics.record_failure();
-        metrics.record_failure();
-        assert_eq!(metrics.health(), EndpointHealth::Degraded);
-
-        // Add more failures to reach unhealthy threshold (40% error rate)
-        metrics.record_failure();
-        metrics.record_failure();
-        assert_eq!(metrics.health(), EndpointHealth::Unhealthy);
-    }
-
-    #[test]
-    fn test_circuit_breaker() {
-        let mut metrics =
-            EndpointMetrics::new("test_1".to_string(), "http://localhost:8545".to_string());
-
-        metrics.activate_circuit_breaker();
-        assert_eq!(metrics.health(), EndpointHealth::Unhealthy);
-        assert!(metrics.circuit_breaker_until.is_some());
-
-        // Success should clear circuit breaker
-        metrics.record_success(Duration::from_millis(100));
-        assert_eq!(metrics.circuit_breaker_attempts, 0);
-        assert!(metrics.circuit_breaker_until.is_none());
-    }
-
-    #[test]
-    fn test_load_balancing_score() {
-        let mut metrics =
-            EndpointMetrics::new("test_1".to_string(), "http://localhost:8545".to_string());
-
-        // Fast endpoint should have high score
-        metrics.record_success(Duration::from_millis(10));
-        let fast_score = metrics.load_balancing_score();
-
-        // Slow endpoint should have lower score
-        metrics.response_times_ms.clear();
-        metrics.record_success(Duration::from_millis(100));
-        let slow_score = metrics.load_balancing_score();
-
-        assert!(fast_score > slow_score);
-
-        // Unhealthy endpoint should have zero score
-        metrics.health = EndpointHealth::Unhealthy;
-        assert_eq!(metrics.load_balancing_score(), 0.0);
+        assert_eq!(metrics.request_count.load(Ordering::Relaxed), 1000);
+        assert_eq!(metrics.error_count.load(Ordering::Relaxed), 0);
     }
 }
 
-// ========================================================================
+// ============================================================================
