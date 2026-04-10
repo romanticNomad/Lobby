@@ -1,353 +1,473 @@
-use alloy::primitives::Address;
-use alloy::providers::Provider;
+//! RPC endpoint pool management with async-optimized concurrency
+//!
+//! Uses lock-free metrics and fine-grained async locking for high throughput.
+
+use crate::rpc::metadata::{EndpointMetrics, EndpointMetricsSnapshot};
+use alloy::{primitives::Address, providers::Provider};
 use dashmap::DashMap;
 use primitives::types::ChainId;
 use std::{
-    hash::{Hash, Hasher},
-    sync::Arc,
-    time::{Duration, Instant},
+    fmt::Debug,
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::{Arc, atomic::Ordering},
+    time::Instant,
 };
 use tokio::sync::RwLock;
 
-use crate::rpc::{RpcEndpointPool, RpcEndpointRegistry, RpcError};
+// ============================================================================
+// Type Aliases
 
-// ============================================================
-// RPC Endpoint Pool with Load Balancing
+/// Registry mapping chain IDs to their endpoint pools
+/// Uses DashMap for concurrent read/write without blocking
+pub type EndpointRegistry = Arc<DashMap<ChainId, Arc<EndpointPool>>>;
 
-/// Thread-safe RPC endpoint pool with weighted least response time load balancing
-#[derive(Clone)]
-pub struct ManagedEndpointPool {
-    /// The underlying pool data
-    pool: Arc<RwLock<RpcEndpointPool>>,
-    /// Current index for round-robin fallback
-    round_robin_index: Arc<std::sync::atomic::AtomicUsize>,
+// TTL limit for the cached healthy endpoint indeces.
+pub const CACHE_TTL: u64 = 5;
+
+// ============================================================================
+// Endpoint Pool
+
+/// High-performance endpoint pool with lock-free metric access
+///
+/// Architecture:
+/// - DashMap for registry-level concurrency (lock-free reads)
+/// - Vec<Arc<EndpointMetrics>> for lock-free metric reads
+/// - RwLock only for structural changes (add/remove endpoints)
+#[derive(Debug)]
+pub struct EndpointPool {
+    /// ChainId for the blockchain supported by this pool
+    chain_id: ChainId,
+
+    /// Endpoints with shared metrics (Arc for lock-free access)
+    ///
+    /// Metrics are stored separately to allow concurrent updates without
+    /// locking the provider or other endpoint data.
+    endpoints: RwLock<Vec<Arc<EndpointEntry>>>,
+
+    /// Cached healthy endpoint indeces, periodially updated
+    healthy_cache: RwLock<Vec<usize>>,
+
+    /// last cache update timestamp
+    cache_timestamp: std::sync::atomic::AtomicU64,
 }
 
-impl ManagedEndpointPool {
-    /// Create a new managed pool from an RpcEndpointPool
-    pub fn new(pool: RpcEndpointPool) -> Self {
+// ============================================================================
+// entry point for rpc provider and its metrics
+
+/// Single endpoint entry with shared ownership
+pub struct EndpointEntry {
+    /// The RPC provider implementation
+    provider: Arc<dyn Provider + Send + Sync>,
+
+    /// Shared metrics (lock-free atomic operations)
+    metrics: Arc<EndpointMetrics>,
+}
+
+// custom Debug implimentation
+impl Debug for EndpointEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EndpointEntry")
+            .field("metric", &self.metrics)
+            .finish()
+    }
+}
+
+impl EndpointEntry {
+    // create a new instance of EndpointEntry
+    pub fn new(provider: Arc<dyn Provider + Send + Sync>, metrics: Arc<EndpointMetrics>) -> Self {
+        Self { provider, metrics }
+    }
+}
+
+// ============================================================================
+// method implimentations for EndpointPool
+
+impl EndpointPool {
+    /// Creates new endpoint pool for a specific chain
+    pub fn new(chain_id: ChainId) -> Self {
         Self {
-            pool: Arc::new(RwLock::new(pool)),
-            round_robin_index: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            chain_id,
+            endpoints: RwLock::new(Vec::new()),
+            healthy_cache: RwLock::new(Vec::new()),
+            cache_timestamp: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
-    /// Select an endpoint using weighted least response time algorithm
-    ///
-    /// If `sender_address` is provided, uses consistent hashing for sticky sessions
-    /// (critical for EVM nonce management). Otherwise uses weighted scoring.
-    pub async fn select_provider(
+    /// Adds endpoint to pool (acquires write lock briefly)
+    async fn add_endpoint(
         &self,
-        sender_address: Option<Address>,
-    ) -> Result<(Arc<dyn Provider + Send + Sync>, String), RpcError> {
-        let pool = self.pool.read().await;
+        provider: Arc<dyn Provider + Send + Sync>,
+        metrics: EndpointMetrics,
+    ) {
+        let entry = EndpointEntry::new(provider, Arc::new(metrics));
+        let mut endpoints = self.endpoints.write().await;
+        endpoints.push(Arc::new(entry));
+        drop(endpoints);
 
-        if pool.endpoints.is_empty() {
-            return Err(RpcError::ProviderNotFound(pool.chain_id));
+        // update cache
+        self.update_healthy_cache().await;
+    }
+
+    #[inline]
+    pub fn chain_id(&self) -> ChainId {
+        self.chain_id
+    }
+
+    // number of endpoints present in the pool
+    pub async fn endpoint_cout(&self) -> usize {
+        self.endpoints.read().await.len()
+    }
+
+    /// Count healthy endpoints using cached data when fresh
+    pub async fn healthy_endpoint_count(&self) -> usize {
+        // Check cache freshness (5 second TTL)
+        let now = Instant::now().elapsed().as_secs();
+        let cache_lifetime = self.cache_timestamp.load(Ordering::Acquire);
+
+        // TTL set to 5 seconds
+        if now.saturating_sub(cache_lifetime) < CACHE_TTL {
+            return self.healthy_cache.read().await.len();
         }
 
-        // Filter healthy endpoints
-        let healthy_indices: Vec<usize> = pool
-            .endpoints
+        // if TTL expired then recalculate
+        self.update_healthy_cache().await;
+        self.healthy_cache.read().await.len()
+    }
+
+    /// Updates healthy endpoint cache (internal)
+    async fn update_healthy_cache(&self) {
+        let endpoints = self.endpoints.read().await;
+        let mut healthy_endpoint_indeces = Vec::with_capacity(endpoints.len());
+
+        for (idx, entry) in endpoints.iter().enumerate() {
+            // lock-free health check
+            if entry.metrics.is_available() {
+                healthy_endpoint_indeces.push(idx);
+            }
+        }
+
+        let now = Instant::now().elapsed().as_secs();
+        let mut cache = self.healthy_cache.write().await;
+        *cache = healthy_endpoint_indeces;
+        drop(cache);
+
+        self.cache_timestamp.store(now, Ordering::Release);
+    }
+
+    // ========================================================================
+    // Endpoint Selection (Async-Optimized)
+
+    /// Selects endpoint using specified strategy
+    ///
+    /// # Performance
+    /// - Weighted selection: O(n) with lock-free metric reads
+    /// - Sticky session: O(1) with consistent hashing
+    pub async fn select_endpoint(
+        &self,
+        strategy: &LoadBalancingStrategy,
+    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+        match strategy {
+            LoadBalancingStrategy::WeightedLeastResponseTime => {
+                self.select_by_weighted_score().await
+            }
+            LoadBalancingStrategy::StickySession { sender_address } => {
+                self.select_by_sticky_session(*sender_address).await
+            }
+            LoadBalancingStrategy::RoundRobin => self.select_round_robin().await,
+        }
+    }
+
+    /// Weighted least response time selection
+    ///
+    /// Algorithm:
+    /// 1. Collect all healthy endpoints with scores (lock-free reads)
+    /// 2. Use weighted random selection (roulette wheel)
+    ///
+    /// Time: O(n) where n = endpoint count
+    async fn select_by_weighted_score(
+        &self,
+    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+        let endpoints = self.endpoints.read().await;
+
+        if endpoints.is_empty() {
+            return None;
+        }
+
+        // collect scores (lock-free)
+        let mut scored_endpoints: Vec<(usize, f64)> = Vec::with_capacity(endpoints.len());
+        let mut total_score: f64 = 0.0;
+
+        for (idx, entry) in endpoints.iter().enumerate() {
+            let score = entry.metrics.load_balancing_score();
+            if score > 0.0 {
+                scored_endpoints.push((idx, score));
+                total_score += score;
+            }
+        }
+
+        drop(endpoints);
+        if scored_endpoints.is_empty() {
+            self.select_circuit_breaker_recovery().await;
+        }
+
+        // Weighted random selection (roulette wheel)
+        // Use fastrand for async-friendly random numbers
+        let threshold = fastrand::f64() * total_score;
+        let mut cumulative = 0.0;
+
+        for (idx, score) in &scored_endpoints {
+            cumulative += score;
+            if cumulative >= threshold {
+                let endpoint = self.endpoints.read().await;
+                let entry = endpoint.get(*idx)?;
+                return Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)));
+            }
+        }
+
+        // fallback to last
+        let last_index = scored_endpoints.last()?.0;
+        let endpoint = self.endpoints.read().await;
+        let entry = endpoint.get(last_index)?;
+        Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+    }
+
+    /// Sticky session with consistent hashing
+    ///
+    /// Routes same sender to same endpoint for nonce management.
+    /// Falls back to weighted selection if preferred endpoint unhealthy.
+    ///
+    /// Time: O(1) average case
+    async fn select_by_sticky_session(
+        &self,
+        sender_address: Address,
+    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+        let endpoints = self.endpoints.read().await;
+
+        if endpoints.is_empty() {
+            return None;
+        }
+
+        // Build list of healthy endpoints for consistent hashing
+        let mut healthy: Vec<(usize, Arc<EndpointEntry>)> = Vec::with_capacity(endpoints.len());
+
+        for (idx, entry) in endpoints.iter().enumerate() {
+            if entry.metrics.is_available() {
+                healthy.push((idx, Arc::clone(entry)));
+            }
+        }
+
+        drop(endpoints);
+
+        if healthy.is_empty() {
+            return self.select_circuit_breaker_recovery().await;
+        }
+
+        // Consistent hashing
+        let hash = hash_address(sender_address);
+        let index = (hash as usize) % healthy.len();
+        let (_, entry) = healthy.swap_remove(index);
+
+        Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+    }
+
+    /// Simple round-robin for uniform distribution
+    async fn select_round_robin(
+        &self,
+    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        let endpoints = self.endpoints.read().await;
+        if endpoints.is_empty() {
+            return None;
+        }
+
+        // Get next index atomically
+        let idx = COUNTER.fetch_add(1, Ordering::Relaxed) % endpoints.len();
+        let entry = endpoints.get(idx)?;
+
+        Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+    }
+
+    /// Circuit breaker recovery selection
+    ///
+    /// Attempts to find endpoints where circuit breaker has expired.
+    /// Time: O(n)
+    async fn select_circuit_breaker_recovery(
+        &self,
+    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+        let endpoints = self.endpoints.read().await;
+        let now = Instant::now();
+
+        // find expired circuit breaker
+        for entry in endpoints.iter() {
+            if let Some(expiry) = entry.metrics.circuit_breaker_until() {
+                if now > expiry {
+                    return Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)));
+                }
+            }
+        }
+
+        // last resort: return the first endpoint irrespective of health
+        endpoints
+            .first()
+            .map(|entry| (Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+    }
+
+    // ========================================================================
+    // Metric Updates (Lock-Free via Arc)
+
+    /// Updates metrics for a specific endpoint using closure
+    ///
+    /// Lock-free: Metrics are atomically updated via Arc<EndpointMetrics>
+    pub async fn update_endpoint_metrics<F>(&self, endpoint_id: String, update_fn: F)
+    where
+        F: FnOnce(&EndpointMetrics),
+    {
+        let endpoints = self.endpoints.read().await;
+        for entry in endpoints.iter() {
+            if endpoint_id == entry.metrics.id {
+                update_fn(&entry.metrics);
+                return;
+            }
+        }
+    }
+
+    /// Batch update multiple endpoints (more efficient than individual updates)
+    pub async fn batch_update_metrics<F>(&self, updates: Vec<(String, F)>)
+    where
+        F: Fn(&EndpointMetrics),
+    {
+        let endpoints = self.endpoints.read().await;
+
+        for (id, update_fn) in updates {
+            if let Some(entry) = endpoints.iter().find(|e| e.metrics.id() == id) {
+                update_fn(&entry.metrics);
+            }
+        }
+    }
+
+    /// Returns snapshot of all metrics (for monitoring)
+    ///
+    /// Time: O(n), creates clones to avoid holding locks
+    pub async fn endpoints_metrics(&self) -> Vec<EndpointMetricsSnapshot> {
+        let endpoints = self.endpoints.read().await;
+
+        endpoints
             .iter()
-            .enumerate()
-            .filter(|(_, (_, metadata))| metadata.is_healthy())
-            .map(|(idx, _)| idx)
-            .collect();
-
-        if healthy_indices.is_empty() {
-            // No healthy endpoints - try to find one that's not circuit-broken
-            let available_indices: Vec<usize> = pool
-                .endpoints
-                .iter()
-                .enumerate()
-                .filter(|(_, (_, metadata))| {
-                    metadata
-                        .circuit_breaker_until
-                        .map_or(true, |until| Instant::now() >= until)
-                })
-                .map(|(idx, _)| idx)
-                .collect();
-
-            if available_indices.is_empty() {
-                return Err(RpcError::ProviderNotFound(pool.chain_id));
-            }
-
-            // Fall back to round-robin among available endpoints
-            let idx = self
-                .round_robin_index
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                % available_indices.len();
-            let endpoint_idx = available_indices[idx];
-            let (provider, metadata) = &pool.endpoints[endpoint_idx];
-            return Ok((provider.clone(), metadata.id.clone()));
-        }
-
-        // If sender_address provided, use consistent hashing for sticky session
-        if let Some(address) = sender_address {
-            let hash = calculate_address_hash(address);
-            let idx = (hash as usize) % healthy_indices.len();
-            let endpoint_idx = healthy_indices[idx];
-            let (provider, metadata) = &pool.endpoints[endpoint_idx];
-            return Ok((provider.clone(), metadata.id.clone()));
-        }
-
-        // Otherwise, use weighted least response time
-        let mut best_idx = healthy_indices[0];
-        let mut best_score = pool.endpoints[best_idx].1.score();
-
-        for &idx in &healthy_indices[1..] {
-            let score = pool.endpoints[idx].1.score();
-            if score > best_score {
-                best_score = score;
-                best_idx = idx;
-            }
-        }
-
-        let (provider, metadata) = &pool.endpoints[best_idx];
-        Ok((provider.clone(), metadata.id.clone()))
-    }
-
-    /// Record a successful request for an endpoint
-    pub async fn record_success(&self, endpoint_id: &str, duration: Duration) {
-        let mut pool = self.pool.write().await;
-        for (_, metadata) in &mut pool.endpoints {
-            if metadata.id == endpoint_id {
-                metadata.record_success(duration.as_millis() as u64);
-                break;
-            }
-        }
-    }
-
-    /// Record a failed request for an endpoint
-    pub async fn record_failure(&self, endpoint_id: &str) {
-        let mut pool = self.pool.write().await;
-        for (_, metadata) in &mut pool.endpoints {
-            if metadata.id == endpoint_id {
-                metadata.record_failure();
-                break;
-            }
-        }
-    }
-
-    /// Activate circuit breaker for an endpoint
-    pub async fn activate_circuit_breaker(&self, endpoint_id: &str, attempt: u32) {
-        let mut pool = self.pool.write().await;
-        for (_, metadata) in &mut pool.endpoints {
-            if metadata.id == endpoint_id {
-                metadata.activate_circuit_breaker(attempt);
-                tracing::warn!(
-                    endpoint_id = %endpoint_id,
-                    chain_id = %pool.chain_id,
-                    attempt = attempt,
-                    "Circuit breaker activated for endpoint"
-                );
-                break;
-            }
-        }
-    }
-
-    /// Update block height for an endpoint (called by health checker)
-    pub async fn update_block_height(&self, endpoint_id: &str, block_height: u64) {
-        let mut pool = self.pool.write().await;
-        for (_, metadata) in &mut pool.endpoints {
-            if metadata.id == endpoint_id {
-                metadata.block_height = Some(block_height);
-                break;
-            }
-        }
-    }
-
-    /// Get current health status of all endpoints
-    pub async fn health_summary(&self) -> Vec<(String, String, bool)> {
-        let pool = self.pool.read().await;
-        pool.endpoints
-            .iter()
-            .map(|(_, metadata)| {
-                (
-                    metadata.id.clone(),
-                    metadata.url.clone(),
-                    metadata.is_healthy(),
-                )
-            })
+            .map(|entry| entry.metrics.snapshot())
             .collect()
     }
 
-    /// Get chain ID for this pool
-    pub fn chain_id(&self) -> ChainId {
-        // We need to read from the pool to get the chain_id
-        // Since this is read-only and we don't want to make this async,
-        // we'll store chain_id separately in the registry
-        unimplemented!("Use registry to get chain_id")
+    /// Find endpoint by ID (for targeted operations)
+    pub async fn find_endpoint(&self, endpoint_id: &str) -> Option<Arc<EndpointMetrics>> {
+        let endpoints = self.endpoints.read().await;
+
+        endpoints
+            .iter()
+            .find(|e| e.metrics.id() == endpoint_id)
+            .map(|e| Arc::clone(&e.metrics))
     }
 }
 
-/// Calculate a hash from an address for consistent hashing
-fn calculate_address_hash(address: Address) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+// ============================================================================
+// Load Balancing Strategy
+
+#[derive(Debug, Clone)]
+pub enum LoadBalancingStrategy {
+    /// Weighted by performance score (best for general queries)
+    WeightedLeastResponseTime,
+
+    /// Consistent hashing by sender (best for transactions)
+    StickySession { sender_address: Address },
+
+    /// Uniform distribution (best for cacheable reads)
+    RoundRobin,
+}
+
+impl LoadBalancingStrategy {
+    #[inline]
+    pub fn weighted() -> Self {
+        Self::WeightedLeastResponseTime
+    }
+
+    #[inline]
+    pub fn sticky(sender_address: Address) -> Self {
+        Self::StickySession { sender_address }
+    }
+
+    #[inline]
+    pub fn round_robin() -> Self {
+        Self::RoundRobin
+    }
+}
+
+// ============================================================================
+// Helper Functions
+
+#[inline]
+fn hash_address(address: Address) -> u64 {
+    let mut hasher = DefaultHasher::new();
     address.hash(&mut hasher);
     hasher.finish()
 }
 
-// ============================================================
-// Registry of Managed Endpoint Pools
+// ============================================================================
+// RPC Provider Stack
 
-/// Registry mapping chain IDs to managed endpoint pools
+/// Dual-registry stack for workload isolation
 #[derive(Clone)]
-pub struct ManagedEndpointRegistry {
-    pools: Arc<DashMap<ChainId, ManagedEndpointPool>>,
+pub struct RpcProviderStack {
+    pub broadcast_registry: EndpointRegistry,
+    pub validator_registry: EndpointRegistry,
 }
 
-impl ManagedEndpointRegistry {
-    /// Create a new registry from an RpcEndpointRegistry
-    pub fn new(registry: RpcEndpointRegistry) -> Self {
-        let pools = Arc::new(DashMap::new());
-
-        for entry in registry.iter() {
-            let chain_id = *entry.key();
-            // Get the pool - since we can't clone RpcEndpointPool, we need to take ownership
-            // But DashMap entry gives us a reference, so we need a different approach
-            // For now, let's remove from registry and insert into pools
-            if let Some((_, pool)) = registry.remove(&chain_id) {
-                let managed_pool = ManagedEndpointPool::new(pool);
-                pools.insert(chain_id, managed_pool);
-            }
-        }
-
-        Self { pools }
-    }
-
-    /// Select a provider for a chain
-    ///
-    /// If `sender_address` is provided, uses sticky session routing
-    pub async fn select_provider(
-        &self,
-        chain_id: &ChainId,
-        sender_address: Option<Address>,
-    ) -> Result<(Arc<dyn Provider + Send + Sync>, String), RpcError> {
-        let pool = self
-            .pools
-            .get(chain_id)
-            .ok_or(RpcError::ProviderNotFound(*chain_id))?;
-
-        pool.select_provider(sender_address).await
-    }
-
-    /// Get the managed pool for a chain
-    pub fn get_pool(&self, chain_id: &ChainId) -> Option<ManagedEndpointPool> {
-        self.pools.get(chain_id).map(|p| p.value().clone())
-    }
-
-    /// Record success for a specific endpoint
-    pub async fn record_success(&self, chain_id: &ChainId, endpoint_id: &str, duration: Duration) {
-        if let Some(pool) = self.pools.get(chain_id) {
-            pool.record_success(endpoint_id, duration).await;
+impl RpcProviderStack {
+    /// Creates new stack with separate registries
+    pub fn new() -> Self {
+        Self {
+            broadcast_registry: Arc::new(DashMap::new()),
+            validator_registry: Arc::new(DashMap::new()),
         }
     }
 
-    /// Record failure for a specific endpoint
-    pub async fn record_failure(&self, chain_id: &ChainId, endpoint_id: &str) {
-        if let Some(pool) = self.pools.get(chain_id) {
-            pool.record_failure(endpoint_id).await;
-        }
+    /// Gets pool for broadcasting (write operations)
+    pub fn get_broadcast_pool(&self, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
+        self.broadcast_registry
+            .get(&chain_id)
+            .map(|entry| Arc::clone(entry.value()))
     }
 
-    /// Activate circuit breaker for a specific endpoint
-    pub async fn activate_circuit_breaker(
-        &self,
-        chain_id: &ChainId,
-        endpoint_id: &str,
-        attempt: u32,
-    ) {
-        if let Some(pool) = self.pools.get(chain_id) {
-            pool.activate_circuit_breaker(endpoint_id, attempt).await;
-        }
-    }
-
-    /// Get health summary for all pools
-    pub async fn health_summary(&self) -> DashMap<ChainId, Vec<(String, String, bool)>> {
-        let summary = DashMap::new();
-        for entry in self.pools.iter() {
-            let chain_id = *entry.key();
-            let pool = entry.value();
-            summary.insert(chain_id, pool.health_summary().await);
-        }
-        summary
+    /// Gets pool for validation (read operations)
+    pub fn get_validator_pool(&self, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
+        self.validator_registry
+            .get(&chain_id)
+            .map(|entry| Arc::clone(entry.value()))
     }
 }
 
-// ============================================================
-// Health Checker Background Task
+// ============================================================================
+// Environment Loading
 
-/// Spawn a background health checker task for the registry
-pub fn spawn_health_checker(registry: ManagedEndpointRegistry, check_interval: Duration) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(check_interval);
+// use std::env;
 
-        loop {
-            interval.tick().await;
+// /// Loads RPC endpoints from environment
+// ///
+// /// Format: RPC_ENDPOINTS_<CHAIN_ID>=url1,url2,url3
+// pub async fn load_endpoint_from_env() -> EndpointRegistry {
 
-            for entry in registry.pools.iter() {
-                let chain_id = *entry.key();
-                let pool = entry.value();
+// }
 
-                // Get all endpoints for this pool
-                let endpoints = {
-                    let pool_guard = pool.pool.read().await;
-                    pool_guard
-                        .endpoints
-                        .iter()
-                        .map(|(_, metadata)| (metadata.id.clone(), metadata.url.clone()))
-                        .collect::<Vec<_>>()
-                };
+// ============================================================================
+// Tests
 
-                // Check health of each endpoint
-                for (endpoint_id, url) in endpoints {
-                    match check_endpoint_health(&url).await {
-                        Ok((block_height, latency_ms)) => {
-                            pool.update_block_height(&endpoint_id, block_height).await;
-                            pool.record_success(&endpoint_id, Duration::from_millis(latency_ms))
-                                .await;
-                            tracing::debug!(
-                                endpoint_id = %endpoint_id,
-                                chain_id = %chain_id,
-                                block_height = block_height,
-                                latency_ms = latency_ms,
-                                "Health check passed"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                endpoint_id = %endpoint_id,
-                                chain_id = %chain_id,
-                                error = %e,
-                                "Health check failed"
-                            );
-                            pool.record_failure(&endpoint_id).await;
-                        }
-                    }
-                }
-            }
-        }
-    });
+/// Placeholder Provider from testing.
+struct PlaceholderProvider;
+impl Provider for PlaceholderProvider {
+    fn root(&self) -> &alloy::providers::RootProvider<alloy::network::Ethereum> {
+        unimplemented!("test use only")
+    }
 }
 
-/// Check endpoint health by querying eth_blockNumber
-async fn check_endpoint_health(url: &str) -> Result<(u64, u64), String> {
-    use alloy::providers::{Provider, ProviderBuilder};
-
-    let start = Instant::now();
-    let provider = ProviderBuilder::new()
-        .connect_http(url.parse().map_err(|e| format!("Invalid URL: {}", e))?);
-
-    let block_number = provider
-        .get_block_number()
-        .await
-        .map_err(|e| format!("RPC error: {}", e))?;
-
-    let latency_ms = start.elapsed().as_millis() as u64;
-
-    Ok((block_number, latency_ms))
-}
-
-// ============================================================
+// ============================================================================
