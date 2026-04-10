@@ -471,3 +471,49 @@ impl Provider for PlaceholderProvider {
 }
 
 // ============================================================================
+// unit test module
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::task::JoinSet;
+
+    #[tokio::test]
+    async fn test_pool_concurrent_selection() {
+        let pool = Arc::new(EndpointPool::new(ChainId::try_from(1).unwrap()));
+
+        // Add mock endpoints
+        for i in 0..5 {
+            let metrics = EndpointMetrics::new(
+                format!("test_{}", i),
+                format!("http://localhost:{}", 8545 + i),
+            );
+            
+            // Record some response times to differentiate scores
+            for _ in 0..10 {
+                metrics.record_success(std::time::Duration::from_millis(50 + i as u64 * 10));
+            }
+
+            pool.add_endpoint(Arc::new(PlaceholderProvider), metrics)
+                .await;
+        }
+
+        // Concurrent selections
+        let mut handles = JoinSet::new();
+        for _ in 0..100 {
+            let pool_clone = Arc::clone(&pool);
+            handles.spawn(async move {
+                let strategy = LoadBalancingStrategy::weighted();
+                pool_clone.select_endpoint(&strategy).await
+            });
+        }
+
+        // await all submissions
+        let results = handles.join_all().await;
+        let success_count = results.iter().filter(|r| r.to_owned().is_some()).count();
+
+        assert!(success_count >= 95, "Most selections should succeed");
+    }
+}
+
+// ============================================================================
