@@ -169,8 +169,8 @@ impl EndpointPool {
             LoadBalancingStrategy::WeightedLeastResponseTime => {
                 self.select_by_weighted_score().await
             }
-            LoadBalancingStrategy::StickySession { endpoint_index } => {
-                self.select_by_sticky_session(*endpoint_index).await
+            LoadBalancingStrategy::StickySession { sticky_index } => {
+                self.select_by_sticky_session(*sticky_index).await
             }
             LoadBalancingStrategy::RoundRobin => self.select_round_robin().await,
         }
@@ -244,10 +244,7 @@ impl EndpointPool {
     /// returned by weighted score or round-robin strategies.
     ///
     /// Time: O(1) average case
-    async fn select_by_sticky_session(
-        &self,
-        endpoint_index: usize,
-    ) -> Option<LoadBalancerChoice> {
+    async fn select_by_sticky_session(&self, sticky_index: usize) -> Option<LoadBalancerChoice> {
         let endpoints = self.endpoints.read().await;
 
         if endpoints.is_empty() {
@@ -255,12 +252,12 @@ impl EndpointPool {
         }
 
         // Check if the requested index is valid and endpoint is healthy
-        if let Some(entry) = endpoints.get(endpoint_index) {
+        if let Some(entry) = endpoints.get(sticky_index) {
             if entry.metrics.is_available() {
                 return Some(LoadBalancerChoice::new(
                     Arc::clone(&entry.provider),
                     Arc::clone(&entry.metrics),
-                    endpoint_index,
+                    sticky_index,
                 ));
             }
         }
@@ -316,11 +313,7 @@ impl EndpointPool {
 
         // last resort: return the first endpoint irrespective of health
         endpoints.first().map(|entry| {
-            LoadBalancerChoice::new(
-                Arc::clone(&entry.provider),
-                Arc::clone(&entry.metrics),
-                0,
-            )
+            LoadBalancerChoice::new(Arc::clone(&entry.provider), Arc::clone(&entry.metrics), 0)
         })
     }
 
@@ -391,7 +384,7 @@ pub enum LoadBalancingStrategy {
     /// Sticky session based on endpoint index (best for transactions)
     /// Use this to maintain session affinity with an endpoint selected
     /// by weighted score or round-robin strategies.
-    StickySession { endpoint_index: usize },
+    StickySession { sticky_index: usize },
 
     /// Uniform distribution (best for cacheable reads)
     RoundRobin,
@@ -404,8 +397,8 @@ impl LoadBalancingStrategy {
     }
 
     #[inline]
-    pub fn sticky(endpoint_index: usize) -> Self {
-        Self::StickySession { endpoint_index }
+    pub fn sticky(sticky_index: usize) -> Self {
+        Self::StickySession { sticky_index }
     }
 
     #[inline]
@@ -416,19 +409,19 @@ impl LoadBalancingStrategy {
 
 pub struct LoadBalancerChoice {
     provider: Arc<dyn Provider + Send + Sync>,
-    metric: Arc<EndpointMetrics>,
+    metrics: Arc<EndpointMetrics>,
     index: usize,
 }
 
 impl LoadBalancerChoice {
     pub fn new(
         provider: Arc<dyn Provider + Send + Sync>,
-        metric: Arc<EndpointMetrics>,
+        metrics: Arc<EndpointMetrics>,
         index: usize,
     ) -> Self {
         Self {
             provider,
-            metric,
+            metrics,
             index,
         }
     }
@@ -439,8 +432,8 @@ impl LoadBalancerChoice {
     }
 
     #[inline]
-    pub fn metric(&self) -> Arc<EndpointMetrics> {
-        Arc::clone(&self.metric)
+    pub fn metrics(&self) -> Arc<EndpointMetrics> {
+        Arc::clone(&self.metrics)
     }
 
     #[inline]
@@ -536,6 +529,7 @@ mod tests {
 
         // Concurrent selections
         let mut handles = JoinSet::new();
+
         for _ in 0..100 {
             let pool_clone = Arc::clone(&pool);
             handles.spawn(async move {
