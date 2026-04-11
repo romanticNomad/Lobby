@@ -3,12 +3,11 @@
 //! Uses lock-free metrics and fine-grained async locking for high throughput.
 
 use crate::rpc::metadata::{EndpointMetrics, EndpointMetricsSnapshot};
-use alloy::{primitives::Address, providers::Provider};
+use alloy::providers::Provider;
 use dashmap::DashMap;
 use primitives::types::ChainId;
 use std::{
     fmt::Debug,
-    hash::{DefaultHasher, Hash, Hasher},
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
@@ -161,17 +160,17 @@ impl EndpointPool {
     ///
     /// # Performance
     /// - Weighted selection: O(n) with lock-free metric reads
-    /// - Sticky session: O(1) with consistent hashing
+    /// - Sticky session: O(1) with index-based lookup
     pub async fn select_endpoint(
         &self,
         strategy: &LoadBalancingStrategy,
-    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+    ) -> Option<LoadBalancerChoice> {
         match strategy {
             LoadBalancingStrategy::WeightedLeastResponseTime => {
                 self.select_by_weighted_score().await
             }
-            LoadBalancingStrategy::StickySession { sender_address } => {
-                self.select_by_sticky_session(*sender_address).await
+            LoadBalancingStrategy::StickySession { endpoint_index } => {
+                self.select_by_sticky_session(*endpoint_index).await
             }
             LoadBalancingStrategy::RoundRobin => self.select_round_robin().await,
         }
@@ -184,9 +183,7 @@ impl EndpointPool {
     /// 2. Use weighted random selection (roulette wheel)
     ///
     /// Time: O(n) where n = endpoint count
-    async fn select_by_weighted_score(
-        &self,
-    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+    async fn select_by_weighted_score(&self) -> Option<LoadBalancerChoice> {
         let endpoints = self.endpoints.read().await;
 
         if endpoints.is_empty() {
@@ -207,73 +204,75 @@ impl EndpointPool {
 
         drop(endpoints);
         if scored_endpoints.is_empty() {
-            self.select_circuit_breaker_recovery().await;
+            return self.select_circuit_breaker_recovery().await;
         }
 
         // Weighted random selection (roulette wheel)
         // Use fastrand for async-friendly random numbers
         let threshold = fastrand::f64() * total_score;
         let mut cumulative = 0.0;
+        let mut selected_idx = 0;
 
         for (idx, score) in &scored_endpoints {
             cumulative += score;
             if cumulative >= threshold {
-                let endpoint = self.endpoints.read().await;
-                let entry = endpoint.get(*idx)?;
-                return Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)));
+                selected_idx = *idx;
+                break;
             }
         }
 
-        // fallback to last
-        let last_index = scored_endpoints.last()?.0;
+        // If no selection made, use the last one
+        if cumulative < threshold {
+            selected_idx = scored_endpoints.last()?.0;
+        }
+
         let endpoint = self.endpoints.read().await;
-        let entry = endpoint.get(last_index)?;
-        Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+        let entry = endpoint.get(selected_idx)?;
+        Some(LoadBalancerChoice::new(
+            Arc::clone(&entry.provider),
+            Arc::clone(&entry.metrics),
+            selected_idx,
+        ))
     }
 
-    /// Sticky session with consistent hashing
+    /// Sticky session with index-based endpoint selection
     ///
-    /// Routes same sender to same endpoint for nonce management.
-    /// Falls back to weighted selection if preferred endpoint unhealthy.
+    /// Verifies that the endpoint at the given index is healthy.
+    /// Falls back to weighted selection if the endpoint is unhealthy.
+    ///
+    /// This allows sticky sessions to be synchronized with the selection
+    /// returned by weighted score or round-robin strategies.
     ///
     /// Time: O(1) average case
     async fn select_by_sticky_session(
         &self,
-        sender_address: Address,
-    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+        endpoint_index: usize,
+    ) -> Option<LoadBalancerChoice> {
         let endpoints = self.endpoints.read().await;
 
         if endpoints.is_empty() {
             return None;
         }
 
-        // Build list of healthy endpoints for consistent hashing
-        let mut healthy: Vec<(usize, Arc<EndpointEntry>)> = Vec::with_capacity(endpoints.len());
-
-        for (idx, entry) in endpoints.iter().enumerate() {
+        // Check if the requested index is valid and endpoint is healthy
+        if let Some(entry) = endpoints.get(endpoint_index) {
             if entry.metrics.is_available() {
-                healthy.push((idx, Arc::clone(entry)));
+                return Some(LoadBalancerChoice::new(
+                    Arc::clone(&entry.provider),
+                    Arc::clone(&entry.metrics),
+                    endpoint_index,
+                ));
             }
         }
 
         drop(endpoints);
 
-        if healthy.is_empty() {
-            return self.select_circuit_breaker_recovery().await;
-        }
-
-        // Consistent hashing
-        let hash = hash_address(sender_address);
-        let index = (hash as usize) % healthy.len();
-        let (_, entry) = healthy.swap_remove(index);
-
-        Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+        // Fallback to weighted selection if endpoint is unhealthy or invalid
+        self.select_by_weighted_score().await
     }
 
     /// Simple round-robin for uniform distribution
-    async fn select_round_robin(
-        &self,
-    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+    async fn select_round_robin(&self) -> Option<LoadBalancerChoice> {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -287,32 +286,42 @@ impl EndpointPool {
         let idx = COUNTER.fetch_add(1, Ordering::Relaxed) % endpoints.len();
         let entry = endpoints.get(idx)?;
 
-        Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+        Some(LoadBalancerChoice::new(
+            Arc::clone(&entry.provider),
+            Arc::clone(&entry.metrics),
+            idx,
+        ))
     }
 
     /// Circuit breaker recovery selection
     ///
     /// Attempts to find endpoints where circuit breaker has expired.
     /// Time: O(n)
-    async fn select_circuit_breaker_recovery(
-        &self,
-    ) -> Option<(Arc<dyn Provider + Send + Sync>, Arc<EndpointMetrics>)> {
+    async fn select_circuit_breaker_recovery(&self) -> Option<LoadBalancerChoice> {
         let endpoints = self.endpoints.read().await;
         let now = Instant::now();
 
         // find expired circuit breaker
-        for entry in endpoints.iter() {
+        for (idx, entry) in endpoints.iter().enumerate() {
             if let Some(expiry) = entry.metrics.circuit_breaker_until() {
                 if now > expiry {
-                    return Some((Arc::clone(&entry.provider), Arc::clone(&entry.metrics)));
+                    return Some(LoadBalancerChoice::new(
+                        Arc::clone(&entry.provider),
+                        Arc::clone(&entry.metrics),
+                        idx,
+                    ));
                 }
             }
         }
 
         // last resort: return the first endpoint irrespective of health
-        endpoints
-            .first()
-            .map(|entry| (Arc::clone(&entry.provider), Arc::clone(&entry.metrics)))
+        endpoints.first().map(|entry| {
+            LoadBalancerChoice::new(
+                Arc::clone(&entry.provider),
+                Arc::clone(&entry.metrics),
+                0,
+            )
+        })
     }
 
     // ========================================================================
@@ -379,8 +388,10 @@ pub enum LoadBalancingStrategy {
     /// Weighted by performance score (best for general queries)
     WeightedLeastResponseTime,
 
-    /// Consistent hashing by sender (best for transactions)
-    StickySession { sender_address: Address },
+    /// Sticky session based on endpoint index (best for transactions)
+    /// Use this to maintain session affinity with an endpoint selected
+    /// by weighted score or round-robin strategies.
+    StickySession { endpoint_index: usize },
 
     /// Uniform distribution (best for cacheable reads)
     RoundRobin,
@@ -393,8 +404,8 @@ impl LoadBalancingStrategy {
     }
 
     #[inline]
-    pub fn sticky(sender_address: Address) -> Self {
-        Self::StickySession { sender_address }
+    pub fn sticky(endpoint_index: usize) -> Self {
+        Self::StickySession { endpoint_index }
     }
 
     #[inline]
@@ -403,14 +414,39 @@ impl LoadBalancingStrategy {
     }
 }
 
-// ============================================================================
-// Helper Functions
+pub struct LoadBalancerChoice {
+    provider: Arc<dyn Provider + Send + Sync>,
+    metric: Arc<EndpointMetrics>,
+    index: usize,
+}
 
-#[inline]
-fn hash_address(address: Address) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    address.hash(&mut hasher);
-    hasher.finish()
+impl LoadBalancerChoice {
+    pub fn new(
+        provider: Arc<dyn Provider + Send + Sync>,
+        metric: Arc<EndpointMetrics>,
+        index: usize,
+    ) -> Self {
+        Self {
+            provider,
+            metric,
+            index,
+        }
+    }
+
+    #[inline]
+    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync> {
+        Arc::clone(&self.provider)
+    }
+
+    #[inline]
+    pub fn metric(&self) -> Arc<EndpointMetrics> {
+        Arc::clone(&self.metric)
+    }
+
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.index
+    }
 }
 
 // ============================================================================
@@ -488,7 +524,7 @@ mod tests {
                 format!("test_{}", i),
                 format!("http://localhost:{}", 8545 + i),
             );
-            
+
             // Record some response times to differentiate scores
             for _ in 0..10 {
                 metrics.record_success(std::time::Duration::from_millis(50 + i as u64 * 10));
