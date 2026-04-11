@@ -145,6 +145,27 @@ pub fn record_success(&self, duration: Duration) {
 
 ### 2. `pool.rs` - Endpoint Management
 
+#### Core Structure: `LoadBalancerChoice`
+
+Returned by all selection algorithms to enable sticky session synchronization:
+
+```rust
+pub struct LoadBalancerChoice {
+    provider: Arc<dyn Provider + Send + Sync>,  // RPC provider
+    metric: Arc<EndpointMetrics>,              // Metrics for tracking
+    index: usize,                              // Endpoint index
+}
+
+impl LoadBalancerChoice {
+    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync>;
+    pub fn metric(&self) -> Arc<EndpointMetrics>;
+    pub fn index(&self) -> usize;  // For sticky session
+}
+```
+
+The `index` field is critical for sticky session support, allowing subsequent
+calls to target the same endpoint using `LoadBalancingStrategy::sticky(index)`.
+
 #### Core Structure: `EndpointPool`
 
 **Lock Hierarchy** (to prevent deadlocks):
@@ -162,9 +183,14 @@ pub struct EndpointPool {
 
 #### Selection Algorithms
 
+All selection functions return `Option<LoadBalancerChoice>` which includes:
+- `provider`: The RPC provider
+- `metric`: Endpoint metrics for tracking
+- `index`: The endpoint index for sticky session synchronization
+
 **1. Weighted Least Response Time**:
 ```rust
-async fn select_by_weighted_score(&self) -> Option<...> {
+async fn select_by_weighted_score(&self) -> Option<LoadBalancerChoice> {
     // 1. Collect scores (read lock held briefly)
     let endpoints = self.endpoints.read().await;
     let mut scored: Vec<(usize, f64)> = ...;
@@ -178,6 +204,9 @@ async fn select_by_weighted_score(&self) -> Option<...> {
     // 2. Weighted random selection (roulette wheel)
     let threshold = fastrand::f64() * total_score;
     // ... select based on cumulative probability
+    
+    // 3. Return choice with index for sticky session support
+    Some(LoadBalancerChoice::new(provider, metric, selected_idx))
 }
 ```
 
@@ -186,19 +215,39 @@ async fn select_by_weighted_score(&self) -> Option<...> {
 - Weighted random provides statistical distribution matching scores
 - Prevents overload of single "best" endpoint
 
-**2. Sticky Session (Consistent Hashing)**:
+**2. Sticky Session (Index-Based)**:
 ```rust
-let hash = hash_address(sender_address);
-let index = (hash as usize) % healthy_endpoints.len();
+pub async fn select_by_sticky_session(
+    &self,
+    endpoint_index: usize,
+) -> Option<LoadBalancerChoice> {
+    // Check if the requested index is valid and endpoint is healthy
+    if let Some(entry) = endpoints.get(endpoint_index) {
+        if entry.metrics.is_available() {
+            return Some(LoadBalancerChoice::new(..., endpoint_index));
+        }
+    }
+    // Fallback to weighted selection if unhealthy
+    self.select_by_weighted_score().await
+}
 ```
 
-- Deterministic: Same sender → Same endpoint (when healthy)
+- Synchronized: Uses index from weighted/round-robin selection
+- Maintains session affinity across multiple calls
 - Prevents nonce conflicts in transaction submission
 - Falls back to weighted selection if preferred endpoint unhealthy
 
 **3. Round Robin**:
+```rust
+async fn select_round_robin(&self) -> Option<LoadBalancerChoice> {
+    let idx = COUNTER.fetch_add(1, Ordering::Relaxed) % endpoints.len();
+    // ...
+    Some(LoadBalancerChoice::new(provider, metric, idx))
+}
+```
 - Global atomic counter: `COUNTER.fetch_add(1, Ordering::Relaxed)`
 - Uniform distribution across all healthy endpoints
+- Returns index for sticky session synchronization
 - Best for cacheable read operations
 
 #### Cache Invalidation Strategy
@@ -675,73 +724,7 @@ async fn metrics_handler(exporter: Arc<MetricsExporter>) -> impl IntoResponse {
 
 ---
 
-### TODO 5: Retry Logic with Exponential Backoff
-
-**Location**: `rpc.rs` - New method `execute_with_retry()`
-
-**Current Gap**: No automatic retry on transient failures.
-
-**Expected Implementation**:
-
-```rust
-impl RpcClient {
-    pub async fn execute_with_retry<F, Fut, R>(
-        &self,
-        chain_id: &ChainId,
-        sender: Option<Address>,
-        max_retries: usize,
-        operation: F,
-    ) -> Result<R, RpcError>
-    where
-        F: Fn(Arc<dyn Provider + Send + Sync>) -> Fut,
-        Fut: std::future::Future<Output = Result<R, alloy::transports::TransportError>>,
-    {
-        let mut last_error = None;
-        
-        for attempt in 0..max_retries {
-            let ctx = self.acquire_and_select(chain_id, sender, Duration::from_secs(10)).await?;
-            
-            match operation(Arc::clone(&ctx.provider)).await {
-                Ok(result) => {
-                    ctx.record_success(Instant::now() - start);
-                    return Ok(result);
-                }
-                Err(e) => {
-                    ctx.record_failure();
-                    last_error = Some(e);
-                    
-                    // Check if error is retryable
-                    if !is_retryable_error(&e) {
-                        break;
-                    }
-                    
-                    // Exponential backoff: 100ms, 200ms, 400ms, ...
-                    let delay = Duration::from_millis(100 * 2_u64.pow(attempt as u32));
-                    tokio::time::sleep(delay).await;
-                }
-            }
-        }
-        
-        Err(RpcError::MaxRetriesExceeded { 
-            chain_id: *chain_id,
-            last_error: last_error.map(|e| e.to_string())
-        })
-    }
-}
-
-fn is_retryable_error(e: &alloy::transports::TransportError) -> bool {
-    match e {
-        TransportError::HttpError(resp) if resp.status().is_server_error() => true,
-        TransportError::Timeout => true,
-        TransportError::Io(_) => true,
-        _ => false,
-    }
-}
-```
-
----
-
-### TODO 6: WebSocket Support
+### TODO 5: WebSocket Support
 
 **Location**: `pool.rs` - EndpointEntry modification
 
