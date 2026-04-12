@@ -2,7 +2,7 @@
 //!
 //! Uses lock-free metrics and fine-grained async locking for high throughput.
 
-use crate::rpc::metadata::{EndpointMetrics, EndpointMetricsSnapshot};
+use crate::rpc::metrics::{EndpointMetrics, EndpointMetricsSnapshot};
 use alloy::providers::Provider;
 use dashmap::DashMap;
 use primitives::types::ChainId;
@@ -353,8 +353,8 @@ pub enum LoadBalancingStrategy {
     WeightedLeastResponseTime,
 
     /// Sticky session based on endpoint index (best for transactions)
-    /// Use this to maintain session affinity with an endpoint selected
-    /// by weighted score or round-robin strategies.
+    /// Use this to maintain session affinity (like consistent `nonce` matching) with an endpoint selected
+    /// by `WeightedLeastResponseTime` or `RoundRobin` strategies.
     StickySession { sticky_index: usize },
 
     /// Uniform distribution (best for cacheable reads)

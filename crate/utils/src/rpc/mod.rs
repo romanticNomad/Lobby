@@ -1,3 +1,5 @@
-mod metadata;
+mod metrics;
 mod pool;
-mod rpc;
+mod client;
+mod registry;
+mod calls;

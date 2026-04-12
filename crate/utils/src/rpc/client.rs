@@ -1,7 +1,7 @@
 //! High-throughput RPC client with async-optimized request orchestration
 
 use crate::rpc::{
-    metadata::{EndpointHealth, EndpointMetrics},
+    metrics::{EndpointHealth, EndpointMetrics},
     pool::{EndpointPool, EndpointRegistry, LoadBalancingStrategy},
 };
 use alloy::{providers::Provider, transports::TransportError};
