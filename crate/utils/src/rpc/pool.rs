@@ -342,7 +342,6 @@ impl EndpointPool {
         F: Fn(&EndpointMetrics),
     {
         let endpoints = self.endpoints.read().await;
-
         for (id, update_fn) in updates {
             if let Some(entry) = endpoints.iter().find(|e| e.metrics.id() == id) {
                 update_fn(&entry.metrics);
