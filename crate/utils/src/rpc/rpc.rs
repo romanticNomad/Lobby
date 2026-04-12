@@ -17,15 +17,6 @@ use tokio::{
 // ============================================================================
 // Constants
 
-/// Default RPC timeout
-const DEFAULT_RPC_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Failure window for circuit breaker (seconds)
-const FAILURE_WINDOW_SECS: u64 = 60;
-
-/// Warning threshold for failures per window
-const FAILURE_WARNING_THRESHOLD: usize = 10;
-
 /// Cache TTL for endpoint stats (milliseconds)
 const STATS_CACHE_TTL_MS: u64 = 1000;
 
@@ -45,32 +36,23 @@ pub struct RpcClient {
     /// Global concurrency limiter
     semaphore: Arc<Semaphore>,
 
-    /// failiure tracker for every endpoint
-    failure_tracker: Arc<DashMap<String, FailureWindow>>,
-
     /// chached states for monitoring (reduce lock contention)
     stats_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
 }
 
 /// Context for RPC execution (zero-copy design)
-pub struct RpcContext {
+pub struct RpcProviderContext {
     /// The RPC provider
-    pub provider: Arc<dyn Provider + Send + Sync>,
+    provider: Arc<dyn Provider + Send + Sync>,
 
     /// Shared metrics reference (for lock-free recording)
-    pub metrics: Arc<EndpointMetrics>,
+    metrics: Arc<EndpointMetrics>,
 
-    /// Chain ID
-    pub chain_id: ChainId,
+    /// ChainId used to index the provier pool
+    chain_id: ChainId,
 
-    /// Permit for concurrency control (auto-released on drop)
-    _permit: OwnedSemaphorePermit,
-}
-
-/// Failure tracking window
-struct FailureWindow {
-    failures: Vec<Instant>,
-    last_reset: Instant,
+    /// Index of provider on the EndpointPool
+    index: usize,
 }
 
 /// Metric state-monitor with higher-level metric stats: derived from `EndpointMetric`
@@ -85,28 +67,17 @@ pub struct EndpointStats {
     pub block_height: Option<u64>,
 }
 
-/// Builder for RpcClient with progressive configuration
-pub struct RpcClientBuilder {
-    registry: EndpointRegistry,
-    max_concurrent: usize,
-    enable_stats_cache: bool,
-}
-
 /// Error Types RPC handeling
 #[derive(Debug, thiserror::Error, Clone)]
 pub enum RpcError {
     #[error("Failed to acquire RPC permit within {timeout:?}")]
     PermitAcquisitionTimeout { timeout: Duration },
-
     #[error("Semaphore closed")]
     SemaphoreClosed,
-
     #[error("No RPC endpoints available for chain {chain_id}")]
     NoEndpointsAvailable { chain_id: ChainId },
-
     #[error("All RPC endpoints unhealthy for chain {chain_id}")]
     AllEndpointsUnhealthy { chain_id: ChainId },
-
     #[error("Transport error: {0}")]
     TransportError(String),
 }
@@ -127,7 +98,6 @@ impl RpcClient {
         Arc::new(Self {
             endpoint_registry,
             semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
-            failure_tracker: Arc::new(DashMap::new()),
             stats_cache: Arc::new(DashMap::new()),
         })
     }
@@ -137,7 +107,6 @@ impl RpcClient {
         Self {
             endpoint_registry: Arc::new(DashMap::new()),
             semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
-            failure_tracker: Arc::new(DashMap::new()),
             stats_cache: Arc::new(DashMap::new()),
         }
     }
@@ -166,7 +135,7 @@ impl RpcClient {
         chain_id: &ChainId,
         sticky_index: Option<usize>,
         timeout: Duration,
-    ) -> Result<RpcContext, RpcError> {
+    ) -> Result<(RpcProviderContext, OwnedSemaphorePermit), RpcError> {
         // aquire permit with timeout
         let permit = tokio::time::timeout(timeout, Arc::clone(&self.semaphore).acquire_owned())
             .await
@@ -197,13 +166,20 @@ impl RpcClient {
                     chain_id: *chain_id,
                 })?;
 
-        let (provider, metrics) = (pool_extract.provider(), pool_extract.metrics());
-        Ok(RpcContext {
-            provider,
-            metrics,
-            chain_id: *chain_id,
-            _permit: permit,
-        })
+        let (provider, metrics, index) = (
+            pool_extract.provider(),
+            pool_extract.metrics(),
+            pool_extract.index(),
+        );
+        Ok((
+            RpcProviderContext {
+                provider,
+                metrics,
+                chain_id: *chain_id,
+                index,
+            },
+            permit,
+        ))
     }
 
     // ========================================================================
@@ -243,15 +219,17 @@ impl RpcClient {
                     .aquire_and_select(&chain_id, sticky_index, timeout)
                     .await
                 {
-                    Ok(ctx) => {
+                    Ok((ctx, permit)) => {
                         let start = Instant::now();
                         match call(Arc::clone(&ctx.provider)).await {
                             Ok(result) => {
                                 ctx.record_success(start.elapsed());
+                                drop(permit);
                                 Ok(result)
                             }
                             Err(e) => {
                                 ctx.record_failure();
+                                drop(permit);
                                 Err(RpcError::TransportError(e.to_string()))
                             }
                         }
@@ -272,50 +250,6 @@ impl RpcClient {
         }
 
         results
-    }
-
-    // ========================================================================
-    // Metric Recording (Lock-Free)
-
-    /// Records success for an endpoint (lock-free via Arc)
-    ///
-    /// # Performance
-    /// - Atomic operations only
-    /// - No locks acquired
-    /// - ~20-50ns per call
-    pub fn record_success(&self, chain_id: &ChainId, endpoint_id: String, duration: Duration) {
-        if let Some(pool) = self.endpoint_registry.get(chain_id) {
-            let pool = Arc::clone(&pool); // cloned pool, to safely pass into the async block.
-            let endpoint_id = endpoint_id.to_string();
-            let duration = duration;
-
-            tokio::spawn(async move {
-                pool.update_endpoint_metrics(endpoint_id, |metrics| {
-                    metrics.record_success(duration);
-                })
-                .await;
-            });
-        }
-    }
-
-    /// Records failure (lock-free)
-    pub fn record_failure(&self, chain_id: &ChainId, endpoint_id: &str) {
-        if let Some(pool) = self.endpoint_registry.get(chain_id) {
-            let pool = Arc::clone(&pool);
-            let endpoint_id = endpoint_id.to_string();
-            let tracker = Arc::clone(&self.failure_tracker);
-
-            tokio::spawn(async move {
-                // Update endpoint metrics
-                pool.update_endpoint_metrics(endpoint_id.clone(), |metrics| {
-                    metrics.record_failure();
-                })
-                .await;
-
-                // Track in failure window
-                track_failure(&tracker, &endpoint_id);
-            });
-        }
     }
 
     // ========================================================================
@@ -380,9 +314,9 @@ impl RpcClient {
 }
 
 // ============================================================================
-// RpcContext Methods
+// RpcProviderContext Methods
 
-impl RpcContext {
+impl RpcProviderContext {
     /// Records successful call (convenience method)
     #[inline]
     pub fn record_success(&self, duration: Duration) {
@@ -411,51 +345,6 @@ impl RpcContext {
     #[inline]
     pub fn endpoint_score(&self) -> f64 {
         self.metrics.load_balancing_score()
-    }
-}
-
-// ========================================================================
-// FailureWindow implimentations
-
-impl FailureWindow {
-    fn new() -> Self {
-        Self {
-            failures: Vec::with_capacity(20),
-            last_reset: Instant::now(),
-        }
-    }
-
-    fn add_failure(&mut self) {
-        let now = Instant::now();
-
-        // Reset if window expired
-        if now.duration_since(self.last_reset).as_secs() > FAILURE_WINDOW_SECS {
-            self.failures.clear();
-            self.last_reset = now;
-        }
-
-        self.failures.push(now);
-    }
-
-    fn count(&self) -> usize {
-        self.failures.len()
-    }
-}
-
-/// Track failure in global tracker
-fn track_failure(tracker: &DashMap<String, FailureWindow>, identifier: &str) {
-    let mut entry = tracker
-        .entry(identifier.to_string())
-        .or_insert_with(FailureWindow::new);
-
-    entry.add_failure();
-
-    if entry.count() > FAILURE_WARNING_THRESHOLD {
-        tracing::warn!(
-            identifier = %identifier,
-            failures = entry.count(),
-            "High RPC failure rate detected"
-        );
     }
 }
 
@@ -492,6 +381,7 @@ mod tests {
 
         // All 10 should complete despite limit of 5 (queued)
         let _ = join_set.join_all().await;
+        
         assert_eq!(counter.load(Ordering::SeqCst), 10);
     }
 }

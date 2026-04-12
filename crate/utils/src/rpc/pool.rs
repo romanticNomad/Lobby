@@ -16,8 +16,9 @@ use tokio::sync::RwLock;
 // ============================================================================
 // Type Aliases
 
-/// Registry mapping chain IDs to their endpoint pools
-/// Uses DashMap for concurrent read/write without blocking
+/// Primary registry mapping chain IDs to their endpoint pools
+///
+/// Uses `DashMap` for concurrent read/write without blocking.
 pub type EndpointRegistry = Arc<DashMap<ChainId, Arc<EndpointPool>>>;
 
 // TTL limit for the cached healthy endpoint indeces.
@@ -318,36 +319,7 @@ impl EndpointPool {
     }
 
     // ========================================================================
-    // Metric Updates (Lock-Free via Arc)
-
-    /// Updates metrics for a specific endpoint using closure
-    ///
-    /// Lock-free: Metrics are atomically updated via Arc<EndpointMetrics>
-    pub async fn update_endpoint_metrics<F>(&self, endpoint_id: String, update_fn: F)
-    where
-        F: FnOnce(&EndpointMetrics),
-    {
-        let endpoints = self.endpoints.read().await;
-        for entry in endpoints.iter() {
-            if endpoint_id == entry.metrics.id {
-                update_fn(&entry.metrics);
-                return;
-            }
-        }
-    }
-
-    /// Batch update multiple endpoints (more efficient than individual updates)
-    pub async fn batch_update_metrics<F>(&self, updates: Vec<(String, F)>)
-    where
-        F: Fn(&EndpointMetrics),
-    {
-        let endpoints = self.endpoints.read().await;
-        for (id, update_fn) in updates {
-            if let Some(entry) = endpoints.iter().find(|e| e.metrics.id() == id) {
-                update_fn(&entry.metrics);
-            }
-        }
-    }
+    // Metric loockups (Lock-Free via Arc)
 
     /// Returns snapshot of all metrics (for monitoring)
     ///
@@ -476,9 +448,7 @@ impl RpcProviderStack {
 }
 
 // ============================================================================
-// Environment Loading
-
-// use std::env;
+// Building EndpointRegistry (from envirenment variables)
 
 // /// Loads RPC endpoints from environment
 // ///
@@ -528,7 +498,6 @@ mod tests {
 
         // Concurrent selections
         let mut handles = JoinSet::new();
-
         for _ in 0..100 {
             let pool_clone = Arc::clone(&pool);
             handles.spawn(async move {
