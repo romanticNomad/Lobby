@@ -2,7 +2,7 @@
 
 use crate::rpc::{
     metadata::{EndpointHealth, EndpointMetrics},
-    pool::{EndpointRegistry, LoadBalancingStrategy},
+    pool::{EndpointPool, EndpointRegistry, LoadBalancingStrategy},
 };
 use alloy::{providers::Provider, transports::TransportError};
 use dashmap::DashMap;
@@ -46,10 +46,10 @@ pub struct RpcClient {
     semaphore: Arc<Semaphore>,
 
     /// failiure tracker for every endpoint
-    faliure_tacker: Arc<DashMap<String, FailureWindow>>,
+    failure_tracker: Arc<DashMap<String, FailureWindow>>,
 
     /// chached states for monitoring (reduce lock contention)
-    state_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
+    stats_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
 }
 
 /// Context for RPC execution (zero-copy design)
@@ -120,12 +120,25 @@ impl RpcClient {
     /// # Arguments
     /// * `max_concurrent_requests` - Global limit across all chains/endpoints
     /// * `endpoint_registry` - custom registry for creating the RpcClient.
-    pub fn new(max_concurrent_requests: usize, endpoint_registry: EndpointRegistry) -> Self {
-        Self {
+    pub fn new_arc(
+        max_concurrent_requests: usize,
+        endpoint_registry: EndpointRegistry,
+    ) -> Arc<Self> {
+        Arc::new(Self {
             endpoint_registry,
             semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
-            faliure_tacker: Arc::new(DashMap::new()),
-            state_cache: Arc::new(DashMap::new()),
+            failure_tracker: Arc::new(DashMap::new()),
+            stats_cache: Arc::new(DashMap::new()),
+        })
+    }
+
+    /// dummy method: for testing;
+    pub fn new(max_concurrent_requests: usize) -> Self {
+        Self {
+            endpoint_registry: Arc::new(DashMap::new()),
+            semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
+            failure_tracker: Arc::new(DashMap::new()),
+            stats_cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -212,18 +225,18 @@ impl RpcClient {
     /// let results = client.execute_batch(calls, Duration::from_secs(10)).await;
     /// ```
     pub async fn execute_batch<F, Fut, R>(
-        &self,
+        self: Arc<Self>,
         calls: Vec<(ChainId, Option<usize>, F)>,
         timeout: Duration,
     ) -> Vec<Result<R, RpcError>>
     where
-        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send,
+        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<R, TransportError>> + Send,
-        R: Send,
+        R: Send + 'static,
     {
         let mut join_set = JoinSet::new();
         for (chain_id, sticky_index, call) in calls {
-            let client_ref = Arc::new(*self); // Need to clone self for 'static lifetime
+            let client_ref = Arc::clone(&self);
 
             join_set.spawn(async move {
                 match client_ref
@@ -234,7 +247,7 @@ impl RpcClient {
                         let start = Instant::now();
                         match call(Arc::clone(&ctx.provider)).await {
                             Ok(result) => {
-                                ctx.record_sucess(start.elapsed());
+                                ctx.record_success(start.elapsed());
                                 Ok(result)
                             }
                             Err(e) => {
@@ -252,7 +265,7 @@ impl RpcClient {
             match result {
                 Ok(return_result) => results.push(return_result),
                 Err(err) => results.push(Err(RpcError::TransportError(format!(
-                    "Batch_Transport: Rpc call panicked: {}",
+                    "Batch_Transport: JoinSet panicked: {}",
                     err
                 )))),
             }
@@ -260,4 +273,227 @@ impl RpcClient {
 
         results
     }
+
+    // ========================================================================
+    // Metric Recording (Lock-Free)
+
+    /// Records success for an endpoint (lock-free via Arc)
+    ///
+    /// # Performance
+    /// - Atomic operations only
+    /// - No locks acquired
+    /// - ~20-50ns per call
+    pub fn record_success(&self, chain_id: &ChainId, endpoint_id: String, duration: Duration) {
+        if let Some(pool) = self.endpoint_registry.get(chain_id) {
+            let pool = Arc::clone(&pool); // cloned pool, to safely pass into the async block.
+            let endpoint_id = endpoint_id.to_string();
+            let duration = duration;
+
+            tokio::spawn(async move {
+                pool.update_endpoint_metrics(endpoint_id, |metrics| {
+                    metrics.record_success(duration);
+                })
+                .await;
+            });
+        }
+    }
+
+    /// Records failure (lock-free)
+    pub fn record_failure(&self, chain_id: &ChainId, endpoint_id: &str) {
+        if let Some(pool) = self.endpoint_registry.get(chain_id) {
+            let pool = Arc::clone(&pool);
+            let endpoint_id = endpoint_id.to_string();
+            let tracker = Arc::clone(&self.failure_tracker);
+
+            tokio::spawn(async move {
+                // Update endpoint metrics
+                pool.update_endpoint_metrics(endpoint_id.clone(), |metrics| {
+                    metrics.record_failure();
+                })
+                .await;
+
+                // Track in failure window
+                track_failure(&tracker, &endpoint_id);
+            });
+        }
+    }
+
+    // ========================================================================
+    // Registry Management
+
+    /// Registers a chain with its endpoint pool
+    pub fn register_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
+        self.endpoint_registry.insert(chain_id, pool);
+        self.stats_cache.remove(&chain_id); // Invalidate cache
+    }
+
+    pub fn registered_chain_count(&self) -> usize {
+        self.endpoint_registry.len()
+    }
+
+    /// Gets endpoint statistics with caching
+    ///
+    /// Returns cached data if <1s old to reduce lock contention.
+    pub async fn get_endpoint_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
+        // Check cache first
+        if let Some(entry) = self.stats_cache.get(chain_id) {
+            let (stats, timestamp) = entry.value();
+            if timestamp.elapsed().as_millis() < STATS_CACHE_TTL_MS as u128 {
+                return Some(stats.clone());
+            }
+        }
+
+        // Fetch fresh data
+        let pool = self.endpoint_registry.get(chain_id)?;
+        let snapshots = pool.endpoints_metrics().await;
+
+        let stats: Vec<EndpointStats> = snapshots
+            .into_iter()
+            .map(|s| EndpointStats {
+                id: s.id,
+                url: s.url,
+                health: s.health,
+                avg_response_time_ms: s.avg_response_time_ms,
+                error_rate: s.error_rate,
+                score: s.score,
+                block_height: s.block_height,
+            })
+            .collect();
+
+        // Update cache
+        self.stats_cache
+            .insert(*chain_id, (stats.clone(), Instant::now()));
+
+        Some(stats)
+    }
+
+    /// Force refresh of cached stats
+    pub async fn refresh_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
+        self.stats_cache.remove(chain_id);
+        self.get_endpoint_stats(chain_id).await
+    }
+
+    /// Gets current semaphore availability
+    pub fn available_permits(&self) -> usize {
+        self.semaphore.available_permits()
+    }
 }
+
+// ============================================================================
+// RpcContext Methods
+
+impl RpcContext {
+    /// Records successful call (convenience method)
+    #[inline]
+    pub fn record_success(&self, duration: Duration) {
+        self.metrics.record_success(duration);
+    }
+
+    /// Records failed call
+    #[inline]
+    pub fn record_failure(&self) {
+        self.metrics.record_failure();
+    }
+
+    /// Gets endpoint ID
+    #[inline]
+    pub fn endpoint_id(&self) -> &str {
+        self.metrics.id()
+    }
+
+    /// Gets current health
+    #[inline]
+    pub fn endpoint_health(&self) -> EndpointHealth {
+        self.metrics.health()
+    }
+
+    /// Gets current score
+    #[inline]
+    pub fn endpoint_score(&self) -> f64 {
+        self.metrics.load_balancing_score()
+    }
+}
+
+// ========================================================================
+// FailureWindow implimentations
+
+impl FailureWindow {
+    fn new() -> Self {
+        Self {
+            failures: Vec::with_capacity(20),
+            last_reset: Instant::now(),
+        }
+    }
+
+    fn add_failure(&mut self) {
+        let now = Instant::now();
+
+        // Reset if window expired
+        if now.duration_since(self.last_reset).as_secs() > FAILURE_WINDOW_SECS {
+            self.failures.clear();
+            self.last_reset = now;
+        }
+
+        self.failures.push(now);
+    }
+
+    fn count(&self) -> usize {
+        self.failures.len()
+    }
+}
+
+/// Track failure in global tracker
+fn track_failure(tracker: &DashMap<String, FailureWindow>, identifier: &str) {
+    let mut entry = tracker
+        .entry(identifier.to_string())
+        .or_insert_with(FailureWindow::new);
+
+    entry.add_failure();
+
+    if entry.count() > FAILURE_WARNING_THRESHOLD {
+        tracing::warn!(
+            identifier = %identifier,
+            failures = entry.count(),
+            "High RPC failure rate detected"
+        );
+    }
+}
+
+// ============================================================================
+// Tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn test_concurrent_permit_acquisition() {
+        let client = Arc::new(RpcClient::new(5));
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let mut join_set = JoinSet::new();
+        for _ in 0..10 {
+            let client_clone = Arc::clone(&client);
+            let counter_clone = Arc::clone(&counter);
+
+            join_set.spawn(async move {
+                // Simulate work with permit
+                let _permit = client_clone
+                    .semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .unwrap();
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            });
+        }
+
+        // All 10 should complete despite limit of 5 (queued)
+        let _ = join_set.join_all().await;
+        assert_eq!(counter.load(Ordering::SeqCst), 10);
+    }
+}
+
+// ============================================================================
