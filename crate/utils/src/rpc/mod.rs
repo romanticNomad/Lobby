@@ -1,5 +1,6 @@
+mod calls;
 mod metrics;
 mod pool;
-mod client;
+mod provider;
 mod registry;
-mod calls;
+mod client;
