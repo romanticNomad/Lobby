@@ -4,8 +4,8 @@
 //! using Alloy-native provider construction.
 
 use crate::rpc::{
-    metadata::EndpointMetrics,
-    pool::{EndpointPool, EndpointRegistry, RpcProviderStack},
+    metrics::EndpointMetrics,
+    pool::{EndpointPool, EndpointRegistry, RpcProviderStack, SubscriptionRegistry, WsPool},
 };
 use alloy::{
     network::Ethereum,
@@ -101,7 +101,7 @@ impl ProviderFactory {
 
         // Create provider using RootProvider::new_http (Alloy-native, no reqwest)
         let provider = RootProvider::<Ethereum>::new_http(url.clone());
-        
+
         Ok(Arc::new(provider))
     }
 
@@ -196,8 +196,8 @@ async fn build_unary_registry_from_env() -> Result<EndpointRegistry, RegistryErr
 }
 
 /// Builds subscription (WebSocket) endpoint registry from environment
-async fn build_subscription_registry_from_env() -> Result<EndpointRegistry, RegistryError> {
-    let registry: EndpointRegistry = Arc::new(DashMap::new());
+async fn build_subscription_registry_from_env() -> Result<SubscriptionRegistry, RegistryError> {
+    let registry: SubscriptionRegistry = Arc::new(DashMap::new());
 
     for (key, value) in std::env::vars() {
         if let Some(chain_id) = parse_chain_id_from_env(&key, SUBSCRIPTION_ENV_PREFIX) {
@@ -228,7 +228,7 @@ async fn build_unary_pool(
         let metrics = EndpointMetrics::new(format!("unary_{}_{}", chain_id, idx), url_str.clone());
 
         // Set tier-specific error thresholds for unary (higher tolerance for fast-path)
-        // metrics.set_error_thresholds(0.15, 0.40); -----------------uncomment-later---------------------
+        metrics.set_error_thresholds(0.15, 0.40);
         pool.add_endpoint(provider, metrics).await;
     }
 
@@ -239,8 +239,8 @@ async fn build_unary_pool(
 async fn build_subscription_pool(
     chain_id: ChainId,
     urls: Vec<String>,
-) -> Result<EndpointPool, RegistryError> {
-    let pool = EndpointPool::new(chain_id);
+) -> Result<WsPool, RegistryError> {
+    let pool = WsPool::new(chain_id);
 
     for (idx, url_str) in urls.iter().enumerate() {
         let url = Url::parse(url_str)?;
@@ -249,8 +249,8 @@ async fn build_subscription_pool(
         let metrics = EndpointMetrics::new(format!("sub_{}_{}", chain_id, idx), url_str.clone());
 
         // Set tier-specific error thresholds for subscription (lower tolerance for stateful connections)
-        // metrics.set_error_thresholds(0.05, 0.15); -----------------uncomment-later---------------------
-        pool.add_endpoint(provider, metrics).await;
+        metrics.set_error_thresholds(0.05, 0.15);
+        pool.add_endpoint(provider, metrics, url_str.clone()).await;
     }
 
     Ok(pool)
@@ -287,7 +287,7 @@ impl RegistryBuilder {
     /// Builds the complete `RpcProviderStack`
     pub async fn build(self) -> Result<RpcProviderStack, RegistryError> {
         let unary_registry: EndpointRegistry = Arc::new(DashMap::new());
-        let subscription_registry: EndpointRegistry = Arc::new(DashMap::new());
+        let subscription_registry: SubscriptionRegistry = Arc::new(DashMap::new());
 
         // Build unary pools
         for (chain_id, urls) in self.unary_endpoints {
