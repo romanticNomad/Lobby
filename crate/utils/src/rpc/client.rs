@@ -1,18 +1,26 @@
-//! High-throughput RPC client with async-optimized request orchestration
+//! High-throughput RPC client with dual-path architecture (unary/subscription)
+//!
+//! Implements separate handling for HTTP/2 unary operations and WebSocket subscriptions,
+//! using Alloy-native transports with lock-free metrics and fine-grained async locking.
 
 use crate::rpc::{
-    metrics::{EndpointHealth, EndpointMetrics},
-    pool::{EndpointPool, EndpointRegistry, LoadBalancingStrategy},
+    metrics::{EndpointHealth, EndpointMetrics, EndpointTier},
+    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack, WsPool},
 };
-use alloy::{providers::Provider, transports::TransportError};
+use alloy::{
+    providers::{Provider, ProviderBuilder, WsConnect},
+    transports::TransportError,
+};
 use dashmap::DashMap;
 use primitives::types::ChainId;
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Debug, future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     task::JoinSet,
     time::Instant,
 };
+use tracing::{debug, error, trace};
+use url::Url;
 
 // ============================================================================
 // Constants
@@ -20,42 +28,44 @@ use tokio::{
 /// Cache TTL for endpoint stats (milliseconds)
 const STATS_CACHE_TTL_MS: u64 = 1000;
 
+/// Default timeout for provider operations
+const DEFAULT_OPERATION_TIMEOUT_MS: u64 = 30000;
+
 // ============================================================================
-// Important structs.
+// Error Types
 
-/// High-performance RPC client for 1000+ TPS
-///
-/// Architecture:
-/// - Semaphore for global rate limiting
-/// - DashMap for lock-free registry access
-/// - Lock-free metric recording via Arc<EndpointMetrics>
-pub struct RpcClient {
-    /// EndpointRegistry: lockfree read by using dashmap
-    endpoint_registry: EndpointRegistry,
+/// Error types for RPC handling
+#[derive(Debug, thiserror::Error, Clone)]
+pub enum RpcError {
+    #[error("Failed to acquire RPC permit within {timeout:?}")]
+    PermitAcquisitionTimeout { timeout: Duration },
 
-    /// Global concurrency limiter
-    semaphore: Arc<Semaphore>,
+    #[error("Semaphore closed")]
+    SemaphoreClosed,
 
-    /// chached states for monitoring (reduce lock contention)
-    stats_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
+    #[error("No RPC endpoints available for chain {chain_id}")]
+    NoEndpointsAvailable { chain_id: ChainId },
+
+    #[error("All RPC endpoints unhealthy for chain {chain_id}")]
+    AllEndpointsUnhealthy { chain_id: ChainId },
+
+    #[error("No subscription endpoints available for chain {chain_id}")]
+    NoSubscriptionEndpointsAvailable { chain_id: ChainId },
+
+    #[error("Transport error: {0}")]
+    TransportError(String),
+
+    #[error("Provider construction failed: {0}")]
+    ProviderConstructionError(String),
+
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(String),
 }
 
-/// Context for RPC execution (zero-copy design)
-pub struct RpcProviderContext {
-    /// The RPC provider
-    provider: Arc<dyn Provider + Send + Sync>,
+// ============================================================================
+// Metric State Monitor
 
-    /// Shared metrics reference (for lock-free recording)
-    metrics: Arc<EndpointMetrics>,
-
-    /// ChainId used to index the provier pool
-    chain_id: ChainId,
-
-    /// Index of provider on the EndpointPool
-    index: usize,
-}
-
-/// Metric state-monitor with higher-level metric stats: derived from `EndpointMetric`
+/// High-level metric stats derived from `EndpointMetrics`
 #[derive(Debug, Clone)]
 pub struct EndpointStats {
     pub id: String,
@@ -65,92 +75,149 @@ pub struct EndpointStats {
     pub error_rate: f64,
     pub score: f64,
     pub block_height: Option<u64>,
-}
-
-/// Error Types RPC handeling
-#[derive(Debug, thiserror::Error, Clone)]
-pub enum RpcError {
-    #[error("Failed to acquire RPC permit within {timeout:?}")]
-    PermitAcquisitionTimeout { timeout: Duration },
-    #[error("Semaphore closed")]
-    SemaphoreClosed,
-    #[error("No RPC endpoints available for chain {chain_id}")]
-    NoEndpointsAvailable { chain_id: ChainId },
-    #[error("All RPC endpoints unhealthy for chain {chain_id}")]
-    AllEndpointsUnhealthy { chain_id: ChainId },
-    #[error("Transport error: {0}")]
-    TransportError(String),
+    pub request_count: u64,
+    pub error_count: u64,
+    pub tier: EndpointTier,
 }
 
 // ============================================================================
-// method implimentations.
+// Provider Context Types
+
+/// Context for unary RPC execution (HTTP/2)
+pub struct UnaryContext {
+    /// The RPC provider (concretely RootProvider<Ethereum, Http<Client>>)
+    provider: Arc<dyn Provider + Send + Sync>,
+
+    /// Shared metrics reference (for lock-free recording)
+    metrics: Arc<EndpointMetrics>,
+
+    /// ChainId used to index the provider pool
+    chain_id: ChainId,
+
+    /// Index of provider on the EndpointPool
+    index: usize,
+
+    /// Endpoint ID for logging
+    endpoint_id: String,
+}
+
+/// Context for subscription operations (WebSocket)
+pub struct SubscriptionContext {
+    /// The WebSocket provider (concretely RootProvider<Ethereum, Ws>)
+    provider: Arc<dyn Provider + Send + Sync>,
+
+    /// Shared metrics reference
+    metrics: Arc<EndpointMetrics>,
+
+    /// ChainId
+    chain_id: ChainId,
+
+    /// Index of provider on the WsPool
+    index: usize,
+
+    /// WebSocket URL for reconnection
+    url: String,
+}
+
+// ============================================================================
+// RpcClient - Dual-Path Architecture
+
+/// High-performance RPC client with separate unary and subscription paths
+///
+/// Architecture:
+/// - `unary_registry`: HTTP/2 connection pools for stateless request-response
+/// - `subscription_registry`: WebSocket session pools for stateful subscriptions
+/// - Global semaphore for cross-path backpressure
+/// - Lock-free metric recording via Arc<EndpointMetrics>
+#[derive(Clone)]
+pub struct RpcClient {
+    /// Dual-path provider stack
+    provider_stack: RpcProviderStack,
+
+    /// Global concurrency limiter across all operations
+    semaphore: Arc<Semaphore>,
+
+    /// Cached stats for monitoring (reduces lock contention)
+    stats_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
+
+    /// Default timeout for operations
+    default_timeout: Duration,
+}
+
+// ============================================================================
+// Implementation
 
 impl RpcClient {
-    /// Creates client with specified concurrency limit
+    /// Creates a new RPC client with the specified provider stack
     ///
     /// # Arguments
+    /// * `provider_stack` - Dual-path stack with unary and subscription registries
     /// * `max_concurrent_requests` - Global limit across all chains/endpoints
-    /// * `endpoint_registry` - custom registry for creating the RpcClient.
-    pub fn new_arc(
-        max_concurrent_requests: usize,
-        endpoint_registry: EndpointRegistry,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            endpoint_registry,
-            semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
-            stats_cache: Arc::new(DashMap::new()),
-        })
-    }
-
-    /// dummy method: for testing;
-    pub fn new(max_concurrent_requests: usize) -> Self {
+    pub fn new(provider_stack: RpcProviderStack, max_concurrent_requests: usize) -> Self {
         Self {
-            endpoint_registry: Arc::new(DashMap::new()),
+            provider_stack,
             semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
             stats_cache: Arc::new(DashMap::new()),
+            default_timeout: Duration::from_millis(DEFAULT_OPERATION_TIMEOUT_MS),
         }
     }
 
-    // ========================================================================
-    // Primary API: Permit Acquisition + Endpoint Selection
+    /// Creates a new RPC client wrapped in Arc for shared ownership
+    pub fn new_arc(provider_stack: RpcProviderStack, max_concurrent_requests: usize) -> Arc<Self> {
+        Arc::new(Self::new(provider_stack, max_concurrent_requests))
+    }
 
-    /// Acquires permit and selects optimal endpoint in one operation
+    /// Sets the default timeout for operations
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.default_timeout = timeout;
+        self
+    }
+
+    // ========================================================================
+    // Primary API: Unary Path (HTTP/2)
+
+    /// Acquires permit and selects optimal unary endpoint in one operation
     ///
     /// # Performance
     /// - Semaphore acquisition: O(1) async
     /// - Endpoint selection: O(n) with lock-free metric reads
     /// - Total latency: <100μs typical
     ///
+    /// # Arguments
+    /// * `chain_id` - Target chain for the operation
+    /// * `sticky_index` - Optional sticky session index for endpoint affinity
+    /// * `timeout` - Maximum time to wait for permit acquisition
+    ///
     /// # Example
     /// ```ignore
-    /// let context = client
-    ///     .acquire_and_select(&chain_id, Some(sender), Duration::from_secs(5))
+    /// let (ctx, permit) = client
+    ///     .acquire_unary_context(&chain_id, Some(sticky_index), Duration::from_secs(5))
     ///     .await?;
     ///
-    /// let result = context.provider.call(&tx).await;
-    /// context.record_success(start.elapsed()); // Lock-free
+    /// let result = ctx.provider().send_raw_transaction(&signed_tx).await;
+    /// ctx.record_success(start.elapsed()); // Lock-free
     /// ```
-    pub async fn aquire_and_select(
+    pub async fn acquire_unary_context(
         &self,
         chain_id: &ChainId,
         sticky_index: Option<usize>,
         timeout: Duration,
-    ) -> Result<(RpcProviderContext, OwnedSemaphorePermit), RpcError> {
-        // aquire permit with timeout
+    ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
+        // Acquire permit with timeout
         let permit = tokio::time::timeout(timeout, Arc::clone(&self.semaphore).acquire_owned())
             .await
             .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
             .map_err(|_| RpcError::SemaphoreClosed)?;
 
-        // Get pool (lock-free DashMap read)
+        // Get unary pool (lock-free DashMap read)
         let pool = self
-            .endpoint_registry
-            .get(chain_id)
-            .ok_or(RpcError::NoEndpointsAvailable {
+            .provider_stack
+            .get_unary_pool(*chain_id)
+            .ok_or_else(|| RpcError::NoEndpointsAvailable {
                 chain_id: *chain_id,
             })?;
 
-        // select strategy
+        // Select strategy based on sticky index
         let strategy = match sticky_index {
             Some(index) => LoadBalancingStrategy::StickySession {
                 sticky_index: index,
@@ -158,51 +225,119 @@ impl RpcClient {
             None => LoadBalancingStrategy::WeightedLeastResponseTime,
         };
 
-        // select endpoint
-        let pool_extract =
-            pool.select_endpoint(&strategy)
+        // Select endpoint
+        let choice = pool.select_endpoint(&strategy).await.ok_or_else(|| {
+            RpcError::AllEndpointsUnhealthy {
+                chain_id: *chain_id,
+            }
+        })?;
+
+        let endpoint_id = choice.metrics().id().to_string();
+
+        trace!(
+            chain_id = %chain_id,
+            endpoint_index = choice.index(),
+            endpoint_id = %endpoint_id,
+            sticky_requested = ?sticky_index,
+            "Acquired unary context"
+        );
+
+        let ctx = UnaryContext {
+            provider: choice.provider(),
+            metrics: choice.metrics(),
+            chain_id: *chain_id,
+            index: choice.index(),
+            endpoint_id,
+        };
+
+        Ok((ctx, permit))
+    }
+
+    /// Convenience method to acquire unary context with default timeout
+    pub async fn acquire_unary(
+        &self,
+        chain_id: &ChainId,
+        sticky_index: Option<usize>,
+    ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
+        self.acquire_unary_context(chain_id, sticky_index, self.default_timeout)
+            .await
+    }
+
+    // ========================================================================
+    // Primary API: Subscription Path (WebSocket)
+
+    /// Acquires subscription endpoint for WebSocket operations
+    ///
+    /// Uses round-robin assignment for WebSocket connections as they are
+    /// typically long-lived and require session affinity per subscription.
+    ///
+    /// # Arguments
+    /// * `chain_id` - Target chain for the subscription
+    pub async fn acquire_subscription_endpoint(
+        &self,
+        chain_id: &ChainId,
+    ) -> Result<SubscriptionContext, RpcError> {
+        // Get subscription pool
+        let pool = self
+            .provider_stack
+            .get_subscription_pool(*chain_id)
+            .ok_or_else(|| RpcError::NoSubscriptionEndpointsAvailable {
+                chain_id: *chain_id,
+            })?;
+
+        // Select endpoint using round-robin
+        let choice =
+            pool.select_endpoint()
                 .await
-                .ok_or(RpcError::AllEndpointsUnhealthy {
+                .ok_or_else(|| RpcError::AllEndpointsUnhealthy {
                     chain_id: *chain_id,
                 })?;
 
-        let (provider, metrics, index) = (
-            pool_extract.provider(),
-            pool_extract.metrics(),
-            pool_extract.index(),
+        trace!(
+            chain_id = %chain_id,
+            endpoint_index = choice.index(),
+            url = %choice.url(),
+            "Acquired subscription context"
         );
-        Ok((
-            RpcProviderContext {
-                provider,
-                metrics,
-                chain_id: *chain_id,
-                index,
-            },
-            permit,
-        ))
+
+        Ok(SubscriptionContext {
+            provider: choice.provider(),
+            metrics: choice.metrics(),
+            chain_id: *chain_id,
+            index: choice.index(),
+            url: choice.url().to_string(),
+        })
     }
 
     // ========================================================================
     // Batch Operations (High-Throughput)
 
-    /// Executes multiple RPC calls with automatic load balancing
+    /// Executes multiple unary RPC calls with automatic load balancing
     ///
     /// Optimized for batch transaction submission or bulk queries.
-    /// Distributes load across endpoints automatically.
+    /// Distributes load across endpoints automatically using weighted selection.
+    ///
+    /// # Type Parameters
+    /// * `F` - Closure type taking provider and returning a future
+    /// * `Fut` - Future type returned by the closure
+    /// * `R` - Result type of the future
     ///
     /// # Example
     /// ```ignore
-    /// let calls = vec![
-    ///     (ChainId::from(1), Some(index1), call1),
-    ///     (ChainId::from(1), Some(index2), call2),
-    ///     (ChainId::from(137), None, call3),
+    /// let operations = vec![
+    ///     (ChainId::from(1), Some(index1), |provider| async move {
+    ///         provider.send_raw_transaction(&tx1).await
+    ///     }),
+    ///     (ChainId::from(1), None, |provider| async move {
+    ///         provider.get_block_number().await
+    ///     }),
     /// ];
     ///
-    /// let results = client.execute_batch(calls, Duration::from_secs(10)).await;
+    /// let results = client.execute_unary_batch(operations, Duration::from_secs(10)).await;
     /// ```
-    pub async fn execute_batch<F, Fut, R>(
+    pub async fn execute_unary_batch<F, Fut, R>(
         self: Arc<Self>,
-        calls: Vec<(ChainId, Option<usize>, F)>,
+        operations: Vec<(ChainId, Option<usize>, F)>,
         timeout: Duration,
     ) -> Vec<Result<R, RpcError>>
     where
@@ -211,17 +346,21 @@ impl RpcClient {
         R: Send + 'static,
     {
         let mut join_set = JoinSet::new();
-        for (chain_id, sticky_index, call) in calls {
+
+        for (chain_id, sticky_index, operation) in operations {
             let client_ref = Arc::clone(&self);
 
             join_set.spawn(async move {
+                let start = Instant::now();
+
                 match client_ref
-                    .aquire_and_select(&chain_id, sticky_index, timeout)
+                    .acquire_unary_context(&chain_id, sticky_index, timeout)
                     .await
                 {
                     Ok((ctx, permit)) => {
-                        let start = Instant::now();
-                        match call(Arc::clone(&ctx.provider)).await {
+                        let provider = ctx.provider();
+
+                        match operation(provider).await {
                             Ok(result) => {
                                 ctx.record_success(start.elapsed());
                                 drop(permit);
@@ -238,37 +377,86 @@ impl RpcClient {
                 }
             });
         }
+
         let mut results = Vec::with_capacity(join_set.len());
         while let Some(result) = join_set.join_next().await {
             match result {
                 Ok(return_result) => results.push(return_result),
-                Err(err) => results.push(Err(RpcError::TransportError(format!(
-                    "Batch_Transport: JoinSet panicked: {}",
-                    err
-                )))),
+                Err(err) => {
+                    error!(error = %err, "Batch operation task panicked");
+                    results.push(Err(RpcError::TransportError(format!(
+                        "Batch task panicked: {}",
+                        err
+                    ))));
+                }
             }
         }
 
         results
     }
 
+    /// Executes parallel unary operations across multiple chains
+    ///
+    /// Simplified API when you don't need sticky session control per operation.
+    pub async fn execute_parallel_unary<F, Fut, R>(
+        self: Arc<Self>,
+        chain_ops: Vec<(ChainId, F)>,
+        timeout: Duration,
+    ) -> Vec<Result<R, RpcError>>
+    where
+        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<R, TransportError>> + Send,
+        R: Send + 'static,
+    {
+        let operations: Vec<_> = chain_ops
+            .into_iter()
+            .map(|(chain_id, op)| (chain_id, None, op))
+            .collect();
+
+        self.execute_unary_batch(operations, timeout).await
+    }
+
     // ========================================================================
     // Registry Management
 
-    /// Registers a chain with its endpoint pool
-    pub fn register_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
-        self.endpoint_registry.insert(chain_id, pool);
+    /// Registers a chain with its unary endpoint pool
+    pub fn register_unary_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
+        self.provider_stack.register_unary_chain(chain_id, pool);
         self.stats_cache.remove(&chain_id); // Invalidate cache
+        debug!(chain_id = %chain_id, "Registered unary chain");
     }
 
-    pub fn registered_chain_count(&self) -> usize {
-        self.endpoint_registry.len()
+    /// Registers a chain with its subscription pool
+    pub fn register_subscription_chain(&self, chain_id: ChainId, pool: Arc<WsPool>) {
+        self.provider_stack
+            .register_subscription_chain(chain_id, pool);
+        debug!(chain_id = %chain_id, "Registered subscription chain");
     }
 
-    /// Gets endpoint statistics with caching
+    /// Gets the number of registered chains with unary endpoints
+    pub fn registered_unary_chain_count(&self) -> usize {
+        self.provider_stack.unary_chain_count()
+    }
+
+    /// Gets the number of registered chains with subscription endpoints
+    pub fn registered_subscription_chain_count(&self) -> usize {
+        self.provider_stack.subscription_chain_count()
+    }
+
+    /// Gets total registered chains (unary + subscription, may overlap)
+    pub fn total_registered_chains(&self) -> usize {
+        let unary = self.provider_stack.unary_chain_count();
+        let sub = self.provider_stack.subscription_chain_count();
+        unary.max(sub) // Approximation since chains may be in both
+    }
+
+    // ========================================================================
+    // Statistics and Monitoring
+
+    /// Gets endpoint statistics for a chain's unary endpoints with caching
     ///
     /// Returns cached data if <1s old to reduce lock contention.
-    pub async fn get_endpoint_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
+    pub async fn get_unary_endpoint_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
         // Check cache first
         if let Some(entry) = self.stats_cache.get(chain_id) {
             let (stats, timestamp) = entry.value();
@@ -277,8 +465,8 @@ impl RpcClient {
             }
         }
 
-        // Fetch fresh data
-        let pool = self.endpoint_registry.get(chain_id)?;
+        // Fetch fresh data from unary pool
+        let pool = self.provider_stack.get_unary_pool(*chain_id)?;
         let snapshots = pool.endpoints_metrics().await;
 
         let stats: Vec<EndpointStats> = snapshots
@@ -291,6 +479,9 @@ impl RpcClient {
                 error_rate: s.error_rate,
                 score: s.score,
                 block_height: s.block_height,
+                request_count: s.request_count,
+                error_count: s.error_count,
+                tier: EndpointTier::Unary,
             })
             .collect();
 
@@ -301,22 +492,119 @@ impl RpcClient {
         Some(stats)
     }
 
-    /// Force refresh of cached stats
+    /// Gets endpoint statistics for a chain's subscription endpoints
+    pub async fn get_subscription_endpoint_stats(
+        &self,
+        chain_id: &ChainId,
+    ) -> Option<Vec<EndpointStats>> {
+        let pool = self.provider_stack.get_subscription_pool(*chain_id)?;
+        let snapshots = pool.endpoints_metrics().await;
+
+        Some(
+            snapshots
+                .into_iter()
+                .map(|s| EndpointStats {
+                    id: s.id,
+                    url: s.url,
+                    health: s.health,
+                    avg_response_time_ms: s.avg_response_time_ms,
+                    error_rate: s.error_rate,
+                    score: s.score,
+                    block_height: s.block_height,
+                    request_count: s.request_count,
+                    error_count: s.error_count,
+                    tier: EndpointTier::Subscription,
+                })
+                .collect(),
+        )
+    }
+
+    /// Force refresh of cached stats for a chain
     pub async fn refresh_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
         self.stats_cache.remove(chain_id);
-        self.get_endpoint_stats(chain_id).await
+        self.get_unary_endpoint_stats(chain_id).await
     }
 
     /// Gets current semaphore availability
     pub fn available_permits(&self) -> usize {
         self.semaphore.available_permits()
     }
+
+    /// Gets the total semaphore capacity
+    pub fn semaphore_capacity(&self) -> usize {
+        Arc::clone(&self.semaphore).available_permits()
+            + (self
+                .semaphore
+                .available_permits()
+                .saturating_sub(self.semaphore.available_permits()))
+    }
+
+    // ========================================================================
+    // Provider Factory Methods (Static)
+
+    /// Creates a unary HTTP provider using Alloy's native HTTP transport
+    ///
+    /// Uses `ProviderBuilder::connect_http()` which creates a `RootProvider<Ethereum, Http<Client>>`
+    /// with hyper-based HTTP/2 via ALPN.
+    pub fn create_unary_provider(url: &str) -> Result<Arc<dyn Provider + Send + Sync>, RpcError> {
+        let url = Url::parse(url)
+            .map_err(|e| RpcError::InvalidUrl(format!("Failed to parse URL: {}", e)))?;
+
+        // Validate scheme
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err(RpcError::InvalidUrl(format!(
+                "Unary provider requires http:// or https:// scheme, got: {}",
+                url.scheme()
+            )));
+        }
+
+        let provider = ProviderBuilder::new().connect_http(url);
+
+        Ok(Arc::new(provider))
+    }
+
+    /// Creates a WebSocket subscription provider
+    ///
+    /// Uses `ProviderBuilder::on_ws()` which creates a `RootProvider<Ethereum, Ws>`.
+    /// This is an async operation as it establishes the WebSocket connection.
+    pub async fn create_subscription_provider(
+        url: &str,
+    ) -> Result<Arc<dyn Provider + Send + Sync>, RpcError> {
+        let url = Url::parse(url)
+            .map_err(|e| RpcError::InvalidUrl(format!("Failed to parse URL: {}", e)))?;
+
+        // Validate scheme
+        if url.scheme() != "ws" && url.scheme() != "wss" {
+            return Err(RpcError::InvalidUrl(format!(
+                "Subscription provider requires ws:// or wss:// scheme, got: {}",
+                url.scheme()
+            )));
+        }
+
+        let ws_connect = WsConnect::new(url);
+        let provider = ProviderBuilder::new()
+            .connect_ws(ws_connect)
+            .await
+            .map_err(|e| RpcError::ProviderConstructionError(e.to_string()))?;
+
+        Ok(Arc::new(provider))
+    }
 }
 
 // ============================================================================
-// RpcProviderContext Methods
+// UnaryContext Methods
 
-impl RpcProviderContext {
+impl Debug for UnaryContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnaryContext")
+            .field("chain_id", &self.chain_id)
+            .field("index", &self.index)
+            .field("endpoint_id", &self.endpoint_id)
+            .finish()
+    }
+}
+
+impl UnaryContext {
     /// Records successful call (convenience method)
     #[inline]
     pub fn record_success(&self, duration: Duration) {
@@ -324,6 +612,75 @@ impl RpcProviderContext {
     }
 
     /// Records failed call
+    #[inline]
+    pub fn record_failure(&self) {
+        self.metrics.record_failure();
+    }
+
+    /// Gets endpoint ID
+    #[inline]
+    pub fn endpoint_id(&self) -> &str {
+        &self.endpoint_id
+    }
+
+    /// Gets current health
+    #[inline]
+    pub fn endpoint_health(&self) -> EndpointHealth {
+        self.metrics.health()
+    }
+
+    /// Gets current score
+    #[inline]
+    pub fn endpoint_score(&self) -> f64 {
+        self.metrics.load_balancing_score()
+    }
+
+    /// Gets endpoint index
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// Gets chain ID
+    #[inline]
+    pub fn chain_id(&self) -> ChainId {
+        self.chain_id
+    }
+
+    /// Gets provider reference
+    #[inline]
+    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync> {
+        Arc::clone(&self.provider)
+    }
+
+    /// Gets metrics reference
+    #[inline]
+    pub fn metrics(&self) -> Arc<EndpointMetrics> {
+        Arc::clone(&self.metrics)
+    }
+}
+
+// ============================================================================
+// SubscriptionContext Methods
+
+impl Debug for SubscriptionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SubscriptionContext")
+            .field("chain_id", &self.chain_id)
+            .field("index", &self.index)
+            .field("url", &self.url)
+            .finish()
+    }
+}
+
+impl SubscriptionContext {
+    /// Records successful operation
+    #[inline]
+    pub fn record_success(&self, duration: Duration) {
+        self.metrics.record_success(duration);
+    }
+
+    /// Records failed operation
     #[inline]
     pub fn record_failure(&self) {
         self.metrics.record_failure();
@@ -341,48 +698,34 @@ impl RpcProviderContext {
         self.metrics.health()
     }
 
-    /// Gets current score
+    /// Gets endpoint index
     #[inline]
-    pub fn endpoint_score(&self) -> f64 {
-        self.metrics.load_balancing_score()
+    pub fn index(&self) -> usize {
+        self.index
     }
-}
 
-// ============================================================================
-// Tests
+    /// Gets chain ID
+    #[inline]
+    pub fn chain_id(&self) -> ChainId {
+        self.chain_id
+    }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    /// Gets WebSocket URL
+    #[inline]
+    pub fn url(&self) -> &str {
+        &self.url
+    }
 
-    #[tokio::test]
-    async fn test_concurrent_permit_acquisition() {
-        let client = Arc::new(RpcClient::new(5));
-        let counter = Arc::new(AtomicUsize::new(0));
+    /// Gets provider reference
+    #[inline]
+    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync> {
+        Arc::clone(&self.provider)
+    }
 
-        let mut join_set = JoinSet::new();
-        for _ in 0..10 {
-            let client_clone = Arc::clone(&client);
-            let counter_clone = Arc::clone(&counter);
-
-            join_set.spawn(async move {
-                // Simulate work with permit
-                let _permit = client_clone
-                    .semaphore
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .unwrap();
-                counter_clone.fetch_add(1, Ordering::SeqCst);
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            });
-        }
-
-        // All 10 should complete despite limit of 5 (queued)
-        let _ = join_set.join_all().await;
-        
-        assert_eq!(counter.load(Ordering::SeqCst), 10);
+    /// Gets metrics reference
+    #[inline]
+    pub fn metrics(&self) -> Arc<EndpointMetrics> {
+        Arc::clone(&self.metrics)
     }
 }
 

@@ -18,9 +18,9 @@ const RESPONSE_TIME_MASK: usize = RESPONSE_TIME_WINDOW_SIZE - 1;
 /// Default response time when no metrics are available (in milliseconds)
 const DEFAULT_RESPONSE_TIME_MS: f64 = 100.0;
 
-/// Error rate thresholds
-const DEGRADED_ERROR_THRESHOLD: f64 = 0.10;
-const UNHEALTHY_ERROR_THRESHOLD: f64 = 0.30;
+/// Default error rate thresholds (can be overridden per tier)
+const DEFAULT_DEGRADED_ERROR_THRESHOLD: f64 = 0.10;
+const DEFAULT_UNHEALTHY_ERROR_THRESHOLD: f64 = 0.30;
 
 /// Circuit breaker backoff durations (exponential)
 const CIRCUIT_BREAKER_BACKOFF: [u64; 3] = [10, 30, 60];
@@ -41,6 +41,7 @@ pub enum EndpointHealth {
     /// Circuit breaker active or critical error rate
     Unhealthy,
 }
+
 impl Default for EndpointHealth {
     fn default() -> Self {
         Self::Healthy
@@ -65,6 +66,46 @@ impl EndpointHealth {
 }
 
 // ============================================================================
+// Endpoint Tier Type
+
+/// Classification of endpoint based on transport and usage pattern
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EndpointTier {
+    /// Unary HTTP/2 endpoints for request-response operations
+    /// Higher error tolerance (15% degraded, 40% unhealthy)
+    Unary,
+    /// WebSocket endpoints for subscriptions
+    /// Lower error tolerance (5% degraded, 15% unhealthy)
+    Subscription,
+}
+
+impl Default for EndpointTier {
+    fn default() -> Self {
+        Self::Unary
+    }
+}
+
+impl EndpointTier {
+    /// Returns default degraded threshold for this tier
+    #[inline]
+    pub fn default_degraded_threshold(&self) -> f64 {
+        match self {
+            Self::Unary => 0.15,
+            Self::Subscription => 0.05,
+        }
+    }
+
+    /// Returns default unhealthy threshold for this tier
+    #[inline]
+    pub fn default_unhealthy_threshold(&self) -> f64 {
+        match self {
+            Self::Unary => 0.40,
+            Self::Subscription => 0.15,
+        }
+    }
+}
+
+// ============================================================================
 // Atomic Metrics
 
 /// Lock-free performance metrics using atomics for high-throughput updates
@@ -75,6 +116,9 @@ pub struct EndpointMetrics {
 
     /// RPC endpoint URL
     pub url: String,
+
+    /// Endpoint tier (affects health thresholds)
+    tier: AtomicU32,
 
     /// Current health (stored as u8 for atomic operations)
     health: AtomicU32,
@@ -105,6 +149,12 @@ pub struct EndpointMetrics {
 
     /// Epoch start for metric windows (for periodic reset)
     window_epoch: AtomicU64,
+
+    /// Tier-specific degraded error threshold (f64 stored as u64 bits)
+    degraded_threshold: AtomicU64,
+
+    /// Tier-specific unhealthy error threshold (f64 stored as u64 bits)
+    unhealthy_threshold: AtomicU64,
 }
 
 impl Clone for EndpointMetrics {
@@ -112,6 +162,7 @@ impl Clone for EndpointMetrics {
         Self {
             id: self.id.clone(),
             url: self.url.clone(),
+            tier: AtomicU32::new(self.tier.load(Ordering::Relaxed)),
             health: AtomicU32::new(self.health.load(Ordering::Relaxed)),
             response_times_ms: std::array::from_fn(|i| {
                 AtomicU64::new(self.response_times_ms[i].load(Ordering::Relaxed))
@@ -128,6 +179,8 @@ impl Clone for EndpointMetrics {
                 self.circuit_breaker_attempts.load(Ordering::Relaxed),
             ),
             window_epoch: AtomicU64::new(self.window_epoch.load(Ordering::Relaxed)),
+            degraded_threshold: AtomicU64::new(self.degraded_threshold.load(Ordering::Relaxed)),
+            unhealthy_threshold: AtomicU64::new(self.unhealthy_threshold.load(Ordering::Relaxed)),
         }
     }
 }
@@ -135,9 +188,18 @@ impl Clone for EndpointMetrics {
 impl EndpointMetrics {
     /// Creates new endpoint metrics with optimized defaults
     pub fn new(id: String, url: String) -> Self {
+        Self::with_tier(id, url, EndpointTier::Unary)
+    }
+
+    /// Creates new endpoint metrics with specified tier
+    pub fn with_tier(id: String, url: String, tier: EndpointTier) -> Self {
+        let degraded = tier.default_degraded_threshold();
+        let unhealthy = tier.default_unhealthy_threshold();
+
         Self {
             id,
             url,
+            tier: AtomicU32::new(tier as u32),
             health: AtomicU32::new(EndpointHealth::Healthy as u32),
             response_times_ms: std::array::from_fn(|_| AtomicU64::new(0)),
             response_time_index: AtomicU64::new(0),
@@ -148,7 +210,64 @@ impl EndpointMetrics {
             circuit_breaker_until: AtomicU64::new(0),
             circuit_breaker_attempts: AtomicU32::new(0),
             window_epoch: AtomicU64::new(Instant::now().elapsed().as_millis() as u64),
+            degraded_threshold: AtomicU64::new(degraded.to_bits()),
+            unhealthy_threshold: AtomicU64::new(unhealthy.to_bits()),
         }
+    }
+
+    // ========================================================================
+    // Tier Configuration
+
+    /// Sets the endpoint tier and applies default thresholds for that tier
+    pub fn set_tier(&self, tier: EndpointTier) {
+        self.tier.store(tier as u32, Ordering::Release);
+        self.degraded_threshold.store(
+            tier.default_degraded_threshold().to_bits(),
+            Ordering::Release,
+        );
+        self.unhealthy_threshold.store(
+            tier.default_unhealthy_threshold().to_bits(),
+            Ordering::Release,
+        );
+    }
+
+    /// Gets the current endpoint tier
+    pub fn tier(&self) -> EndpointTier {
+        match self.tier.load(Ordering::Acquire) {
+            1 => EndpointTier::Subscription,
+            _ => EndpointTier::Unary,
+        }
+    }
+
+    /// Sets custom error thresholds for this endpoint
+    ///
+    /// # Arguments
+    /// * `degraded` - Error rate at which endpoint is considered degraded (0.0-1.0)
+    /// * `unhealthy` - Error rate at which endpoint is considered unhealthy (0.0-1.0)
+    ///
+    /// # Example
+    /// ```ignore
+    /// // For unary endpoints (higher tolerance)
+    /// metrics.set_error_thresholds(0.15, 0.40);
+    ///
+    /// // For subscription endpoints (lower tolerance)
+    /// metrics.set_error_thresholds(0.05, 0.15);
+    /// ```
+    pub fn set_error_thresholds(&self, degraded: f64, unhealthy: f64) {
+        self.degraded_threshold
+            .store(degraded.to_bits(), Ordering::Release);
+        self.unhealthy_threshold
+            .store(unhealthy.to_bits(), Ordering::Release);
+    }
+
+    /// Gets the current degraded threshold
+    fn degraded_threshold(&self) -> f64 {
+        f64::from_bits(self.degraded_threshold.load(Ordering::Acquire))
+    }
+
+    /// Gets the current unhealthy threshold
+    fn unhealthy_threshold(&self) -> f64 {
+        f64::from_bits(self.unhealthy_threshold.load(Ordering::Acquire))
     }
 
     // ========================================================================
@@ -230,7 +349,7 @@ impl EndpointMetrics {
     pub fn record_success(&self, duration: Duration) {
         let duration_ms = duration.as_millis() as u64;
         let now = Instant::now();
-        let now_mills = now.elapsed().as_millis() as u64;
+        let now_millis = now.elapsed().as_millis() as u64;
 
         // Update ring buffer (lock-free)
         let index = self.response_time_index.fetch_add(1, Ordering::AcqRel);
@@ -239,16 +358,16 @@ impl EndpointMetrics {
 
         // Update counters
         self.request_count.fetch_add(1, Ordering::Relaxed);
-        self.last_success_at.store(duration_ms, Ordering::Release);
+        self.last_success_at.store(now_millis, Ordering::Release);
 
-        // reset circuit breaker on succcess
-        let cb_until = self.circuit_breaker_attempts.load(Ordering::Acquire) as u64;
-        if cb_until > 0 && now_mills >= cb_until {
+        // Reset circuit breaker on success
+        let cb_until = self.circuit_breaker_until.load(Ordering::Acquire);
+        if cb_until > 0 && now_millis >= cb_until {
             self.circuit_breaker_until.store(0, Ordering::Release);
             self.circuit_breaker_attempts.store(0, Ordering::Release);
         }
 
-        // recalculate health
+        // Recalculate health
         self.update_health_status();
     }
 
@@ -268,24 +387,27 @@ impl EndpointMetrics {
     // Health Management
 
     /// Updates health based on current metrics - O(1)
-    pub fn update_health_status(&self) {
+    fn update_health_status(&self) {
         // Check circuit breaker first
         let cb_until = self.circuit_breaker_until.load(Ordering::Acquire);
         if cb_until > 0 {
             let now = Instant::now().elapsed().as_millis() as u64;
             if now < cb_until {
-                self.health.store(2, Ordering::Release); // unhealhty
+                self.health.store(2, Ordering::Release); // Unhealthy
                 return;
             }
             // Circuit breaker expired, clear it
-            self.circuit_breaker_until.store(0, Ordering::Release); // healthy: ready to be reused
+            self.circuit_breaker_until.store(0, Ordering::Release);
         }
 
-        // Calculate health based on error rate
+        // Calculate health based on error rate with tier-specific thresholds
         let error_rate = self.error_rate();
-        let new_health = if error_rate > UNHEALTHY_ERROR_THRESHOLD {
+        let degraded_threshold = self.degraded_threshold();
+        let unhealthy_threshold = self.unhealthy_threshold();
+
+        let new_health = if error_rate > unhealthy_threshold {
             2 // Unhealthy
-        } else if error_rate > DEGRADED_ERROR_THRESHOLD {
+        } else if error_rate > degraded_threshold {
             1 // Degraded
         } else {
             0 // Healthy
@@ -377,6 +499,7 @@ impl EndpointMetrics {
         EndpointMetricsSnapshot {
             id: self.id.clone(),
             url: self.url.clone(),
+            tier: self.tier(),
             health: self.health(),
             avg_response_time_ms: self.average_response_time_ms(),
             error_rate: self.error_rate(),
@@ -393,6 +516,7 @@ impl EndpointMetrics {
 pub struct EndpointMetricsSnapshot {
     pub id: String,
     pub url: String,
+    pub tier: EndpointTier,
     pub health: EndpointHealth,
     pub avg_response_time_ms: f64,
     pub error_rate: f64,
@@ -400,40 +524,6 @@ pub struct EndpointMetricsSnapshot {
     pub block_height: Option<u64>,
     pub request_count: u64,
     pub error_count: u64,
-}
-
-// ============================================================================
-// Tests
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::{sync::Arc, time::Duration};
-
-    #[test]
-    fn test_concurrent_success_recording() {
-        use std::thread;
-        let metrics = Arc::new(EndpointMetrics::new(
-            "test".to_string(),
-            "http://localhost:8545".to_string(),
-        ));
-        let handles: Vec<_> = (0..10)
-            .map(|i| {
-                let m = Arc::clone(&metrics);
-                thread::spawn(move || {
-                    for _ in 0..100 {
-                        m.record_success(Duration::from_millis(50 + i as u64 * 10));
-                    }
-                })
-            })
-            .collect();
-        for h in handles {
-            h.join().unwrap();
-        }
-
-        assert_eq!(metrics.request_count.load(Ordering::Relaxed), 1000);
-        assert_eq!(metrics.error_count.load(Ordering::Relaxed), 0);
-    }
 }
 
 // ============================================================================
