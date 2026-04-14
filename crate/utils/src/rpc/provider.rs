@@ -1,27 +1,20 @@
-//! Alloy-native provider factory and WebSocket pool management
+//! Alloy-native provider factory
 //!
 //! This module provides pure Alloy 1.6.0 provider construction without external HTTP clients.
-//! Uses `RootProvider` with hyper-based HTTP/2 (via ALPN) and native WebSocket support.
+//! Uses `RootProvider` with hyper-based HTTP/2 (via ALPN).
 
 use alloy::{
     network::Ethereum,
-    providers::{Provider, ProviderBuilder, RootProvider, WsConnect},
+    providers::{Provider, ProviderBuilder, RootProvider},
 };
-use std::{
-    fmt::Debug,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{fmt::Debug, sync::Arc};
 use thiserror::Error;
-use tokio::sync::RwLock;
 use url::Url;
 
 // ============================================================================
 // Error Types
 
-/// Errors that can occur during provider construction or WebSocket operations
+/// Errors that can occur during provider construction
 #[derive(Debug, Error, Clone)]
 pub enum ProviderError {
     #[error("Invalid URL scheme: expected {expected}, got {actual}")]
@@ -29,9 +22,6 @@ pub enum ProviderError {
 
     #[error("Invalid URL format: {0}")]
     InvalidUrl(String),
-
-    #[error("WebSocket connection failed: {0}")]
-    WsConnectionFailed(String),
 
     #[error("HTTP provider construction failed: {0}")]
     HttpConstructionFailed(String),
@@ -50,19 +40,13 @@ pub enum ProviderError {
 /// for storage to avoid complex generic propagation.
 pub type UnaryProvider = RootProvider<Ethereum>;
 
-/// WebSocket provider type for subscription operations
-///
-/// Note: WebSocket providers maintain persistent connections and require
-/// different lifecycle management than HTTP providers.
-pub type WsProvider = RootProvider<Ethereum>;
-
 // ============================================================================
 // Provider Factory
 
 /// Factory for creating Alloy-native providers
 ///
 /// This factory eliminates external HTTP client dependencies (reqwest) in favor
-/// of Alloy's built-in `hyper`-based HTTP/2 and native WebSocket providers.
+/// of Alloy's built-in `hyper`-based HTTP/2.
 ///
 /// # Performance Notes
 /// - HTTP/2 multiplexing is handled automatically by hyper via ALPN
@@ -144,216 +128,6 @@ impl ProviderFactory {
         Ok(Arc::new(provider) as Arc<dyn Provider + Send + Sync>)
     }
 
-    /// Creates a WebSocket provider for stateful subscription operations
-    ///
-    /// WebSocket providers maintain persistent connections and are used for:
-    /// - `eth_subscribe` (newPendingTransactions, newHeads, logs)
-    /// - Real-time event streaming
-    ///
-    /// # Arguments
-    /// * `url` - WebSocket endpoint URL (ws:// or wss://)
-    ///
-    /// # Returns
-    /// `Arc<dyn Provider>` type-erased for storage in WebSocket pools
-    ///
-    /// # Errors
-    /// Returns `ProviderError::InvalidScheme` if URL is not WS/WSS
-    ///
-    /// # Performance Notes
-    /// - WebSocket connections have higher initial overhead but lower per-message latency
-    /// - Each WebSocket provider maintains a dedicated TCP connection
-    /// - Use `WsPool` for round-robin distribution across multiple WebSocket endpoints
-    ///
-    /// # Example
-    /// ```ignore
-    /// let ws_provider = ProviderFactory::create_subscription_provider("wss://eth.llamarpc.com").await?;
-    /// let sub = ws_provider.subscribe_pending_transactions().await?;
-    /// ```
-    pub async fn create_subscription_provider(
-        url: &str,
-    ) -> Result<Arc<dyn Provider + Send + Sync>, ProviderError> {
-        // Validate URL scheme
-        let parsed_url = url
-            .parse::<Url>()
-            .map_err(|e| ProviderError::InvalidUrl(e.to_string()))?;
-
-        let scheme = parsed_url.scheme();
-        if scheme != "ws" && scheme != "wss" {
-            return Err(ProviderError::InvalidScheme {
-                expected: "ws or wss".to_string(),
-                actual: scheme.to_string(),
-            });
-        }
-
-        // Create WebSocket connection configuration
-        let ws_connect = WsConnect::new(parsed_url);
-
-        // Build provider with WebSocket transport
-        // Note: This establishes the connection immediately
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws_connect)
-            .await
-            .map_err(|e| ProviderError::WsConnectionFailed(e.to_string()))?;
-
-        Ok(Arc::new(provider) as Arc<dyn Provider + Send + Sync>)
-    }
-
-    /// Creates a WebSocket provider with custom configuration
-    ///
-    /// Allows tuning of retry behavior, keepalive intervals, and authentication.
-    ///
-    /// # Configuration Options
-    /// - `max_retries`: Max reconnection attempts (default: 10)
-    /// - `retry_interval`: Seconds between retries (default: 3)
-    /// - `keepalive_ping_interval`: Seconds between keepalive pings (default: 10)
-    pub async fn create_subscription_provider_with_config(
-        url: &str,
-        max_retries: u32,
-        retry_interval_secs: u64,
-    ) -> Result<Arc<dyn Provider + Send + Sync>, ProviderError> {
-        let parsed_url = url
-            .parse::<Url>()
-            .map_err(|e| ProviderError::InvalidUrl(e.to_string()))?;
-
-        let scheme = parsed_url.scheme();
-        if scheme != "ws" && scheme != "wss" {
-            return Err(ProviderError::InvalidScheme {
-                expected: "ws or wss".to_string(),
-                actual: scheme.to_string(),
-            });
-        }
-
-        let ws_connect = WsConnect::new(parsed_url)
-            .with_max_retries(max_retries)
-            .with_retry_interval(std::time::Duration::from_secs(retry_interval_secs));
-
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws_connect)
-            .await
-            .map_err(|e| ProviderError::WsConnectionFailed(e.to_string()))?;
-
-        Ok(Arc::new(provider) as Arc<dyn Provider + Send + Sync>)
-    }
-}
-
-// ============================================================================
-// WebSocket Pool Management
-
-/// Round-robin WebSocket endpoint distributor for subscription load balancing
-///
-/// Unlike unary HTTP/2 providers that use weighted least-RTT selection,
-/// WebSocket providers use round-robin assignment because:
-/// 1. Each subscription requires a persistent connection
-/// 2. Connection affinity is more important than latency for stateful streams
-/// 3. Round-robin provides uniform distribution across endpoints
-///
-/// # Thread Safety
-/// Uses atomic counter for O(1) round-robin selection without locks.
-/// Provider list is protected by RwLock for safe concurrent read/write.
-pub struct WsPool {
-    /// Chain ID for this WebSocket pool
-    chain_id: u64,
-
-    /// WebSocket providers with round-robin distribution
-    ///
-    /// Stored as `Arc<dyn Provider>` for type erasure, but all concrete instances
-    /// are `RootProvider<Ethereum, Ws>`.
-    providers: RwLock<Vec<Arc<dyn Provider + Send + Sync>>>,
-
-    /// Atomic counter for round-robin selection (lock-free)
-    round_robin_counter: AtomicUsize,
-
-    /// Pool size for modulo operation
-    size: AtomicUsize,
-}
-
-impl Debug for WsPool {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WsPool")
-            .field("chain_id", &self.chain_id)
-            .field("round_robin_counter", &self.round_robin_counter)
-            .field("size", &self.size)
-            .finish()
-    }
-}
-
-impl WsPool {
-    /// Creates a new WebSocket pool for a specific chain
-    pub fn new(chain_id: u64) -> Self {
-        Self {
-            chain_id,
-            providers: RwLock::new(Vec::new()),
-            round_robin_counter: AtomicUsize::new(0),
-            size: AtomicUsize::new(0),
-        }
-    }
-
-    /// Adds a WebSocket provider to the pool
-    ///
-    /// Acquires write lock briefly for vector push.
-    pub async fn add_provider(&self, provider: Arc<dyn Provider + Send + Sync>) {
-        let mut providers = self.providers.write().await;
-        providers.push(provider);
-        let new_size = providers.len();
-        drop(providers);
-
-        self.size.store(new_size, Ordering::Release);
-    }
-
-    /// Gets the next WebSocket provider using round-robin selection
-    ///
-    /// # Performance
-    /// - O(1) atomic fetch-add for index calculation
-    /// - O(1) RwLock read for provider access
-    /// - Total: ~50-100ns per call (amortized)
-    ///
-    /// # Returns
-    /// `Some(Arc<dyn Provider>)` if pool has providers, `None` if empty
-    pub async fn next_endpoint(&self) -> Option<Arc<dyn Provider + Send + Sync>> {
-        let size = self.size.load(Ordering::Acquire);
-        if size == 0 {
-            return None;
-        }
-
-        // Atomic fetch-add for lock-free round-robin
-        let index = self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % size;
-        let providers = self.providers.read().await;
-        providers.get(index).cloned()
-    }
-
-    /// Gets a specific provider by index
-    ///
-    /// Used for sticky session scenarios where a specific WebSocket connection
-    /// must be maintained (e.g., subscription resumption).
-    pub async fn get_provider(&self, index: usize) -> Option<Arc<dyn Provider + Send + Sync>> {
-        let providers = self.providers.read().await;
-        providers.get(index).cloned()
-    }
-
-    /// Returns the number of WebSocket providers in the pool
-    pub fn len(&self) -> usize {
-        self.size.load(Ordering::Acquire)
-    }
-
-    /// Returns true if the pool contains no providers
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Returns the chain ID for this pool
-    pub fn chain_id(&self) -> u64 {
-        self.chain_id
-    }
-
-    /// Removes all providers from the pool
-    ///
-    /// Note: Existing `Arc` clones held by callers remain valid until dropped.
-    pub async fn clear(&self) {
-        let mut providers = self.providers.write().await;
-        providers.clear();
-        drop(providers);
-        self.size.store(0, Ordering::Release);
-    }
 }
 
 // ============================================================================
@@ -384,29 +158,6 @@ impl ProviderHealthChecker {
             Ok(Ok(_)) => true,
             Ok(Err(_)) => false,
             Err(_) => false, // Timeout
-        }
-    }
-
-    /// Checks WebSocket provider health by attempting a subscription
-    ///
-    /// More thorough than HTTP check as it validates the pub/sub pipeline.
-    /// Uses `eth_subscribe` to newHeads then immediately unsubscribes.
-    ///
-    /// # Timeout
-    /// 10 seconds (longer than HTTP due to subscription setup overhead)
-    pub async fn check_ws_health(provider: &Arc<dyn Provider + Send + Sync>) -> bool {
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            provider.subscribe_blocks(),
-        )
-        .await
-        {
-            Ok(Ok(sub)) => {
-                // Successfully subscribed, drop the subscription
-                drop(sub);
-                true
-            }
-            _ => false,
         }
     }
 }

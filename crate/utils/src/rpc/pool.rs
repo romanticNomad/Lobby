@@ -1,6 +1,6 @@
-//! RPC endpoint pool management with dual-path architecture (unary/subscription)
+//! RPC endpoint pool management for unary operations
 //!
-//! Implements separate pools for HTTP/2 unary operations and WebSocket subscriptions,
+//! Implements pools for HTTP/2 unary operations,
 //! using lock-free metrics and fine-grained async locking for high throughput.
 
 use crate::rpc::metrics::{EndpointMetrics, EndpointMetricsSnapshot};
@@ -32,32 +32,24 @@ const DEFAULT_POOL_CAPACITY: usize = 16;
 /// Registry mapping chain IDs to their endpoint pools (unary)
 pub type EndpointRegistry = Arc<DashMap<ChainId, Arc<EndpointPool>>>;
 
-/// Registry for WebSocket subscription pools
-pub type SubscriptionRegistry = Arc<DashMap<ChainId, Arc<WsPool>>>;
-
 // ============================================================================
-// Dual-Path Provider Stack
+// Provider Stack
 
-/// Dual-registry stack for workload isolation between unary and subscription paths
+/// Registry stack for unary (HTTP/2) RPC operations
 ///
 /// Architecture:
 /// - `unary`: HTTP/2 connection pools for stateless request-response operations
-/// - `subscription`: WebSocket session pools for stateful server-push operations
 #[derive(Clone)]
 pub struct RpcProviderStack {
     /// Unary registry: HTTP/2 connection pools per chain
     pub unary: EndpointRegistry,
-
-    /// Subscription registry: WebSocket session pools per chain
-    pub subscription: SubscriptionRegistry,
 }
 
 impl RpcProviderStack {
-    /// Creates new stack with separate registries
+    /// Creates new stack with unary registry
     pub fn new() -> Self {
         Self {
             unary: Arc::new(DashMap::new()),
-            subscription: Arc::new(DashMap::new()),
         }
     }
 
@@ -68,31 +60,14 @@ impl RpcProviderStack {
             .map(|entry| Arc::clone(entry.value()))
     }
 
-    /// Gets pool for subscription operations (WebSocket)
-    pub fn get_subscription_pool(&self, chain_id: ChainId) -> Option<Arc<WsPool>> {
-        self.subscription
-            .get(&chain_id)
-            .map(|entry| Arc::clone(entry.value()))
-    }
-
     /// Registers a chain with its unary endpoint pool
     pub fn register_unary_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
         self.unary.insert(chain_id, pool);
     }
 
-    /// Registers a chain with its subscription pool
-    pub fn register_subscription_chain(&self, chain_id: ChainId, pool: Arc<WsPool>) {
-        self.subscription.insert(chain_id, pool);
-    }
-
     /// Gets total number of chains with unary endpoints
     pub fn unary_chain_count(&self) -> usize {
         self.unary.len()
-    }
-
-    /// Gets total number of chains with subscription endpoints
-    pub fn subscription_chain_count(&self) -> usize {
-        self.subscription.len()
     }
 }
 
@@ -441,149 +416,6 @@ impl EndpointPool {
 }
 
 // ============================================================================
-// WebSocket Subscription Pool
-
-/// Pool for WebSocket subscription endpoints
-///
-/// WebSocket connections are stateful and long-lived, so we use
-/// round-robin assignment with session affinity per subscription.
-#[derive(Debug)]
-pub struct WsPool {
-    /// ChainId for the blockchain
-    chain_id: ChainId,
-
-    /// WebSocket endpoints
-    endpoints: RwLock<Vec<Arc<WsEndpointEntry>>>,
-
-    /// Round-robin counter for assignment
-    counter: AtomicUsize,
-
-    /// Active connection count per endpoint (for load balancing)
-    connection_counts: Vec<AtomicUsize>,
-}
-
-/// WebSocket endpoint entry
-pub struct WsEndpointEntry {
-    /// The WebSocket provider (concretely RootProvider<Ethereum, Ws>)
-    provider: Arc<dyn Provider + Send + Sync>,
-
-    /// Endpoint metadata
-    metrics: Arc<EndpointMetrics>,
-
-    /// URL for reconnection
-    url: String,
-}
-
-impl Debug for WsEndpointEntry {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WsEndpointEntry")
-            .field("url", &self.url)
-            .field("metrics", &self.metrics)
-            .finish()
-    }
-}
-
-impl WsEndpointEntry {
-    /// Creates a new WebSocket endpoint entry
-    pub fn new(
-        provider: Arc<dyn Provider + Send + Sync>,
-        metrics: Arc<EndpointMetrics>,
-        url: String,
-    ) -> Self {
-        Self {
-            provider,
-            metrics,
-            url,
-        }
-    }
-
-    #[inline]
-    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync> {
-        Arc::clone(&self.provider)
-    }
-
-    #[inline]
-    pub fn metrics(&self) -> Arc<EndpointMetrics> {
-        Arc::clone(&self.metrics)
-    }
-
-    #[inline]
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-}
-
-impl WsPool {
-    /// Creates a new WebSocket pool for a chain
-    pub fn new(chain_id: ChainId) -> Self {
-        Self {
-            chain_id,
-            endpoints: RwLock::new(Vec::with_capacity(DEFAULT_POOL_CAPACITY)),
-            counter: AtomicUsize::new(0),
-            connection_counts: Vec::new(),
-        }
-    }
-
-    /// Returns the chain ID
-    #[inline]
-    pub fn chain_id(&self) -> ChainId {
-        self.chain_id
-    }
-
-    /// Adds a WebSocket endpoint to the pool
-    pub async fn add_endpoint(
-        &self,
-        provider: Arc<dyn Provider + Send + Sync>,
-        metrics: EndpointMetrics,
-        url: String,
-    ) {
-        let entry = WsEndpointEntry::new(provider, Arc::new(metrics), url);
-        let mut endpoints = self.endpoints.write().await;
-        endpoints.push(Arc::new(entry));
-        drop(endpoints);
-    }
-
-    /// Gets the number of WebSocket endpoints
-    pub async fn endpoint_count(&self) -> usize {
-        self.endpoints.read().await.len()
-    }
-
-    /// Selects next WebSocket endpoint using round-robin
-    ///
-    /// WebSocket connections are typically long-lived, so we use
-    /// simple round-robin for initial assignment.
-    pub async fn select_endpoint(&self) -> Option<WsLoadBalancerChoice> {
-        let endpoints = self.endpoints.read().await;
-
-        if endpoints.is_empty() {
-            return None;
-        }
-
-        // Get next index atomically
-        let idx = self.counter.fetch_add(1, Ordering::Relaxed) % endpoints.len();
-        let entry = endpoints.get(idx)?;
-
-        // Increment connection count
-        if idx < self.connection_counts.len() {
-            self.connection_counts[idx].fetch_add(1, Ordering::Relaxed);
-        }
-
-        Some(WsLoadBalancerChoice::new(
-            entry.provider(),
-            entry.metrics(),
-            idx,
-            entry.url.clone(),
-        ))
-    }
-
-    /// Gets metrics for all WebSocket endpoints
-    pub async fn endpoints_metrics(&self) -> Vec<EndpointMetricsSnapshot> {
-        let endpoints = self.endpoints.read().await;
-        endpoints.iter().map(|e| e.metrics.snapshot()).collect()
-    }
-}
-
-// ============================================================================
 // Load Balancing Strategy
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -666,60 +498,6 @@ impl Debug for LoadBalancerChoice {
             .field("index", &self.index)
             .field("metrics", &self.metrics)
             .finish()
-    }
-}
-
-/// Result of WebSocket endpoint selection
-pub struct WsLoadBalancerChoice {
-    provider: Arc<dyn Provider + Send + Sync>,
-    metrics: Arc<EndpointMetrics>,
-    index: usize,
-    url: String,
-}
-
-impl Debug for WsLoadBalancerChoice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WsLoadBalancerChoice")
-            .field("index", &self.index)
-            .field("url", &self.url)
-            .field("metrics", &self.metrics)
-            .finish()
-    }
-}
-
-impl WsLoadBalancerChoice {
-    pub fn new(
-        provider: Arc<dyn Provider + Send + Sync>,
-        metrics: Arc<EndpointMetrics>,
-        index: usize,
-        url: String,
-    ) -> Self {
-        Self {
-            provider,
-            metrics,
-            index,
-            url,
-        }
-    }
-
-    #[inline]
-    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync> {
-        Arc::clone(&self.provider)
-    }
-
-    #[inline]
-    pub fn metrics(&self) -> Arc<EndpointMetrics> {
-        Arc::clone(&self.metrics)
-    }
-
-    #[inline]
-    pub fn index(&self) -> usize {
-        self.index
-    }
-
-    #[inline]
-    pub fn url(&self) -> &str {
-        &self.url
     }
 }
 

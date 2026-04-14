@@ -728,14 +728,6 @@ impl TransactionService {
         self.client.get_unary_endpoint_stats(chain_id).await
     }
 
-    /// Gets the current subscription endpoint statistics for a chain
-    pub async fn get_subscription_endpoint_stats(
-        &self,
-        chain_id: &ChainId,
-    ) -> Option<Vec<EndpointStats>> {
-        self.client.get_subscription_endpoint_stats(chain_id).await
-    }
-
     /// Gets the number of available permits in the semaphore
     pub fn available_concurrency(&self) -> usize {
         self.client.available_permits()

@@ -1,14 +1,14 @@
-//! High-throughput RPC client with dual-path architecture (unary/subscription)
+//! High-throughput RPC client for unary operations
 //!
-//! Implements separate handling for HTTP/2 unary operations and WebSocket subscriptions,
+//! Implements handling for HTTP/2 unary operations,
 //! using Alloy-native transports with lock-free metrics and fine-grained async locking.
 
 use crate::rpc::{
-    metrics::{EndpointHealth, EndpointMetrics, EndpointTier},
-    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack, WsPool},
+    metrics::{EndpointHealth, EndpointMetrics},
+    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack},
 };
 use alloy::{
-    providers::{Provider, ProviderBuilder, WsConnect},
+    providers::{Provider, ProviderBuilder},
     transports::TransportError,
 };
 use dashmap::DashMap;
@@ -49,9 +49,6 @@ pub enum RpcError {
     #[error("All RPC endpoints unhealthy for chain {chain_id}")]
     AllEndpointsUnhealthy { chain_id: ChainId },
 
-    #[error("No subscription endpoints available for chain {chain_id}")]
-    NoSubscriptionEndpointsAvailable { chain_id: ChainId },
-
     #[error("Transport error: {0}")]
     TransportError(String),
 
@@ -74,10 +71,9 @@ pub struct EndpointStats {
     pub avg_response_time_ms: f64,
     pub error_rate: f64,
     pub score: f64,
-    pub block_height: Option<u64>,
+    // pub block_height: Option<u64>,
     pub request_count: u64,
     pub error_count: u64,
-    pub tier: EndpointTier,
 }
 
 // ============================================================================
@@ -101,37 +97,18 @@ pub struct UnaryContext {
     endpoint_id: String,
 }
 
-/// Context for subscription operations (WebSocket)
-pub struct SubscriptionContext {
-    /// The WebSocket provider (concretely RootProvider<Ethereum, Ws>)
-    provider: Arc<dyn Provider + Send + Sync>,
-
-    /// Shared metrics reference
-    metrics: Arc<EndpointMetrics>,
-
-    /// ChainId
-    chain_id: ChainId,
-
-    /// Index of provider on the WsPool
-    index: usize,
-
-    /// WebSocket URL for reconnection
-    url: String,
-}
-
 // ============================================================================
-// RpcClient - Dual-Path Architecture
+// RpcClient
 
-/// High-performance RPC client with separate unary and subscription paths
+/// High-performance RPC client for unary operations
 ///
 /// Architecture:
 /// - `unary_registry`: HTTP/2 connection pools for stateless request-response
-/// - `subscription_registry`: WebSocket session pools for stateful subscriptions
-/// - Global semaphore for cross-path backpressure
+/// - Global semaphore for backpressure
 /// - Lock-free metric recording via Arc<EndpointMetrics>
 #[derive(Clone)]
 pub struct RpcClient {
-    /// Dual-path provider stack
+    /// Provider stack
     provider_stack: RpcProviderStack,
 
     /// Global concurrency limiter across all operations
@@ -264,52 +241,6 @@ impl RpcClient {
     }
 
     // ========================================================================
-    // Primary API: Subscription Path (WebSocket)
-
-    /// Acquires subscription endpoint for WebSocket operations
-    ///
-    /// Uses round-robin assignment for WebSocket connections as they are
-    /// typically long-lived and require session affinity per subscription.
-    ///
-    /// # Arguments
-    /// * `chain_id` - Target chain for the subscription
-    pub async fn acquire_subscription_endpoint(
-        &self,
-        chain_id: &ChainId,
-    ) -> Result<SubscriptionContext, RpcError> {
-        // Get subscription pool
-        let pool = self
-            .provider_stack
-            .get_subscription_pool(*chain_id)
-            .ok_or_else(|| RpcError::NoSubscriptionEndpointsAvailable {
-                chain_id: *chain_id,
-            })?;
-
-        // Select endpoint using round-robin
-        let choice =
-            pool.select_endpoint()
-                .await
-                .ok_or_else(|| RpcError::AllEndpointsUnhealthy {
-                    chain_id: *chain_id,
-                })?;
-
-        trace!(
-            chain_id = %chain_id,
-            endpoint_index = choice.index(),
-            url = %choice.url(),
-            "Acquired subscription context"
-        );
-
-        Ok(SubscriptionContext {
-            provider: choice.provider(),
-            metrics: choice.metrics(),
-            chain_id: *chain_id,
-            index: choice.index(),
-            url: choice.url().to_string(),
-        })
-    }
-
-    // ========================================================================
     // Batch Operations (High-Throughput)
 
     /// Executes multiple unary RPC calls with automatic load balancing
@@ -426,28 +357,14 @@ impl RpcClient {
         debug!(chain_id = %chain_id, "Registered unary chain");
     }
 
-    /// Registers a chain with its subscription pool
-    pub fn register_subscription_chain(&self, chain_id: ChainId, pool: Arc<WsPool>) {
-        self.provider_stack
-            .register_subscription_chain(chain_id, pool);
-        debug!(chain_id = %chain_id, "Registered subscription chain");
-    }
-
     /// Gets the number of registered chains with unary endpoints
     pub fn registered_unary_chain_count(&self) -> usize {
         self.provider_stack.unary_chain_count()
     }
 
-    /// Gets the number of registered chains with subscription endpoints
-    pub fn registered_subscription_chain_count(&self) -> usize {
-        self.provider_stack.subscription_chain_count()
-    }
-
-    /// Gets total registered chains (unary + subscription, may overlap)
+    /// Gets total registered chains
     pub fn total_registered_chains(&self) -> usize {
-        let unary = self.provider_stack.unary_chain_count();
-        let sub = self.provider_stack.subscription_chain_count();
-        unary.max(sub) // Approximation since chains may be in both
+        self.provider_stack.unary_chain_count()
     }
 
     // ========================================================================
@@ -478,10 +395,8 @@ impl RpcClient {
                 avg_response_time_ms: s.avg_response_time_ms,
                 error_rate: s.error_rate,
                 score: s.score,
-                block_height: s.block_height,
                 request_count: s.request_count,
                 error_count: s.error_count,
-                tier: EndpointTier::Unary,
             })
             .collect();
 
@@ -490,33 +405,6 @@ impl RpcClient {
             .insert(*chain_id, (stats.clone(), Instant::now()));
 
         Some(stats)
-    }
-
-    /// Gets endpoint statistics for a chain's subscription endpoints
-    pub async fn get_subscription_endpoint_stats(
-        &self,
-        chain_id: &ChainId,
-    ) -> Option<Vec<EndpointStats>> {
-        let pool = self.provider_stack.get_subscription_pool(*chain_id)?;
-        let snapshots = pool.endpoints_metrics().await;
-
-        Some(
-            snapshots
-                .into_iter()
-                .map(|s| EndpointStats {
-                    id: s.id,
-                    url: s.url,
-                    health: s.health,
-                    avg_response_time_ms: s.avg_response_time_ms,
-                    error_rate: s.error_rate,
-                    score: s.score,
-                    block_height: s.block_height,
-                    request_count: s.request_count,
-                    error_count: s.error_count,
-                    tier: EndpointTier::Subscription,
-                })
-                .collect(),
-        )
     }
 
     /// Force refresh of cached stats for a chain
@@ -563,32 +451,6 @@ impl RpcClient {
         Ok(Arc::new(provider))
     }
 
-    /// Creates a WebSocket subscription provider
-    ///
-    /// Uses `ProviderBuilder::on_ws()` which creates a `RootProvider<Ethereum, Ws>`.
-    /// This is an async operation as it establishes the WebSocket connection.
-    pub async fn create_subscription_provider(
-        url: &str,
-    ) -> Result<Arc<dyn Provider + Send + Sync>, RpcError> {
-        let url = Url::parse(url)
-            .map_err(|e| RpcError::InvalidUrl(format!("Failed to parse URL: {}", e)))?;
-
-        // Validate scheme
-        if url.scheme() != "ws" && url.scheme() != "wss" {
-            return Err(RpcError::InvalidUrl(format!(
-                "Subscription provider requires ws:// or wss:// scheme, got: {}",
-                url.scheme()
-            )));
-        }
-
-        let ws_connect = WsConnect::new(url);
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws_connect)
-            .await
-            .map_err(|e| RpcError::ProviderConstructionError(e.to_string()))?;
-
-        Ok(Arc::new(provider))
-    }
 }
 
 // ============================================================================
@@ -645,75 +507,6 @@ impl UnaryContext {
     #[inline]
     pub fn chain_id(&self) -> ChainId {
         self.chain_id
-    }
-
-    /// Gets provider reference
-    #[inline]
-    pub fn provider(&self) -> Arc<dyn Provider + Send + Sync> {
-        Arc::clone(&self.provider)
-    }
-
-    /// Gets metrics reference
-    #[inline]
-    pub fn metrics(&self) -> Arc<EndpointMetrics> {
-        Arc::clone(&self.metrics)
-    }
-}
-
-// ============================================================================
-// SubscriptionContext Methods
-
-impl Debug for SubscriptionContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SubscriptionContext")
-            .field("chain_id", &self.chain_id)
-            .field("index", &self.index)
-            .field("url", &self.url)
-            .finish()
-    }
-}
-
-impl SubscriptionContext {
-    /// Records successful operation
-    #[inline]
-    pub fn record_success(&self, duration: Duration) {
-        self.metrics.record_success(duration);
-    }
-
-    /// Records failed operation
-    #[inline]
-    pub fn record_failure(&self) {
-        self.metrics.record_failure();
-    }
-
-    /// Gets endpoint ID
-    #[inline]
-    pub fn endpoint_id(&self) -> &str {
-        self.metrics.id()
-    }
-
-    /// Gets current health
-    #[inline]
-    pub fn endpoint_health(&self) -> EndpointHealth {
-        self.metrics.health()
-    }
-
-    /// Gets endpoint index
-    #[inline]
-    pub fn index(&self) -> usize {
-        self.index
-    }
-
-    /// Gets chain ID
-    #[inline]
-    pub fn chain_id(&self) -> ChainId {
-        self.chain_id
-    }
-
-    /// Gets WebSocket URL
-    #[inline]
-    pub fn url(&self) -> &str {
-        &self.url
     }
 
     /// Gets provider reference
