@@ -37,11 +37,11 @@ pub type EndpointRegistry = Arc<DashMap<ChainId, Arc<EndpointPool>>>;
 
 /// Enables the selection of seperate `EndpointRegistry` for
 /// `broadcast` or `validator` actor.
+#[derive(Debug, Clone)]
 pub enum SelectActor {
     Broadcast,
-    Validator
+    Validator,
 }
-
 // ============================================================================
 // Provider Stack
 
@@ -67,24 +67,16 @@ impl RpcProviderStack {
 
     /// Gets pools for unary operations (HTTP/2)
     /// seperatly for `broadcast` and `validator` actor.
-    pub fn get_pool(
-        &self,
-        actor: SelectActor,
-        chain_id: ChainId,
-    ) -> Option<Arc<EndpointPool>> {
+    pub fn get_pool(&self, actor: SelectActor, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
         match actor {
-            SelectActor::Broadcast => {
-                self
+            SelectActor::Broadcast => self
                 .broadcast
                 .get(&chain_id)
-                .map(|entry| Arc::clone(entry.value()))
-            },
-            SelectActor::Validator => {
-                self
+                .map(|entry| Arc::clone(entry.value())),
+            SelectActor::Validator => self
                 .validator
                 .get(&chain_id)
-                .map(|entry| Arc::clone(entry.value()))
-            }
+                .map(|entry| Arc::clone(entry.value())),
         }
     }
 
