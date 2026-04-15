@@ -33,6 +33,16 @@ const DEFAULT_POOL_CAPACITY: usize = 16;
 pub type EndpointRegistry = Arc<DashMap<ChainId, Arc<EndpointPool>>>;
 
 // ============================================================================
+// SelectActor
+
+/// Enables the selection of seperate `EndpointRegistry` for
+/// `broadcast` or `validator` actor.
+pub enum SelectActor {
+    Broadcast,
+    Validator
+}
+
+// ============================================================================
 // Provider Stack
 
 /// Registry stack for unary (HTTP/2) RPC operations.
@@ -55,30 +65,26 @@ impl RpcProviderStack {
         }
     }
 
-    /// Gets pools for unary operations (HTTP/2).
-    /// 
-    /// `ActorId`: used as indentifier to index the actor pools
-    /// 1. broadcast actor: 0
-    /// 2. validator actor: 1
+    /// Gets pools for unary operations (HTTP/2)
+    /// seperatly for `broadcast` and `validator` actor.
     pub fn get_pool(
         &self,
-        actor_id: usize,
+        actor: SelectActor,
         chain_id: ChainId,
     ) -> Option<Arc<EndpointPool>> {
-        match actor_id {
-            0 => {
+        match actor {
+            SelectActor::Broadcast => {
                 self
                 .broadcast
                 .get(&chain_id)
                 .map(|entry| Arc::clone(entry.value()))
-            }
-            1 => {
+            },
+            SelectActor::Validator => {
                 self
                 .validator
                 .get(&chain_id)
                 .map(|entry| Arc::clone(entry.value()))
             }
-            _ => panic!("RpcProviderStack: invalid actor id")
         }
     }
 
@@ -132,7 +138,7 @@ pub struct EndpointPool {
 
 /// Single endpoint entry with shared ownership for unary operations
 pub struct EndpointEntry {
-    /// The RPC provider implementation (concretely RootProvider<Ethereum, Http<Client>>)
+    /// The RPC provider implementation (concretely RootProvider<Ethereum>)
     provider: Arc<dyn Provider + Send + Sync>,
 
     /// Shared metrics (lock-free atomic operations)
