@@ -5,7 +5,7 @@
 
 use crate::rpc::{
     metrics::{EndpointHealth, EndpointMetrics},
-    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack},
+    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack, SelectActor},
 };
 use alloy::{
     providers::{Provider, ProviderBuilder},
@@ -16,10 +16,9 @@ use primitives::types::ChainId;
 use std::{fmt::Debug, future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
-    task::JoinSet,
     time::Instant,
 };
-use tracing::{debug, error, trace};
+use tracing::{debug, trace};
 use url::Url;
 
 // ============================================================================
@@ -71,7 +70,6 @@ pub struct EndpointStats {
     pub avg_response_time_ms: f64,
     pub error_rate: f64,
     pub score: f64,
-    // pub block_height: Option<u64>,
     pub request_count: u64,
     pub error_count: u64,
 }
@@ -81,7 +79,7 @@ pub struct EndpointStats {
 
 /// Context for unary RPC execution (HTTP/2)
 pub struct UnaryContext {
-    /// The RPC provider (concretely RootProvider<Ethereum, Http<Client>>)
+    /// The RPC provider (concretely RootProvider<Ethereum>)
     provider: Arc<dyn Provider + Send + Sync>,
 
     /// Shared metrics reference (for lock-free recording)
@@ -161,6 +159,7 @@ impl RpcClient {
     /// - Total latency: <100μs typical
     ///
     /// # Arguments
+    /// * `actor` - `SelectActor` enum, seperate providers for `broadcast` and `validator` actor.
     /// * `chain_id` - Target chain for the operation
     /// * `sticky_index` - Optional sticky session index for endpoint affinity
     /// * `timeout` - Maximum time to wait for permit acquisition
@@ -168,7 +167,7 @@ impl RpcClient {
     /// # Example
     /// ```ignore
     /// let (ctx, permit) = client
-    ///     .acquire_unary_context(&chain_id, Some(sticky_index), Duration::from_secs(5))
+    ///     .acquire_unary_context(SelectActor::Broadcast, &chain_id, Some(sticky_index), Duration::from_secs(5))
     ///     .await?;
     ///
     /// let result = ctx.provider().send_raw_transaction(&signed_tx).await;
@@ -176,11 +175,12 @@ impl RpcClient {
     /// ```
     pub async fn acquire_unary_context(
         &self,
+        actor: SelectActor,
         chain_id: &ChainId,
         sticky_index: Option<usize>,
-        timeout: Duration,
     ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
         // Acquire permit with timeout
+        let timeout = self.default_timeout;
         let permit = tokio::time::timeout(timeout, Arc::clone(&self.semaphore).acquire_owned())
             .await
             .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
@@ -189,7 +189,7 @@ impl RpcClient {
         // Get unary pool (lock-free DashMap read)
         let pool = self
             .provider_stack
-            .get_unary_pool(*chain_id)
+            .get_pool(actor.clone(), *chain_id)
             .ok_or_else(|| RpcError::NoEndpointsAvailable {
                 chain_id: *chain_id,
             })?;
@@ -216,7 +216,7 @@ impl RpcClient {
             endpoint_index = choice.index(),
             endpoint_id = %endpoint_id,
             sticky_requested = ?sticky_index,
-            "Acquired unary context"
+            "Acquired unary context for {:?}", actor
         );
 
         let ctx = UnaryContext {
@@ -230,23 +230,13 @@ impl RpcClient {
         Ok((ctx, permit))
     }
 
-    /// Convenience method to acquire unary context with default timeout
-    pub async fn acquire_unary(
-        &self,
-        chain_id: &ChainId,
-        sticky_index: Option<usize>,
-    ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
-        self.acquire_unary_context(chain_id, sticky_index, self.default_timeout)
-            .await
-    }
-
     // ========================================================================
-    // Batch Operations (High-Throughput)
+    // Call Operations
 
-    /// Executes multiple unary RPC calls with automatic load balancing
+    /// Executes unary RPC calls with automatic load balancing
     ///
-    /// Optimized for batch transaction submission or bulk queries.
-    /// Distributes load across endpoints automatically using weighted selection.
+    /// Acquires a provider context from the weighted pool, executes the operation,
+    /// and records success/failure metrics automatically.
     ///
     /// # Type Parameters
     /// * `F` - Closure type taking provider and returning a future
@@ -255,116 +245,71 @@ impl RpcClient {
     ///
     /// # Example
     /// ```ignore
-    /// let operations = vec![
-    ///     (ChainId::from(1), Some(index1), |provider| async move {
-    ///         provider.send_raw_transaction(&tx1).await
-    ///     }),
-    ///     (ChainId::from(1), None, |provider| async move {
-    ///         provider.get_block_number().await
-    ///     }),
-    /// ];
-    ///
-    /// let results = client.execute_unary_batch(operations, Duration::from_secs(10)).await;
+    /// let result = client
+    ///     .execute_unary(
+    ///         ChainId::from(1),
+    ///         None,
+    ///         Duration::from_secs(10),
+    ///         |provider| async move { provider.get_block_number().await },
+    ///     )
+    ///     .await;
     /// ```
-    pub async fn execute_unary_batch<F, Fut, R>(
+    pub async fn execute_unary<F, Fut, R>(
         self: Arc<Self>,
-        operations: Vec<(ChainId, Option<usize>, F)>,
-        timeout: Duration,
-    ) -> Vec<Result<R, RpcError>>
+        actor: SelectActor,
+        chain_id: ChainId,
+        sticky_index: Option<usize>,
+        operation: F,
+    ) -> Result<R, RpcError>
     where
-        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send + 'static,
+        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send,
         Fut: Future<Output = Result<R, TransportError>> + Send,
-        R: Send + 'static,
+        R: Send,
     {
-        let mut join_set = JoinSet::new();
+        let start = Instant::now();
 
-        for (chain_id, sticky_index, operation) in operations {
-            let client_ref = Arc::clone(&self);
+        match self
+            .acquire_unary_context(actor, &chain_id, sticky_index)
+            .await
+        {
+            Ok((ctx, permit)) => {
+                let provider = ctx.provider();
 
-            join_set.spawn(async move {
-                let start = Instant::now();
-
-                match client_ref
-                    .acquire_unary_context(&chain_id, sticky_index, timeout)
-                    .await
-                {
-                    Ok((ctx, permit)) => {
-                        let provider = ctx.provider();
-
-                        match operation(provider).await {
-                            Ok(result) => {
-                                ctx.record_success(start.elapsed());
-                                drop(permit);
-                                Ok(result)
-                            }
-                            Err(e) => {
-                                ctx.record_failure();
-                                drop(permit);
-                                Err(RpcError::TransportError(e.to_string()))
-                            }
-                        }
+                match operation(provider).await {
+                    Ok(result) => {
+                        ctx.record_success(start.elapsed());
+                        drop(permit);
+                        Ok(result)
                     }
-                    Err(e) => Err(e),
-                }
-            });
-        }
-
-        let mut results = Vec::with_capacity(join_set.len());
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(return_result) => results.push(return_result),
-                Err(err) => {
-                    error!(error = %err, "Batch operation task panicked");
-                    results.push(Err(RpcError::TransportError(format!(
-                        "Batch task panicked: {}",
-                        err
-                    ))));
+                    Err(e) => {
+                        ctx.record_failure();
+                        drop(permit);
+                        Err(RpcError::TransportError(e.to_string()))
+                    }
                 }
             }
+            Err(e) => Err(e),
         }
-
-        results
-    }
-
-    /// Executes parallel unary operations across multiple chains
-    ///
-    /// Simplified API when you don't need sticky session control per operation.
-    pub async fn execute_parallel_unary<F, Fut, R>(
-        self: Arc<Self>,
-        chain_ops: Vec<(ChainId, F)>,
-        timeout: Duration,
-    ) -> Vec<Result<R, RpcError>>
-    where
-        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<R, TransportError>> + Send,
-        R: Send + 'static,
-    {
-        let operations: Vec<_> = chain_ops
-            .into_iter()
-            .map(|(chain_id, op)| (chain_id, None, op))
-            .collect();
-
-        self.execute_unary_batch(operations, timeout).await
     }
 
     // ========================================================================
     // Registry Management
 
     /// Registers a chain with its unary endpoint pool
-    pub fn register_unary_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
-        self.provider_stack.register_unary_chain(chain_id, pool);
+    pub fn register_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
+        self.provider_stack.register_chain(chain_id, pool);
         self.stats_cache.remove(&chain_id); // Invalidate cache
         debug!(chain_id = %chain_id, "Registered unary chain");
     }
 
-    /// Gets the number of registered chains with unary endpoints
-    pub fn registered_unary_chain_count(&self) -> usize {
-        self.provider_stack.unary_chain_count()
+    /// Gets the number of registered chains for broadcast actor.
+    pub fn registered_broadcast_chain_count(&self) -> usize {
+        self.provider_stack.broadcast_chain_count()
     }
 
-    /// Gets total registered chains
-    pub fn total_registered_chains(&self) -> usize {
-        self.provider_stack.unary_chain_count()
+    /// Gets the number of registered chains for validator actor.
+    pub fn registered_validator_chain_count(&self) -> usize {
+        self.provider_stack.validator_chain_count()
     }
 
     // ========================================================================
@@ -373,7 +318,11 @@ impl RpcClient {
     /// Gets endpoint statistics for a chain's unary endpoints with caching
     ///
     /// Returns cached data if <1s old to reduce lock contention.
-    pub async fn get_unary_endpoint_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
+    pub async fn get_unary_endpoint_stats(
+        &self,
+        actor: SelectActor,
+        chain_id: &ChainId,
+    ) -> Option<Vec<EndpointStats>> {
         // Check cache first
         if let Some(entry) = self.stats_cache.get(chain_id) {
             let (stats, timestamp) = entry.value();
@@ -383,7 +332,7 @@ impl RpcClient {
         }
 
         // Fetch fresh data from unary pool
-        let pool = self.provider_stack.get_unary_pool(*chain_id)?;
+        let pool = self.provider_stack.get_pool(actor, *chain_id)?;
         let snapshots = pool.endpoints_metrics().await;
 
         let stats: Vec<EndpointStats> = snapshots
@@ -408,9 +357,13 @@ impl RpcClient {
     }
 
     /// Force refresh of cached stats for a chain
-    pub async fn refresh_stats(&self, chain_id: &ChainId) -> Option<Vec<EndpointStats>> {
+    pub async fn refresh_stats(
+        &self,
+        actor: SelectActor,
+        chain_id: &ChainId,
+    ) -> Option<Vec<EndpointStats>> {
         self.stats_cache.remove(chain_id);
-        self.get_unary_endpoint_stats(chain_id).await
+        self.get_unary_endpoint_stats(actor, chain_id).await
     }
 
     /// Gets current semaphore availability
@@ -447,10 +400,8 @@ impl RpcClient {
         }
 
         let provider = ProviderBuilder::new().connect_http(url);
-
         Ok(Arc::new(provider))
     }
-
 }
 
 // ============================================================================
