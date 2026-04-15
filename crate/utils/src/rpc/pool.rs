@@ -11,7 +11,7 @@ use std::{
     fmt::Debug,
     sync::{
         Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::Instant,
 };
@@ -35,39 +35,67 @@ pub type EndpointRegistry = Arc<DashMap<ChainId, Arc<EndpointPool>>>;
 // ============================================================================
 // Provider Stack
 
-/// Registry stack for unary (HTTP/2) RPC operations
+/// Registry stack for unary (HTTP/2) RPC operations.
 ///
 /// Architecture:
-/// - `unary`: HTTP/2 connection pools for stateless request-response operations
+/// `HTTP/2` connection pools for stateless request-response operations.
+/// manages registries for `broadcast` and `validator` actors simultanously, for consistent operations.
 #[derive(Clone)]
 pub struct RpcProviderStack {
-    /// Unary registry: HTTP/2 connection pools per chain
-    pub unary: EndpointRegistry,
+    broadcast: EndpointRegistry,
+    validator: EndpointRegistry,
 }
 
 impl RpcProviderStack {
     /// Creates new stack with unary registry
     pub fn new() -> Self {
         Self {
-            unary: Arc::new(DashMap::new()),
+            broadcast: Arc::new(DashMap::new()),
+            validator: Arc::new(DashMap::new()),
         }
     }
 
-    /// Gets pool for unary operations (HTTP/2)
-    pub fn get_unary_pool(&self, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
-        self.unary
-            .get(&chain_id)
-            .map(|entry| Arc::clone(entry.value()))
+    /// Gets pools for unary operations (HTTP/2).
+    /// 
+    /// `ActorId`: used as indentifier to index the actor pools
+    /// 1. broadcast actor: 0
+    /// 2. validator actor: 1
+    pub fn get_pool(
+        &self,
+        actor_id: usize,
+        chain_id: ChainId,
+    ) -> Option<Arc<EndpointPool>> {
+        match actor_id {
+            0 => {
+                self
+                .broadcast
+                .get(&chain_id)
+                .map(|entry| Arc::clone(entry.value()))
+            }
+            1 => {
+                self
+                .validator
+                .get(&chain_id)
+                .map(|entry| Arc::clone(entry.value()))
+            }
+            _ => panic!("RpcProviderStack: invalid actor id")
+        }
     }
 
-    /// Registers a chain with its unary endpoint pool
-    pub fn register_unary_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
-        self.unary.insert(chain_id, pool);
+    /// Registers a chain with its unary endpoint pool (same endpoint is registered for both actors for consistency)
+    pub fn register_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
+        self.broadcast.insert(chain_id, Arc::clone(&pool));
+        self.validator.insert(chain_id, Arc::clone(&pool));
     }
 
-    /// Gets total number of chains with unary endpoints
-    pub fn unary_chain_count(&self) -> usize {
-        self.unary.len()
+    /// Gets total number of chains in broadcast_registry
+    pub fn broadcast_chain_count(&self) -> usize {
+        self.broadcast.len()
+    }
+
+    /// Gets total number of chains in validator_registry
+    pub fn validator_chain_count(&self) -> usize {
+        self.validator.len()
     }
 }
 
@@ -100,9 +128,6 @@ pub struct EndpointPool {
 
     /// Last cache update timestamp (seconds since epoch)
     cache_timestamp: AtomicU64,
-
-    /// Round-robin counter for uniform distribution strategy
-    round_robin_counter: AtomicUsize,
 }
 
 /// Single endpoint entry with shared ownership for unary operations
@@ -149,7 +174,6 @@ impl EndpointPool {
             endpoints: RwLock::new(Vec::with_capacity(DEFAULT_POOL_CAPACITY)),
             healthy_cache: RwLock::new(Vec::new()),
             cache_timestamp: AtomicU64::new(0),
-            round_robin_counter: AtomicUsize::new(0),
         }
     }
 
@@ -222,7 +246,6 @@ impl EndpointPool {
     /// # Performance
     /// - Weighted selection: O(n) with lock-free metric reads
     /// - Sticky session: O(1) with index-based lookup
-    /// - Round-robin: O(1) atomic increment
     pub async fn select_endpoint(
         &self,
         strategy: &LoadBalancingStrategy,
@@ -234,7 +257,6 @@ impl EndpointPool {
             LoadBalancingStrategy::StickySession { sticky_index } => {
                 self.select_by_sticky_session(*sticky_index).await
             }
-            LoadBalancingStrategy::RoundRobin => self.select_round_robin().await,
         }
     }
 
@@ -331,27 +353,6 @@ impl EndpointPool {
         self.select_by_weighted_score().await
     }
 
-    /// Simple round-robin for uniform distribution
-    ///
-    /// Uses atomic increment for lock-free coordination across threads.
-    async fn select_round_robin(&self) -> Option<LoadBalancerChoice> {
-        let endpoints = self.endpoints.read().await;
-
-        if endpoints.is_empty() {
-            return None;
-        }
-
-        // Get next index atomically
-        let idx = self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % endpoints.len();
-        let entry = endpoints.get(idx)?;
-
-        Some(LoadBalancerChoice::new(
-            entry.provider(),
-            entry.metrics(),
-            idx,
-        ))
-    }
-
     /// Circuit breaker recovery selection
     ///
     /// Attempts to find endpoints where circuit breaker has expired.
@@ -420,17 +421,11 @@ impl EndpointPool {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadBalancingStrategy {
-    /// Weighted by performance score (best for general queries)
     /// Uses response time and health metrics for intelligent selection
     WeightedLeastResponseTime,
 
-    /// Sticky session based on endpoint index (best for transactions)
-    /// Maintains affinity to ensure consistent mempool view
+    /// Sticky session based on endpoint index (best for nonce consistency)
     StickySession { sticky_index: usize },
-
-    /// Uniform distribution (best for cacheable reads)
-    /// Simple round-robin across all healthy endpoints
-    RoundRobin,
 }
 
 impl LoadBalancingStrategy {
@@ -444,12 +439,6 @@ impl LoadBalancingStrategy {
     #[inline]
     pub fn sticky(sticky_index: usize) -> Self {
         Self::StickySession { sticky_index }
-    }
-
-    /// Creates a round-robin strategy
-    #[inline]
-    pub fn round_robin() -> Self {
-        Self::RoundRobin
     }
 }
 
