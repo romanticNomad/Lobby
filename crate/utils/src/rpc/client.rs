@@ -81,9 +81,6 @@ pub struct RpcClient {
 
     /// Cached stats for monitoring (reduces lock contention)
     stats_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
-
-    /// Default timeout for operations
-    default_timeout: Duration,
 }
 
 // ============================================================================
@@ -99,19 +96,7 @@ impl RpcClient {
         Self {
             provider_stack,
             stats_cache: Arc::new(DashMap::new()),
-            default_timeout: Duration::from_millis(DEFAULT_OPERATION_TIMEOUT_MS),
         }
-    }
-
-    /// Creates a new RPC client wrapped in Arc for shared ownership
-    pub fn new_arc(provider_stack: RpcProviderStack) -> Arc<Self> {
-        Arc::new(Self::new(provider_stack))
-    }
-
-    /// Sets the default timeout for operations
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.default_timeout = timeout;
-        self
     }
 
     // ========================================================================
@@ -144,9 +129,9 @@ impl RpcClient {
         actor: SelectActor,
         chain_id: &ChainId,
         sticky_index: Option<usize>,
+        timeout: Duration,
     ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
         // Acquire permit with timeout
-        let timeout = self.default_timeout;
         let permit = self.provider_stack.get_semaphore(timeout, &actor).await?;
 
         // Get unary pool (lock-free DashMap read)
@@ -218,21 +203,21 @@ impl RpcClient {
     ///     .await;
     /// ```
     pub async fn execute_unary<F, Fut, R>(
-        self: Arc<Self>,
+        &self,
         actor: SelectActor,
         chain_id: ChainId,
         sticky_index: Option<usize>,
+        timeout: Duration,
         operation: F,
     ) -> Result<R, RpcError>
     where
-        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut + Send,
-        Fut: Future<Output = Result<R, TransportError>> + Send,
-        R: Send,
+        F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut,
+        Fut: Future<Output = Result<R, TransportError>>,
     {
         let start = Instant::now();
 
         match self
-            .acquire_unary_context(actor, &chain_id, sticky_index)
+            .acquire_unary_context(actor, &chain_id, sticky_index, timeout)
             .await
         {
             Ok((ctx, permit)) => {
