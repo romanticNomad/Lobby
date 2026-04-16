@@ -95,9 +95,6 @@ pub struct EndpointMetrics {
     /// Last success timestamp (atomic, stores duration since epoch as millis)
     last_success_at: AtomicU64,
 
-    /// Current block height
-    // block_height: AtomicU64,
-
     /// Circuit breaker expiry (atomic, stores millis since epoch)
     circuit_breaker_until: AtomicU64,
 
@@ -127,7 +124,6 @@ impl Clone for EndpointMetrics {
             error_count: AtomicU64::new(self.error_count.load(Ordering::Relaxed)),
             request_count: AtomicU64::new(self.request_count.load(Ordering::Relaxed)),
             last_success_at: AtomicU64::new(self.last_success_at.load(Ordering::Relaxed)),
-            // block_height: AtomicU64::new(self.block_height.load(Ordering::Relaxed)),
             circuit_breaker_until: AtomicU64::new(
                 self.circuit_breaker_until.load(Ordering::Relaxed),
             ),
@@ -142,7 +138,6 @@ impl Clone for EndpointMetrics {
 }
 
 impl EndpointMetrics {
-
     /// Creates new endpoint metrics
     pub fn new(id: String, url: String) -> Self {
         let degraded = DEGRADED_THRESHOLD;
@@ -157,7 +152,6 @@ impl EndpointMetrics {
             error_count: AtomicU64::new(0),
             request_count: AtomicU64::new(0),
             last_success_at: AtomicU64::new(0),
-            // block_height: AtomicU64::new(0),
             circuit_breaker_until: AtomicU64::new(0),
             circuit_breaker_attempts: AtomicU32::new(0),
             window_epoch: AtomicU64::new(Instant::now().elapsed().as_millis() as u64),
@@ -169,7 +163,7 @@ impl EndpointMetrics {
     // ========================================================================
     // Managing error_thresholds
 
-    /// DEFAULT VALUES: degraded -> 0.15; unhealthy -> 0.40
+    /// DEFAULT_VALUE for unary operations: degraded -> 0.15; unhealthy -> 0.40
     pub fn set_error_thresholds(&self, degraded: f64, unhealthy: f64) {
         self.degraded_threshold
             .store(degraded.to_bits(), Ordering::Release);
@@ -297,11 +291,6 @@ impl EndpointMetrics {
         self.update_health_status();
     }
 
-    /// Updates block height (atomic)
-    // pub fn update_block_height(&self, height: u64) {
-    //     self.block_height.store(height, Ordering::Release);
-    // }
-
     // ========================================================================
     // Health Management
 
@@ -422,7 +411,6 @@ impl EndpointMetrics {
             avg_response_time_ms: self.average_response_time_ms(),
             error_rate: self.error_rate(),
             score: self.load_balancing_score(),
-            // block_height: self.block_height(),
             request_count: self.request_count.load(Ordering::Relaxed),
             error_count: self.error_count.load(Ordering::Relaxed),
         }
@@ -438,7 +426,6 @@ pub struct EndpointMetricsSnapshot {
     pub avg_response_time_ms: f64,
     pub error_rate: f64,
     pub score: f64,
-    // pub block_height: Option<u64>,
     pub request_count: u64,
     pub error_count: u64,
 }
