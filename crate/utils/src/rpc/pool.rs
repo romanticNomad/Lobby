@@ -124,9 +124,14 @@ impl RpcProviderStack {
     }
 
     /// Registers a chain with its unary endpoint pool (same endpoint is registered for both actors for consistency)
-    pub fn register_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
-        self.broadcast.insert(chain_id, Arc::clone(&pool));
-        self.validator.insert(chain_id, Arc::clone(&pool));
+    pub fn register_chain_pool(
+        &self,
+        chain_id: ChainId,
+        broadcast_pool: Arc<EndpointPool>,
+        validator_pool: Arc<EndpointPool>,
+    ) {
+        self.broadcast.insert(chain_id, Arc::clone(&broadcast_pool));
+        self.validator.insert(chain_id, Arc::clone(&validator_pool));
     }
 
     /// Gets total number of chains in broadcast_registry

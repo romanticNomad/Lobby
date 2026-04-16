@@ -244,8 +244,14 @@ impl RpcClient {
     // Registry Management
 
     /// Registers a chain with its unary endpoint pool
-    pub fn register_chain(&self, chain_id: ChainId, pool: Arc<EndpointPool>) {
-        self.provider_stack.register_chain(chain_id, pool);
+    pub fn register_chain(
+        &self,
+        chain_id: ChainId,
+        broadcast_pool: Arc<EndpointPool>,
+        validator_pool: Arc<EndpointPool>,
+    ) {
+        self.provider_stack
+            .register_chain_pool(chain_id, broadcast_pool, validator_pool);
         self.stats_cache.remove(&chain_id); // Invalidate cache
         debug!(chain_id = %chain_id, "Registered unary chain");
     }
