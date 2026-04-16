@@ -3,7 +3,10 @@
 //! Implements pools for HTTP/2 unary operations,
 //! using lock-free metrics and fine-grained async locking for high throughput.
 
-use crate::rpc::metrics::{EndpointMetrics, EndpointMetricsSnapshot};
+use crate::rpc::{
+    RpcError,
+    metrics::{EndpointMetrics, EndpointMetricsSnapshot},
+};
 use alloy::providers::Provider;
 use dashmap::DashMap;
 use primitives::types::ChainId;
@@ -13,9 +16,9 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 
 // ============================================================================
 // Constants
@@ -25,6 +28,10 @@ pub const CACHE_TTL_SECS: u64 = 5;
 
 /// Default capacity for endpoint pools
 const DEFAULT_POOL_CAPACITY: usize = 16;
+
+/// Concurrency limits for actor providers
+const RPC_BROADCAST_CONCURRENCY: usize = 32;
+const RPC_VALIDATOR_CONCURRENCY: usize = 32;
 
 // ============================================================================
 // Type Aliases
@@ -42,10 +49,11 @@ pub enum SelectActor {
     Broadcast,
     Validator,
 }
+
 // ============================================================================
 // Provider Stack
 
-/// Registry stack for unary (HTTP/2) RPC operations.
+/// Registry stack for unary (HTTP/2) RPC operations of actors, along with their semaphore limits.
 ///
 /// Architecture:
 /// `HTTP/2` connection pools for stateless request-response operations.
@@ -53,18 +61,53 @@ pub enum SelectActor {
 #[derive(Clone)]
 pub struct RpcProviderStack {
     broadcast: EndpointRegistry,
+    broadcast_semaphore: Arc<Semaphore>,
     validator: EndpointRegistry,
+    validator_semaphore: Arc<Semaphore>,
 }
 
 impl RpcProviderStack {
     /// Creates new stack with unary registry
     pub fn new() -> Self {
         Self {
-            broadcast: Arc::new(DashMap::new()),
-            validator: Arc::new(DashMap::new()),
+            broadcast: (Arc::new(DashMap::new())),
+            broadcast_semaphore: Arc::new(Semaphore::new(RPC_BROADCAST_CONCURRENCY)),
+            validator: (Arc::new(DashMap::new())),
+            validator_semaphore: Arc::new(Semaphore::new(RPC_VALIDATOR_CONCURRENCY)),
         }
     }
 
+    /// get semaphore permit for a given actor choice
+    pub async fn get_semaphore(
+        &self,
+        timeout: Duration,
+        actor: SelectActor,
+    ) -> Result<OwnedSemaphorePermit, RpcError> {
+        match actor {
+            SelectActor::Broadcast => {
+                let broadcast_permit = tokio::time::timeout(
+                    timeout,
+                    Arc::clone(&self.broadcast_semaphore).acquire_owned(),
+                )
+                .await
+                .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
+                .map_err(|_| RpcError::SemaphoreClosed)?;
+
+                Ok(broadcast_permit)
+            }
+            SelectActor::Validator => {
+                let validator_permit = tokio::time::timeout(
+                    timeout,
+                    Arc::clone(&self.validator_semaphore).acquire_owned(),
+                )
+                .await
+                .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
+                .map_err(|_| RpcError::SemaphoreClosed)?;
+
+                Ok(validator_permit)
+            }
+        }
+    }
     /// Gets pools for unary operations (HTTP/2)
     /// seperatly for `broadcast` and `validator` actor.
     pub fn get_pool(&self, actor: SelectActor, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
