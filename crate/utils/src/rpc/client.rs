@@ -4,6 +4,7 @@
 //! using Alloy-native transports with lock-free metrics and fine-grained async locking.
 
 use crate::rpc::{
+    RpcError,
     metrics::{EndpointHealth, EndpointMetrics},
     pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack, SelectActor},
 };
@@ -14,10 +15,7 @@ use alloy::{
 use dashmap::DashMap;
 use primitives::types::ChainId;
 use std::{fmt::Debug, future::Future, sync::Arc, time::Duration};
-use tokio::{
-    sync::{OwnedSemaphorePermit, Semaphore},
-    time::Instant,
-};
+use tokio::{sync::OwnedSemaphorePermit, time::Instant};
 use tracing::{debug, trace};
 use url::Url;
 
@@ -29,34 +27,6 @@ const STATS_CACHE_TTL_MS: u64 = 1000;
 
 /// Default timeout for provider operations
 const DEFAULT_OPERATION_TIMEOUT_MS: u64 = 30000;
-
-// ============================================================================
-// Error Types
-
-/// Error types for RPC handling
-#[derive(Debug, thiserror::Error, Clone)]
-pub enum RpcError {
-    #[error("Failed to acquire RPC permit within {timeout:?}")]
-    PermitAcquisitionTimeout { timeout: Duration },
-
-    #[error("Semaphore closed")]
-    SemaphoreClosed,
-
-    #[error("No RPC endpoints available for chain {chain_id}")]
-    NoEndpointsAvailable { chain_id: ChainId },
-
-    #[error("All RPC endpoints unhealthy for chain {chain_id}")]
-    AllEndpointsUnhealthy { chain_id: ChainId },
-
-    #[error("Transport error: {0}")]
-    TransportError(String),
-
-    #[error("Provider construction failed: {0}")]
-    ProviderConstructionError(String),
-
-    #[error("Invalid URL: {0}")]
-    InvalidUrl(String),
-}
 
 // ============================================================================
 // Metric State Monitor
@@ -109,9 +79,6 @@ pub struct RpcClient {
     /// Provider stack
     provider_stack: RpcProviderStack,
 
-    /// Global concurrency limiter across all operations
-    semaphore: Arc<Semaphore>,
-
     /// Cached stats for monitoring (reduces lock contention)
     stats_cache: Arc<DashMap<ChainId, (Vec<EndpointStats>, Instant)>>,
 
@@ -128,18 +95,17 @@ impl RpcClient {
     /// # Arguments
     /// * `provider_stack` - Dual-path stack with unary and subscription registries
     /// * `max_concurrent_requests` - Global limit across all chains/endpoints
-    pub fn new(provider_stack: RpcProviderStack, max_concurrent_requests: usize) -> Self {
+    pub fn new(provider_stack: RpcProviderStack) -> Self {
         Self {
             provider_stack,
-            semaphore: Arc::new(Semaphore::new(max_concurrent_requests)),
             stats_cache: Arc::new(DashMap::new()),
             default_timeout: Duration::from_millis(DEFAULT_OPERATION_TIMEOUT_MS),
         }
     }
 
     /// Creates a new RPC client wrapped in Arc for shared ownership
-    pub fn new_arc(provider_stack: RpcProviderStack, max_concurrent_requests: usize) -> Arc<Self> {
-        Arc::new(Self::new(provider_stack, max_concurrent_requests))
+    pub fn new_arc(provider_stack: RpcProviderStack) -> Arc<Self> {
+        Arc::new(Self::new(provider_stack))
     }
 
     /// Sets the default timeout for operations
@@ -181,15 +147,12 @@ impl RpcClient {
     ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
         // Acquire permit with timeout
         let timeout = self.default_timeout;
-        let permit = tokio::time::timeout(timeout, Arc::clone(&self.semaphore).acquire_owned())
-            .await
-            .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
-            .map_err(|_| RpcError::SemaphoreClosed)?;
+        let permit = self.provider_stack.get_semaphore(timeout, &actor).await?;
 
         // Get unary pool (lock-free DashMap read)
         let pool = self
             .provider_stack
-            .get_pool(actor.clone(), *chain_id)
+            .get_pool(&actor, *chain_id)
             .ok_or_else(|| RpcError::NoEndpointsAvailable {
                 chain_id: *chain_id,
             })?;
@@ -332,7 +295,7 @@ impl RpcClient {
         }
 
         // Fetch fresh data from unary pool
-        let pool = self.provider_stack.get_pool(actor, *chain_id)?;
+        let pool = self.provider_stack.get_pool(&actor, *chain_id)?;
         let snapshots = pool.endpoints_metrics().await;
 
         let stats: Vec<EndpointStats> = snapshots
@@ -364,20 +327,6 @@ impl RpcClient {
     ) -> Option<Vec<EndpointStats>> {
         self.stats_cache.remove(chain_id);
         self.get_unary_endpoint_stats(actor, chain_id).await
-    }
-
-    /// Gets current semaphore availability
-    pub fn available_permits(&self) -> usize {
-        self.semaphore.available_permits()
-    }
-
-    /// Gets the total semaphore capacity
-    pub fn semaphore_capacity(&self) -> usize {
-        Arc::clone(&self.semaphore).available_permits()
-            + (self
-                .semaphore
-                .available_permits()
-                .saturating_sub(self.semaphore.available_permits()))
     }
 
     // ========================================================================

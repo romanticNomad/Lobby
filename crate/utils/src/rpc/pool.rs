@@ -81,7 +81,7 @@ impl RpcProviderStack {
     pub async fn get_semaphore(
         &self,
         timeout: Duration,
-        actor: SelectActor,
+        actor: &SelectActor,
     ) -> Result<OwnedSemaphorePermit, RpcError> {
         match actor {
             SelectActor::Broadcast => {
@@ -110,7 +110,7 @@ impl RpcProviderStack {
     }
     /// Gets pools for unary operations (HTTP/2)
     /// seperatly for `broadcast` and `validator` actor.
-    pub fn get_pool(&self, actor: SelectActor, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
+    pub fn get_pool(&self, actor: &SelectActor, chain_id: ChainId) -> Option<Arc<EndpointPool>> {
         match actor {
             SelectActor::Broadcast => self
                 .broadcast
