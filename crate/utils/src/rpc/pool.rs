@@ -4,7 +4,7 @@
 //! using lock-free metrics and fine-grained async locking for high throughput.
 
 use crate::rpc::{
-    RpcError,
+    LobbyRpcError,
     metrics::{EndpointMetrics, EndpointMetricsSnapshot},
 };
 use alloy::providers::Provider;
@@ -82,7 +82,7 @@ impl RpcProviderStack {
         &self,
         timeout: Duration,
         actor: &SelectActor,
-    ) -> Result<OwnedSemaphorePermit, RpcError> {
+    ) -> Result<OwnedSemaphorePermit, LobbyRpcError> {
         match actor {
             SelectActor::Broadcast => {
                 let broadcast_permit = tokio::time::timeout(
@@ -90,8 +90,8 @@ impl RpcProviderStack {
                     Arc::clone(&self.broadcast_semaphore).acquire_owned(),
                 )
                 .await
-                .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
-                .map_err(|_| RpcError::SemaphoreClosed)?;
+                .map_err(|_| LobbyRpcError::PermitAcquisitionTimeout { timeout })?
+                .map_err(|_| LobbyRpcError::SemaphoreClosed)?;
 
                 Ok(broadcast_permit)
             }
@@ -101,8 +101,8 @@ impl RpcProviderStack {
                     Arc::clone(&self.validator_semaphore).acquire_owned(),
                 )
                 .await
-                .map_err(|_| RpcError::PermitAcquisitionTimeout { timeout })?
-                .map_err(|_| RpcError::SemaphoreClosed)?;
+                .map_err(|_| LobbyRpcError::PermitAcquisitionTimeout { timeout })?
+                .map_err(|_| LobbyRpcError::SemaphoreClosed)?;
 
                 Ok(validator_permit)
             }

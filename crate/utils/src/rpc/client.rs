@@ -4,7 +4,7 @@
 //! using Alloy-native transports with lock-free metrics and fine-grained async locking.
 
 use crate::rpc::{
-    RpcError,
+    LobbyRpcError,
     metrics::{EndpointHealth, EndpointMetrics},
     pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack, SelectActor},
 };
@@ -130,7 +130,7 @@ impl RpcClient {
         chain_id: &ChainId,
         sticky_index: Option<usize>,
         timeout: Duration,
-    ) -> Result<(UnaryContext, OwnedSemaphorePermit), RpcError> {
+    ) -> Result<(UnaryContext, OwnedSemaphorePermit), LobbyRpcError> {
         // Acquire permit with timeout
         let permit = self.provider_stack.get_semaphore(timeout, &actor).await?;
 
@@ -138,7 +138,7 @@ impl RpcClient {
         let pool = self
             .provider_stack
             .get_pool(&actor, *chain_id)
-            .ok_or_else(|| RpcError::NoEndpointsAvailable {
+            .ok_or_else(|| LobbyRpcError::NoEndpointsAvailable {
                 chain_id: *chain_id,
             })?;
 
@@ -152,7 +152,7 @@ impl RpcClient {
 
         // Select endpoint
         let choice = pool.select_endpoint(&strategy).await.ok_or_else(|| {
-            RpcError::AllEndpointsUnhealthy {
+            LobbyRpcError::AllEndpointsUnhealthy {
                 chain_id: *chain_id,
             }
         })?;
@@ -209,7 +209,7 @@ impl RpcClient {
         sticky_index: Option<usize>,
         timeout: Duration,
         operation: F,
-    ) -> Result<R, RpcError>
+    ) -> Result<R, LobbyRpcError>
     where
         F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut,
         Fut: Future<Output = Result<R, TransportError>>,
@@ -232,7 +232,7 @@ impl RpcClient {
                     Err(e) => {
                         ctx.record_failure();
                         drop(permit);
-                        Err(RpcError::TransportError(e.to_string()))
+                        Err(LobbyRpcError::TransportError(e.to_string()))
                     }
                 }
             }
@@ -327,13 +327,15 @@ impl RpcClient {
     ///
     /// Uses `ProviderBuilder::connect_http()` which creates a `RootProvider<Ethereum, Http<Client>>`
     /// with hyper-based HTTP/2 via ALPN.
-    pub fn create_unary_provider(url: &str) -> Result<Arc<dyn Provider + Send + Sync>, RpcError> {
+    pub fn create_unary_provider(
+        url: &str,
+    ) -> Result<Arc<dyn Provider + Send + Sync>, LobbyRpcError> {
         let url = Url::parse(url)
-            .map_err(|e| RpcError::InvalidUrl(format!("Failed to parse URL: {}", e)))?;
+            .map_err(|e| LobbyRpcError::InvalidUrl(format!("Failed to parse URL: {}", e)))?;
 
         // Validate scheme
         if url.scheme() != "http" && url.scheme() != "https" {
-            return Err(RpcError::InvalidUrl(format!(
+            return Err(LobbyRpcError::InvalidUrl(format!(
                 "Unary provider requires http:// or https:// scheme, got: {}",
                 url.scheme()
             )));
