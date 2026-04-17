@@ -1,8 +1,5 @@
 use crate::traits::{EthRlpEncode, eth_rlp_append_u256};
-use alloy::{
-    primitives::{Address, B256, U256, bytes::Bytes},
-    providers::Provider,
-};
+use alloy::primitives::{Address, B256, U256, bytes::Bytes};
 use core::convert::TryFrom;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -54,15 +51,6 @@ pub struct Eip1559Transaction {
     pub data: Bytes,
     pub access_list: Vec<(Address, Vec<U256>)>,
 }
-
-// ============================================================
-
-/// Shared RPC provider registry used by both Broadcast and Validator actors.
-///
-/// This is a type alias for a concurrent HashMap (DashMap) that maps ChainId
-/// to an Alloy provider instance.  The provider is wrapped in `Arc` so it can
-/// be cheaply cloned into actor tasks.
-pub type RpcProviderRegistry = Arc<DashMap<ChainId, Arc<dyn Provider + Send + Sync>>>;
 
 // ============================================================
 // client configuration loaded from environment variables and
