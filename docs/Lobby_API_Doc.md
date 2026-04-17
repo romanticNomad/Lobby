@@ -141,7 +141,7 @@ Content-Type: application/json
 ```json
 {
   "jsonrpc": "2.0",
-  "method": "eth_sendTransaction",
+  "method": "eth_sendRawTransaction",
   "params": [{
     "from": "0xYOUR_ADDRESS",
     "to": "0xRECIPIENT_ADDRESS",
@@ -161,7 +161,7 @@ Content-Type: application/json
 | Field | Required | Type | Description |
 |---|---|---|---|
 | `jsonrpc` | ✅ Yes | string | Must be `"2.0"` |
-| `method` | ✅ Yes | string | Must be `"eth_sendTransaction"` |
+| `method` | ✅ Yes | string | Must be `"eth_sendRawTransaction"` |
 | `params` | ✅ Yes | array | Single transaction object |
 | `from` | ✅ Yes | address | Must match API key's bound address |
 | `to` | No | address \| null | Recipient (omit for contract creation) |
@@ -460,7 +460,7 @@ All errors follow the JSON-RPC 2.0 specification:
 | HTTP Status | JSON-RPC Code | Error Type | Action |
 |---|---|---|---|
 | 400 | `-32600` | Invalid JSON-RPC version | Set `jsonrpc` to `"2.0"` |
-| 400 | `-32601` | Unsupported method | Use `"eth_sendTransaction"` |
+| 400 | `-32601` | Unsupported method | Use `"eth_sendRawTransaction"` |
 | 400 | `-32602` | Invalid/missing params | Check required fields and types |
 | 401 | (custom) | Missing auth header | Add `Authorization: Bearer <key>` |
 | 401 | (custom) | Invalid API key format | Check key format: `lobby_live_<token>:<client_id>:<address>` |
@@ -644,7 +644,7 @@ class LobbyClient:
             f"{self.config.base_url}/v1/transactions",
             json={
                 "jsonrpc": "2.0",
-                "method": "eth_sendTransaction",
+                "method": "eth_sendRawTransaction",
                 "params": [{
                     "from": self.config.from_address,
                     "to": to,
@@ -860,7 +860,7 @@ class LobbyClient {
       headers: this.headers,
       body: JSON.stringify({
         jsonrpc: "2.0",
-        method: "eth_sendTransaction",
+        method: "eth_sendRawTransaction",
         params: [{
           from: this.config.fromAddress,
           to: params.to,
@@ -1110,7 +1110,7 @@ impl LobbyClient {
     ) -> Result<String, Box<dyn std::error::Error>> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
-            method: "eth_sendTransaction".to_string(),
+            method: "eth_sendRawTransaction".to_string(),
             params: vec![TransactionParams {
                 from: self.config.from_address.clone(),
                 to: to.to_string(),

@@ -57,7 +57,7 @@ pub async fn submit_transaction(
 ) -> Result<Json<JsonRpcSuccessResponse>, HandlerError> {
     // Parse and validate the JSON-RPC method
 
-    if request.method != "eth_sendTransaction" {
+    if request.method != "eth_sendRawTransaction" {
         return Err(HandlerError::UnsupportedMethod(request.method.clone()));
     }
 

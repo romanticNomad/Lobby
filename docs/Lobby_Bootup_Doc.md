@@ -62,7 +62,7 @@ curl -X POST http://localhost:3000/v1/transactions \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
-    "method": "eth_sendTransaction",
+    "method": "eth_sendRawTransaction",
     "params": [{
       "from": "test_account_from_address",
       "to": "<to_address>",
