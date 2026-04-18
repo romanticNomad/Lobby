@@ -38,9 +38,9 @@ pub mod handle;
 
 use crate::validator::{engine::ValidatorEngine, handle::ValidatorHandle};
 use sqlx::PgPool;
-use std::time::Duration;
+use utils::rpc::RpcClient;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
-use utils::rpc::RpcEndpointRegistry;
 
 // ============================================================
 
@@ -57,22 +57,6 @@ pub struct ValidatorConfig {
     /// Number of block confirmations required before a transaction is
     /// considered definitively included (protection against shallow reorgs).
     required_confirmations: u64,
-
-    /// Number of allowed concurrent RPC calls
-    rpc_concurrency: usize,
-
-    /// Timeout for RPC calls
-    rpc_timeout: Duration,
-}
-
-impl ValidatorConfig {
-    pub fn new(rpc_concurrency: usize, rpc_timeout: Duration) -> Self {
-        Self {
-            rpc_concurrency,
-            rpc_timeout,
-            ..Default::default()
-        }
-    }
 }
 
 impl Default for ValidatorConfig {
@@ -80,9 +64,7 @@ impl Default for ValidatorConfig {
         Self {
             poll_interval: Duration::from_secs(2),
             timeout: Duration::from_secs(300),
-            required_confirmations: 0, // safe value should be >3 for chain reorg protection.
-            rpc_concurrency: 200,
-            rpc_timeout: Duration::from_secs(10),
+            required_confirmations: 0, // hardcoded to 1, safe value should be >3 for chain reorg protection.
         }
     }
 }
@@ -95,12 +77,12 @@ impl Default for ValidatorConfig {
 /// until the last handle is dropped (which closes the mpsc channel).
 pub fn spawn_validator_actor(
     db: PgPool,
-    rpc_registry: RpcEndpointRegistry,
+    provider_client: Arc<RpcClient>,
     validator_config: ValidatorConfig,
     buffer: usize,
 ) -> ValidatorHandle {
     let (tx, rx) = mpsc::channel(buffer);
-    let engine = ValidatorEngine::new(db, validator_config, rpc_registry, rx);
+    let engine = ValidatorEngine::new(db, provider_client, validator_config, rx);
 
     tokio::spawn(async move {
         engine.run().await;
