@@ -1,35 +1,31 @@
-use crate::broadcast::{BroadcastCommand, BroadcastConfig};
+use crate::broadcast::BroadcastCommand;
 use alloy::primitives::Address;
 use primitives::types::{
     BroadcastError, BroadcastOutcome, ChainId, ExecutionId, SignedTransaction, TxHash, TxNonce,
 };
 use sqlx::PgPool;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
-use utils::rpc::{ManagedRpcProviderRegistry, RpcCallContext, RpcEndpointRegistry};
+use utils::rpc::{LoadBalancingStrategy, RpcClient, get_transaction_count, send_raw_transaction};
 
 // =========================================================
 // BroadcastEngine struct declaration with provider details
 
 pub struct BroadcastEngine {
     db: PgPool,
-    config: BroadcastConfig,
-    managed_provider: ManagedRpcProviderRegistry,
+    provider_client: Arc<RpcClient>,
     rx: mpsc::Receiver<BroadcastCommand>,
 }
 
 impl BroadcastEngine {
     pub fn new(
         db: PgPool,
-        provider: RpcEndpointRegistry,
-        broadcast_config: BroadcastConfig,
+        provider_client: Arc<RpcClient>,
         rx: mpsc::Receiver<BroadcastCommand>,
     ) -> Self {
-        let managed_provider =
-            ManagedRpcProviderRegistry::new(provider, broadcast_config.rpc_concurrency).unwrap();
         Self {
             db,
-            config: broadcast_config,
-            managed_provider,
+            provider_client,
             rx,
         }
     }
@@ -40,36 +36,18 @@ impl BroadcastEngine {
         &self,
         chain_id: ChainId,
         from_address: Address,
+        sticky_index: usize,
     ) -> Result<TxNonce, BroadcastError> {
-        // Use sticky session routing for nonce management
-        let (permit, ctx) = self
-            .managed_provider
-            .acquire_permit_and_select(&chain_id, Some(from_address), self.config.rpc_timeout)
+        // configure RPC parameters
+        let client = &self.provider_client;
+        let strategy = LoadBalancingStrategy::StickySession { sticky_index };
+        let timeout = Duration::from_secs(30); // hardcoding semaphore wait limit to 30 sec.
+
+        let result = get_transaction_count(client, chain_id, strategy, from_address, timeout)
             .await
-            .map_err(|_| BroadcastError::MissingProvider { chain_id })?;
+            .map_err(|e| BroadcastError::RpcError(format!("{:?}", e)))?;
 
-        let start = std::time::Instant::now();
-        let nonce_u64 = ctx
-            .provider
-            .get_transaction_count(from_address)
-            .pending() // Use pending to get the most up-to-date nonce
-            .await
-            .map_err(|e| {
-                self.managed_provider
-                    .record_endpoint_failure(&chain_id, &ctx.endpoint_id);
-                BroadcastError::Unexpected {
-                    message: format!("failed to fetch nonce from RPC: {e}"),
-                }
-            })?;
-
-        // Record success for metrics
-        self.managed_provider
-            .record_success(&chain_id, &ctx.endpoint_id, start.elapsed());
-
-        // Permit is dropped here automatically
-        drop(permit);
-
-        Ok(TxNonce(alloy::primitives::U256::from(nonce_u64)))
+        Ok(result)
     }
 }
 
@@ -85,33 +63,12 @@ impl BroadcastEngine {
                     from_address,
                     execution_id,
                     txn,
+                    sticky_index,
                     reply_tx,
                 } => {
-                    // Acquire permit and select endpoint with sticky session
-                    let result = match self
-                        .managed_provider
-                        .acquire_permit_and_select(
-                            &chain_id,
-                            Some(from_address),
-                            self.config.rpc_timeout,
-                        )
-                        .await
-                    {
-                        Ok((permit, ctx)) => {
-                            let result: Result<BroadcastOutcome, BroadcastError> = self
-                                .handle_broadcast(chain_id, from_address, execution_id, txn, ctx)
-                                .await;
-                            drop(permit);
-                            result
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to acquire permit: {:?}", e);
-                            Err(BroadcastError::Unexpected {
-                                message: format!("semaphore error: {:?}", e),
-                            })
-                        }
-                    };
-
+                    let result = self
+                        .handle_broadcast(chain_id, from_address, execution_id, txn, sticky_index)
+                        .await;
                     let _ = reply_tx.send(result);
                 }
             }
@@ -127,12 +84,8 @@ impl BroadcastEngine {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
-        ctx: RpcCallContext,
+        sticky_index: usize,
     ) -> Result<BroadcastOutcome, BroadcastError> {
-        // Track endpoint for metrics
-        let endpoint_id = ctx.endpoint_id.clone();
-        let provider = ctx.provider;
-        let start = std::time::Instant::now();
         // =========================================================
         // setting types for db
 
@@ -228,21 +181,23 @@ impl BroadcastEngine {
         };
 
         // =========================================================
-        // fetching provider and sending transaction
+        // setting up parameters for broadcasting txn ( using eth_sendRawTransaction )
 
-        let send_txn = provider.send_raw_transaction(&txn.rlp).await;
+        let client = Arc::clone(&self.provider_client);
+        let strategy = LoadBalancingStrategy::StickySession { sticky_index };
+        let timeout = Duration::from_secs(30);
+        let signed_txn = txn.rlp;
+
+        let send_txn_result =
+            send_raw_transaction(&client, chain_id, strategy, &signed_txn, timeout)
+                .await
+                .map_err(|e| BroadcastError::RpcError(format!("{:?}", e)));
 
         // =========================================================
         // pattern matching for the broadcasted transaction tracing
 
-        match send_txn {
-            Ok(pending_tx) => {
-                let tx_hash = pending_tx.tx_hash();
-
-                // Record success for metrics
-                self.managed_provider
-                    .record_success(&chain_id, &endpoint_id, start.elapsed());
-
+        match send_txn_result {
+            Ok(txn_hash) => {
                 sqlx::query!(
                     r#"
                     UPDATE broadcast.broadcast_requests
@@ -251,7 +206,7 @@ impl BroadcastEngine {
                     WHERE execution_id = $2
                     AND revision = $3
                     "#,
-                    tx_hash.as_slice(),
+                    txn_hash.as_slice(),
                     execution_id.0.as_bytes().as_slice(),
                     revision,
                 )
@@ -259,14 +214,13 @@ impl BroadcastEngine {
                 .await
                 .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
 
-                Ok(BroadcastOutcome { txn_hash: *tx_hash })
+                Ok(BroadcastOutcome { txn_hash })
             }
 
             Err(err) => {
                 let err_str = err.to_string();
 
                 // None mismatch detected - Query RPC for correct nonce
-
                 if err_str.contains("nonce") || err_str.contains("known transaction") {
                     tracing::debug!(
                         %execution_id,
@@ -277,8 +231,9 @@ impl BroadcastEngine {
                     );
 
                     // Fetch authoritative nonce from RPC and update rejection in Db
-
-                    let nonce_on_chain = self.fetch_current_nonce(chain_id, from_address).await?;
+                    let nonce_on_chain = self
+                        .fetch_current_nonce(chain_id, from_address, sticky_index)
+                        .await?;
 
                     sqlx::query!(
                         r#"
@@ -303,9 +258,7 @@ impl BroadcastEngine {
                 }
 
                 // Other deterministic errors
-                self.managed_provider
-                    .record_endpoint_failure(&chain_id, &endpoint_id);
-
+                
                 sqlx::query!(
                     r#"
                     UPDATE broadcast.broadcast_requests

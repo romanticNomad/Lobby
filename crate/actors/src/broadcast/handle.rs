@@ -15,6 +15,7 @@ pub enum BroadcastCommand {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
+        sticky_index: usize,
         reply_tx: oneshot::Sender<Result<BroadcastOutcome, BroadcastError>>,
     },
 }
@@ -43,6 +44,7 @@ impl Broadcaster for BroadcastHandle {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
+        sticky_index: usize,
     ) -> Result<BroadcastOutcome, BroadcastError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = BroadcastCommand::Broadcast {
@@ -50,6 +52,7 @@ impl Broadcaster for BroadcastHandle {
             from_address,
             execution_id,
             txn,
+            sticky_index,
             reply_tx,
         };
 
