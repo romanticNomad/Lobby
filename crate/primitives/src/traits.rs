@@ -61,6 +61,7 @@ pub trait Broadcaster: Send + Sync {
         from_address: Address,
         execution_id: ExecutionId,
         txn: SignedTransaction,
+        sticky_index: usize,
     ) -> Result<BroadcastOutcome, BroadcastError>;
 }
 
@@ -71,9 +72,9 @@ pub trait Validator: Send + Sync {
     async fn validate(
         &self,
         chain_id: ChainId,
-        from_address: Address,
         execution_id: ExecutionId,
         tx_hash: TxHash,
+        sticky_index: usize,
     ) -> Result<ValidatorOutcome, ValidatorError>;
 }
 
