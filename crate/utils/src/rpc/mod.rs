@@ -3,9 +3,9 @@ mod metrics;
 mod pool;
 
 use crate::rpc::{
-    client::{RpcClient, UnaryContext},
+    client::{RpcExecutionResult, UnaryContext},
     metrics::EndpointMetrics,
-    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack},
+    pool::{EndpointPool, RpcProviderStack},
 };
 use alloy::{
     primitives::{Address, TxHash, U256, bytes::Bytes},
@@ -15,8 +15,9 @@ use primitives::types::{ChainId, TxNonce};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::OwnedSemaphorePermit;
 
-/// Re-export SelectActor for API consumers
-pub use pool::SelectActor;
+/// Re-export APIs Lobby crates
+pub use client::RpcClient;
+pub use pool::{SelectActor, LoadBalancingStrategy};
 
 // ============================================================================
 // Error Types
@@ -186,13 +187,13 @@ pub async fn send_raw_transaction(
     strategy: LoadBalancingStrategy,
     signed_tx: &Bytes,
     timeout: Duration,
-) -> Result<TxHash, LobbyRpcError> {
+) -> Result<RpcExecutionResult<TxHash>, LobbyRpcError> {
     let sticky_index = match strategy {
         LoadBalancingStrategy::StickySession { sticky_index } => Some(sticky_index),
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
     };
 
-    let tx_hash = *client
+    let rpc_execution_result = client
         .execute_unary(
             SelectActor::Broadcast,
             chain_id,
@@ -201,10 +202,11 @@ pub async fn send_raw_transaction(
             |provider| async move { provider.send_raw_transaction(&signed_tx).await },
         )
         .await
-        .map_err(|e| LobbyRpcError::RpcBroadcastError(e.to_string()))?
-        .tx_hash();
+        .map_err(|e| LobbyRpcError::RpcBroadcastError(e.to_string()))?;
 
-    Ok(tx_hash)
+    let tx_hash = rpc_execution_result.result().tx_hash();
+    let index = rpc_execution_result.index();
+    Ok(RpcExecutionResult::new(*tx_hash, index))
 }
 
 // ============================================================================
@@ -246,13 +248,13 @@ pub async fn get_transaction_count(
     strategy: LoadBalancingStrategy,
     from_address: Address,
     timeout: Duration,
-) -> Result<TxNonce, LobbyRpcError> {
+) -> Result<RpcExecutionResult<TxNonce>, LobbyRpcError> {
     let sticky_index = match strategy {
         LoadBalancingStrategy::StickySession { sticky_index } => Some(sticky_index),
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
     };
 
-    let nonce = client
+    let rpc_execution_result = client
         .execute_unary(
             SelectActor::Broadcast,
             chain_id,
@@ -263,7 +265,11 @@ pub async fn get_transaction_count(
         .await
         .map_err(|e| LobbyRpcError::NonceFetchError(e.to_string()))?;
 
-    Ok(TxNonce(U256::from(nonce)))
+    let nonce_u64 = rpc_execution_result.result();
+    let tx_nonce = TxNonce(U256::from(*nonce_u64));
+    let index = rpc_execution_result.index();
+
+    Ok(RpcExecutionResult::new(tx_nonce, index))
 }
 
 // ============================================================================
@@ -307,13 +313,13 @@ pub async fn get_transaction_reciept(
     strategy: LoadBalancingStrategy,
     tx_hash: TxHash,
     timeout: Duration,
-) -> Result<Option<TransactionReceipt>, LobbyRpcError> {
+) -> Result<RpcExecutionResult<Option<TransactionReceipt>>, LobbyRpcError> {
     let sticky_index = match strategy {
         LoadBalancingStrategy::StickySession { sticky_index } => Some(sticky_index),
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
     };
 
-    client
+    let rpc_execution_result = client
         .execute_unary(
             SelectActor::Validator,
             chain_id,
@@ -322,7 +328,9 @@ pub async fn get_transaction_reciept(
             |provider| async move { provider.get_transaction_receipt(tx_hash).await },
         )
         .await
-        .map_err(|e| LobbyRpcError::ReceiptFetchFailed(e.to_string()))
+        .map_err(|e| LobbyRpcError::ReceiptFetchFailed(e.to_string()))?;
+
+    Ok(rpc_execution_result)
 }
 
 // ============================================================================
@@ -359,13 +367,13 @@ pub async fn get_block_number(
     chain_id: ChainId,
     strategy: LoadBalancingStrategy,
     timeout: Duration,
-) -> Result<U256, LobbyRpcError> {
+) -> Result<RpcExecutionResult<U256>, LobbyRpcError> {
     let sticky_index = match strategy {
         LoadBalancingStrategy::StickySession { sticky_index } => Some(sticky_index),
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
     };
 
-    let block_num = client
+    let rpc_execution_result = client
         .execute_unary(
             SelectActor::Validator,
             chain_id,
@@ -376,7 +384,10 @@ pub async fn get_block_number(
         .await
         .map_err(|e| LobbyRpcError::BlockNotFound(e.to_string()))?;
 
-    Ok(U256::from(block_num))
+    let block_num = rpc_execution_result.result();
+    let index = rpc_execution_result.index();
+
+    Ok(RpcExecutionResult::new(U256::from(*block_num), index))
 }
 
 // ============================================================================
