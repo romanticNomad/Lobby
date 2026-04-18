@@ -186,7 +186,7 @@ impl BroadcastEngine {
         let client = Arc::clone(&self.provider_client);
         let strategy = LoadBalancingStrategy::StickySession { sticky_index };
         let timeout = Duration::from_secs(30);
-        let signed_txn = txn.rlp;
+        let signed_txn = txn.rlp();
 
         let send_txn_result =
             send_raw_transaction(&client, chain_id, strategy, &signed_txn, timeout)
@@ -253,12 +253,12 @@ impl BroadcastEngine {
 
                     return Err(BroadcastError::NonceTooLow {
                         nonce_on_chain,
-                        attempted_nonce: txn.with_nonce,
+                        attempted_nonce: txn.with_nonce(),
                     });
                 }
 
                 // Other deterministic errors
-                
+
                 sqlx::query!(
                     r#"
                     UPDATE broadcast.broadcast_requests
