@@ -1,5 +1,6 @@
 use primitives::types::{BroadcastError, LocalError, RelayHostError, ValidatorError};
 use thiserror::Error;
+use utils::rpc::LobbyRpcError;
 
 // ============================================================
 // Orchestrator (Cortex) erros
@@ -15,6 +16,14 @@ pub enum CortexError {
     /// layer (i.e. return HTTP 400 / 429 to the DApp).
     #[error("pipeline semaphore timed out after {timeout_ms}ms — server is overloaded")]
     BackpressureTimeout { timeout_ms: u64 },
+
+    /// Semaphore found closed, or the caller timed out
+    #[error("EndpointPool busy or curropted: {0}")]
+    EndpointPoolFailed(LobbyRpcError),
+
+    /// netwrok congestion may have led to no healthy RPC provider being available
+    #[error("No healthy RPC provider available: {0}")]
+    NoHealthyRpcProvider(LobbyRpcError),
 
     /// error statement is self explainatory of the purpose
     #[error("relay-host rejected or failed to record the transaction after retries: {0}")]
@@ -73,6 +82,8 @@ impl CortexError {
     pub fn stage(&self) -> &'static str {
         match self {
             Self::BackpressureTimeout { .. } => "backpressure",
+            Self::EndpointPoolFailed(_) => "rpc_semaphore_permit",
+            Self::NoHealthyRpcProvider(_) => "acquire_healthy_endpoint",
             Self::RelayHost(_) => "relay_host",
             Self::NonceReservation(_) => "nonce_reserve",
             Self::NonceResolve(_) => "nonce_resolve",

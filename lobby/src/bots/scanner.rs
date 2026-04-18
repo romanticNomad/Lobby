@@ -6,9 +6,9 @@ use primitives::{
     types::{ChainId, ExecutionId, PipelineStatus},
 };
 use sqlx::PgPool;
+use utils::rpc::RpcClient;
 use std::{sync::Arc, time::Duration};
 use tokio::time::interval;
-use utils::rpc::RpcEndpointRegistry;
 use uuid::Uuid;
 
 // ============================================================
@@ -29,7 +29,7 @@ struct TimedOutTransaction {
 /// It runs continuously, scanning every 30 seconds for up to 100 timed-out
 /// transactions, and updates both the database and StatusRegistry when a
 /// transaction is found on-chain.
-pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcEndpointRegistry) {
+pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: Arc<RpcClient>) {
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(30));
 
@@ -49,7 +49,7 @@ pub fn spawn_scanner_bot(db: PgPool, state: StatusRegistry, rpc: RpcEndpointRegi
 async fn scanner_handler(
     db: &PgPool,
     state: &StatusRegistry,
-    rpc: &RpcEndpointRegistry,
+    rpc: Arc<RpcClient>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let timed_out_txn: Vec<TimedOutTransaction> = fetch_timed_out_txn(&db).await?;
 
@@ -134,7 +134,7 @@ async fn process_chain(
     txns: Vec<TimedOutTransaction>,
     db: &PgPool,
     state: &StatusRegistry,
-    rpc: &RpcEndpointRegistry,
+    rpc: Arc<RpcClient>,
 ) {
     tracing::debug!(
         "tracing_bot: processing {} txn for chain_id {}",

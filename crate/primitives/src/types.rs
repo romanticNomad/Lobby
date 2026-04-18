@@ -213,8 +213,24 @@ impl fmt::Display for TxNonce {
 
 #[derive(Clone, Debug)]
 pub struct SignedTransaction {
-    pub rlp: Bytes,
-    pub with_nonce: TxNonce,
+    rlp: Bytes,
+    with_nonce: TxNonce,
+}
+
+impl SignedTransaction {
+    pub fn new(rlp: Bytes, with_nonce: TxNonce) -> Self {
+        Self { rlp, with_nonce }
+    }
+
+    #[inline]
+    pub fn rlp(&self) -> &Bytes {
+        &self.rlp
+    }
+
+    #[inline]
+    pub fn with_nonce(&self) -> TxNonce {
+        self.with_nonce
+    }
 }
 
 // ============================================================
@@ -371,9 +387,9 @@ pub enum BroadcastError {
         nonce_on_chain: TxNonce,
         attempted_nonce: TxNonce,
     },
-    /// RPC connection timedout
-    #[error("RPC connection timedout: {0}")]
-    RpcConnectionError(String),
+    /// RPC related failiures
+    #[error("Rpc Failiure: {0}")]
+    RpcError(String),
 }
 
 #[derive(Debug, Error)]
@@ -390,9 +406,9 @@ pub enum ValidatorError {
     /// fallback internal code error
     #[error("internal error: {0}")]
     Internal(String),
-    /// RPC connection timedout
-    #[error("RPC connection timedout: {0}")]
-    RpcConnectionError(String),
+    /// RPC related failiures
+    #[error("Rpc Failiure: {0}")]
+    RpcError(String),
 }
 
 // ============================================================

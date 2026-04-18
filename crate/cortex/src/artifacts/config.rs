@@ -47,10 +47,7 @@ pub struct CortexConfig {
     pub validator_shards: usize,
     pub actor_buffer: usize,
     pub pipeline_concurrency: usize,
-    pub rpc_broadcast_concurrency: usize,
-    pub rpc_validator_concurrecny: usize,
     pub pipeline_semaphore_timeout: Duration,
-    pub rpc_semaphore_timeout: Duration,
     pub retry: RetryConfig,
 }
 
@@ -65,15 +62,9 @@ impl CortexConfig {
             validator_shards: parse_env("VALIDATOR_SHARDS", 17)?,
             actor_buffer: parse_env("ACTOR_BUFFER_SIZE", 256)?,
             pipeline_concurrency: parse_env("PIPELINE_CONCURRENCY", 200)?,
-            rpc_broadcast_concurrency: parse_env("RPC_BROADCAST_CONCURRENCY", 100)?,
-            rpc_validator_concurrecny: parse_env("RPC_VALIDATOR_CONCURRENCY", 400)?,
             pipeline_semaphore_timeout: Duration::from_millis(parse_env(
                 "PIPELINE_SEMAPHORE_TIMEOUT_MS",
                 5_000u64,
-            )?),
-            rpc_semaphore_timeout: Duration::from_millis(parse_env(
-                "RPC_SEMAPHORE_TIMEOUT_MS",
-                10_000u64,
             )?),
             retry: RetryConfig::default(),
         })

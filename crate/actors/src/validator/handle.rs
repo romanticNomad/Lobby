@@ -1,4 +1,3 @@
-use alloy::primitives::Address;
 use async_trait::async_trait;
 use primitives::{
     traits::Validator,
@@ -11,9 +10,9 @@ use tokio::sync::{mpsc, oneshot};
 pub enum ValidatorCommand {
     Validate {
         chain_id: ChainId,
-        from_address: Address,
         execution_id: ExecutionId,
         tx_hash: TxHash,
+        sticky_index: usize,
         reply_tx: oneshot::Sender<Result<ValidatorOutcome, ValidatorError>>,
     },
 }
@@ -32,22 +31,23 @@ impl ValidatorHandle {
 }
 
 // ============================================================
+// Implementation of Validator trait for ValidatorHandle
 
 #[async_trait]
 impl Validator for ValidatorHandle {
     async fn validate(
         &self,
         chain_id: ChainId,
-        from_address: Address,
         execution_id: ExecutionId,
         tx_hash: TxHash,
+        sticky_index: usize,
     ) -> Result<ValidatorOutcome, ValidatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let cmd = ValidatorCommand::Validate {
             chain_id,
-            from_address,
             execution_id,
             tx_hash,
+            sticky_index,
             reply_tx,
         };
 

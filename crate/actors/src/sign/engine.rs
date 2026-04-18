@@ -144,7 +144,7 @@ impl SignEngine {
                     "#,
                     execution_id.0.as_bytes().as_slice(),
                     revision,
-                    signed_tx.rlp.as_ref(),
+                    signed_tx.rlp().as_ref(),
                 )
                 .execute(&self.db)
                 .await

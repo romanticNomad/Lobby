@@ -3,9 +3,8 @@ mod metrics;
 mod pool;
 
 use crate::rpc::{
-    client::{RpcClient, UnaryContext},
     metrics::EndpointMetrics,
-    pool::{EndpointPool, LoadBalancingStrategy, RpcProviderStack},
+    pool::{EndpointPool, RpcProviderStack},
 };
 use alloy::{
     primitives::{Address, TxHash, U256, bytes::Bytes},
@@ -15,8 +14,9 @@ use primitives::types::{ChainId, TxNonce};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::OwnedSemaphorePermit;
 
-/// Re-export SelectActor for API consumers
-pub use pool::SelectActor;
+/// Re-export APIs Lobby crates
+pub use client::{RpcClient, UnaryContext};
+pub use pool::{LoadBalancingStrategy, SelectActor};
 
 // ============================================================================
 // Error Types
@@ -172,7 +172,7 @@ pub async fn build_rpc_client() -> Result<RpcClient, LobbyRpcError> {
 ///
 /// # Example
 /// ```ignore
-/// let tx_hash = send_raw_transaction(
+/// let send_txn_result = send_raw_transaction(
 ///     &client,
 ///     ChainId::from(1),
 ///     LoadBalancingStrategy::weighted(),
@@ -184,7 +184,7 @@ pub async fn send_raw_transaction(
     client: &RpcClient,
     chain_id: ChainId,
     strategy: LoadBalancingStrategy,
-    signed_tx: &Bytes,
+    signed_txn: &Bytes,
     timeout: Duration,
 ) -> Result<TxHash, LobbyRpcError> {
     let sticky_index = match strategy {
@@ -192,19 +192,18 @@ pub async fn send_raw_transaction(
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
     };
 
-    let tx_hash = *client
+    let tx_hash = client
         .execute_unary(
             SelectActor::Broadcast,
             chain_id,
             sticky_index,
             timeout,
-            |provider| async move { provider.send_raw_transaction(&signed_tx).await },
+            |provider| async move { provider.send_raw_transaction(&signed_txn).await },
         )
         .await
-        .map_err(|e| LobbyRpcError::RpcBroadcastError(e.to_string()))?
-        .tx_hash();
+        .map_err(|e| LobbyRpcError::RpcBroadcastError(e.to_string()))?;
 
-    Ok(tx_hash)
+    Ok(*tx_hash.tx_hash())
 }
 
 // ============================================================================
@@ -232,7 +231,7 @@ pub async fn send_raw_transaction(
 ///
 /// ## Example
 /// ```ignore
-/// let nonce = get_transaction_count(
+/// let nonce_result = get_transaction_count(
 ///     &client,
 ///     ChainId::from(1),
 ///     LoadBalancingStrategy::sticky(index), // index of endpoint used for broadcasting.
@@ -293,7 +292,7 @@ pub async fn get_transaction_count(
 ///
 /// # Example
 /// ```ignore
-/// let receipt = get_transaction_receipt(
+/// let receipt_result = get_transaction_receipt(
 ///     &client,
 ///     ChainId::from(1),
 ///     LoadBal
@@ -347,7 +346,7 @@ pub async fn get_transaction_reciept(
 ///
 /// # Example
 /// ```ignore
-/// let block_num = get_block_number(
+/// let block_num_result = get_block_number(
 ///     &client,
 ///     ChainId::from(1),
 ///     LoadBalancingStrategy::sticky(index),
@@ -359,7 +358,7 @@ pub async fn get_block_number(
     chain_id: ChainId,
     strategy: LoadBalancingStrategy,
     timeout: Duration,
-) -> Result<U256, LobbyRpcError> {
+) -> Result<u64, LobbyRpcError> {
     let sticky_index = match strategy {
         LoadBalancingStrategy::StickySession { sticky_index } => Some(sticky_index),
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
@@ -376,7 +375,7 @@ pub async fn get_block_number(
         .await
         .map_err(|e| LobbyRpcError::BlockNotFound(e.to_string()))?;
 
-    Ok(U256::from(block_num))
+    Ok(block_num)
 }
 
 // ============================================================================
@@ -390,17 +389,17 @@ pub async fn get_block_number(
 /// - Dynamic sticky index selection based on previous responses
 /// - Batch operations with consistent endpoint affinity
 ///
-/// # Arguments
+/// ## Arguments
 /// * `client` - The RPC client instance
 /// * `actor` - SelectActor::Broadcast or SelectActor::Validator
 /// * `chain_id` - Target chain ID
 /// * `sticky_index` - Optional sticky session index
 /// * `timeout` - Maximum duration to wait for permit acquisition
 ///
-/// # Returns
+/// ## Returns
 /// A tuple of (UnaryContext, OwnedSemaphorePermit) for executing RPC calls
 ///
-/// # Example
+/// ## Example
 /// ```ignore
 /// let (ctx, permit) = acquire_unary_context(
 ///     &client,
@@ -424,6 +423,51 @@ pub async fn acquire_unary_context(
     client
         .acquire_unary_context(actor, chain_id, sticky_index, timeout)
         .await
+}
+
+// ============================================================================
+// Endpoint Index API
+
+/// Fetches the best endpoint index for sticky session initialization.
+///
+/// Designed for the `cortex` (orchestrator) to obtain a stick_index for the
+/// running pipeline.
+/// - uses the `EndpointPool` of `validator` since validator recieves the most traffic.
+/// - obtained sticky_index is consistent over the both actors since they share identicel `EndpointRegistry`s.
+///
+/// ## Arguments
+/// * `client` - RPC client instance
+/// * `chain_id` - Target chain ID
+/// * `timeout` - Maximum duration to wait for permit acquisition
+///
+/// ## Returns
+/// Optional endpoint index if available, None if no healthy endpoints found.
+///
+/// ## Example
+/// ```ignore
+/// let index = acquire_healthy_endpoint(&client, &ChainId::from(1), Duration::from_secs(5)).await?;
+/// ```
+pub async fn acquire_healthy_endpoint(
+    client: &RpcClient,
+    chain_id: ChainId,
+    timeout: Duration,
+) -> Result<Option<usize>, LobbyRpcError> {
+    let actor = SelectActor::Validator;
+    let permit = client
+        .get_provider_stack()
+        .get_semaphore(timeout, &actor)
+        .await?;
+
+    // Get unary pool (lock-free DashMap read)
+    let pool = client
+        .get_provider_stack()
+        .get_pool(&actor, chain_id)
+        .ok_or_else(|| LobbyRpcError::NoEndpointsAvailable { chain_id })?;
+
+    let index = pool.best_endpoint_index().await;
+    drop(permit);
+
+    Ok(index)
 }
 
 // ============================================================================

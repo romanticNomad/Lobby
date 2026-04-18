@@ -1,10 +1,10 @@
 use crate::validator::{ValidatorConfig, handle::ValidatorCommand};
-use alloy::primitives::Address;
 use primitives::types::{ChainId, ExecutionId, TxHash, ValidatorError, ValidatorOutcome};
 use sqlx::PgPool;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
-use utils::rpc::{self, ManagedRpcProviderRegistry, RpcEndpointRegistry};
+use utils::rpc::{LoadBalancingStrategy, RpcClient, get_block_number, get_transaction_reciept};
 
 // ============================================================
 
@@ -14,25 +14,22 @@ use utils::rpc::{self, ManagedRpcProviderRegistry, RpcEndpointRegistry};
 /// for transaction receipts until the transaction is confirmed or times out.
 pub struct ValidatorEngine {
     db: PgPool,
+    provider_client: Arc<RpcClient>,
     validator_config: ValidatorConfig,
-    managed_provider: ManagedRpcProviderRegistry,
     rx: mpsc::Receiver<ValidatorCommand>,
 }
 
 impl ValidatorEngine {
     pub fn new(
         db: PgPool,
+        provider_client: Arc<RpcClient>,
         validator_config: ValidatorConfig,
-        rpc_registry: RpcEndpointRegistry,
         rx: mpsc::Receiver<ValidatorCommand>,
     ) -> Self {
-        let managed_provider =
-            ManagedRpcProviderRegistry::new(rpc_registry, validator_config.rpc_concurrency)
-                .unwrap();
         Self {
             db,
+            provider_client,
             validator_config,
-            managed_provider,
             rx,
         }
     }
@@ -47,9 +44,9 @@ impl ValidatorEngine {
             match cmd {
                 ValidatorCommand::Validate {
                     chain_id,
-                    from_address,
                     execution_id,
                     tx_hash,
+                    sticky_index,
                     reply_tx,
                 } => {
                     let span = tracing::debug_span!(
@@ -59,36 +56,10 @@ impl ValidatorEngine {
                         %tx_hash,
                     );
 
-                    // Acquire permit and select endpoint using sticky session routing
-                    // This ensures we poll the same endpoint that broadcast used
-                    let (permit, ctx) = match self
-                        .managed_provider
-                        .acquire_permit_and_select(
-                            &chain_id,
-                            Some(from_address),
-                            self.validator_config.rpc_timeout,
-                        )
-                        .await
-                    {
-                        Ok(result) => result,
-                        Err(e) => {
-                            tracing::error!("failed to acquire permit: {:?}", e);
-                            panic!("semaphore error: {:?}", e);
-                        }
-                    };
-
-                    // Store endpoint_id for metrics
-                    let endpoint_id = ctx.endpoint_id.clone();
-
                     let result = self
-                        .handle_validation(chain_id, from_address, execution_id, tx_hash)
+                        .handle_validation(chain_id, execution_id, tx_hash, sticky_index)
                         .instrument(span)
                         .await;
-
-                    // Drop permit after validation completes
-                    drop(permit);
-                    // endpoint_id is available for metrics if needed
-                    let _ = endpoint_id;
 
                     let _ = reply_tx.send(result);
                 }
@@ -104,9 +75,9 @@ impl ValidatorEngine {
     async fn handle_validation(
         &self,
         chain_id: ChainId,
-        from_address: Address,
         execution_id: ExecutionId,
         tx_hash: TxHash,
+        sticky_index: usize,
     ) -> Result<ValidatorOutcome, ValidatorError> {
         // idempotency check
         if let Some(cache) = self.check_cached_result(execution_id).await? {
@@ -121,6 +92,11 @@ impl ValidatorEngine {
         // polling rpc node until timeout or confirmation
         let start = Instant::now();
 
+        // setting up parameters to fetch txn reciept.
+        let client = Arc::clone(&self.provider_client);
+        let strategy = LoadBalancingStrategy::StickySession { sticky_index };
+        let timeout = Duration::from_secs(30);
+
         loop {
             //check timeout
             if start.elapsed() > self.validator_config.timeout {
@@ -134,14 +110,7 @@ impl ValidatorEngine {
             }
 
             // fetch receipt using sticky session routing
-            match rpc::get_transaction_receipt(
-                &self.managed_provider,
-                chain_id,
-                tx_hash,
-                Some(from_address),
-            )
-            .await
-            {
+            match get_transaction_reciept(&client, chain_id, strategy, tx_hash, timeout).await {
                 Ok(Some(receipt)) => {
                     // transaction is mined -> check status
                     // status=0
@@ -153,13 +122,9 @@ impl ValidatorEngine {
                     }
 
                     // confirmation using sticky session routing
-                    let current_block = rpc::get_block_number(
-                        &self.managed_provider,
-                        chain_id,
-                        tx_hash,
-                        Some(from_address),
-                    )
-                    .await?;
+                    let current_block = get_block_number(&client, chain_id, strategy, timeout)
+                        .await
+                        .map_err(|e| ValidatorError::RpcError(format!("{:?}", e)))?;
                     let tx_block = receipt.block_number.unwrap_or(0);
                     let confirmations = current_block.saturating_sub(tx_block);
 
@@ -193,7 +158,7 @@ impl ValidatorEngine {
                     self.record_outcome(execution_id, ValidatorOutcome::NotIncluded)
                         .await?;
 
-                    return Err(e);
+                    return Err(ValidatorError::RpcError(format!("{:?}", e)));
                 }
             }
 
@@ -321,7 +286,6 @@ impl ValidatorEngine {
 
         if result.rows_affected() > 0 {
             tracing::debug!(%outcome_str, "validation outcome recorded");
-
             Ok(())
         } else {
             // No rows updated - check why

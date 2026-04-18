@@ -214,6 +214,7 @@ impl RpcClient {
         F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut,
         Fut: Future<Output = Result<R, TransportError>>,
     {
+        // recording duration for unary operation
         let start = Instant::now();
 
         match self
@@ -343,6 +344,14 @@ impl RpcClient {
 
         let provider = ProviderBuilder::new().connect_http(url);
         Ok(Arc::new(provider))
+    }
+
+    // ========================================================================
+    // Accessor helpers
+
+    #[inline]
+    pub fn get_provider_stack(&self) -> &RpcProviderStack {
+        &self.provider_stack
     }
 }
 

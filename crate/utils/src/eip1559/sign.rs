@@ -59,10 +59,7 @@ pub fn sign_eip1559_transaction(
     out.push(0x02);
     out.extend_from_slice(&signed_rlp);
 
-    Ok(SignedTransaction {
-        rlp: Bytes::from(out),
-        with_nonce: signing_nonce,
-    })
+    Ok(SignedTransaction::new(Bytes::from(out), signing_nonce))
 }
 
 // ============================================================
