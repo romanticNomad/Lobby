@@ -2,7 +2,7 @@ pub mod bots;
 pub mod server;
 
 use crate::{
-    bots::{scanner::spawn_scanner_bot, sweeper::spawn_sweeper_bot},
+    bots::sweeper::spawn_sweeper_bot,
     server::{
         AppState,
         auth::auth_middleware,
@@ -14,16 +14,11 @@ use axum::{
     routing::{get, post},
 };
 use cortex::{artifacts::config::CortexConfig, spawn_cortex};
-use primitives::types::ChainId;
 use sqlx::postgres::PgPoolOptions;
-use std::{env, fs::OpenOptions, net::SocketAddr};
+use std::{env, fs::OpenOptions, net::SocketAddr, sync::Arc};
 use tracing_forest::ForestLayer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-use utils::{
-    api::load_api_key_from_env,
-    custody::export_custody_key_count,
-    rpc::{RpcProviderStack, load_rpc_endpoints_from_env},
-};
+use utils::{api::load_api_key_from_env, custody::export_custody_key_count, rpc::build_rpc_client};
 
 // ============================================================
 
@@ -69,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_connections(17)
         .connect(&database_url)
         .await?;
+    
     sqlx::migrate!("../database/migrations")
         .run(&db_pool)
         .await?;
@@ -82,16 +78,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("api_keys loaded: {count}");
 
     // rpc-endpoint registry
-    let rpc_registry = load_rpc_endpoints_from_env();
-    let rpc_provider_stack = RpcProviderStack::new();
-    let chains: Vec<ChainId> = rpc_registry.iter().map(|entry| *entry.key()).collect();
-    if rpc_registry.len() == 0 {
-        tracing::warn!(
-            "no RPC endpoints found in environment, \
-            broadcast and validator will fail for all chains."
-        );
-    }
-    tracing::info!("rpc_endpoints loaded: {:?}", chains);
+    let rcp_client = match build_rpc_client().await {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::error!("Failed to build RPC client: {}", e);
+            return Err(e.into());
+        }
+    };
+    tracing::info!("rpc_endpoints loaded");
 
     // custody keys
     let custody_keys_count = export_custody_key_count();
@@ -99,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // cortex handler
     let config = CortexConfig::from_env()?;
-    let cortex_handler = spawn_cortex(db_pool.clone(), rpc_provider_stack.clone(), config).await;
+    let cortex_handler = spawn_cortex(db_pool.clone(), Arc::new(rcp_client), config).await;
 
     // status registry
     let status_registry = cortex_handler.status_registry();
@@ -109,11 +103,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // scanner bot -> checks RPC for block inclusion status of 'timed_out' transactions.
 
     spawn_sweeper_bot(db_pool.clone());
-    spawn_scanner_bot(
-        db_pool.clone(),
-        status_registry.clone(),
-        rpc_provider_stack.validator_registry.clone(),
-    );
+
+    // spawn_scanner_bot(
+    //     db_pool.clone(),
+    //     status_registry.clone(),
+    //     rpc_provider_stack.validator_registry.clone(),
+    // ); -> Deprecated until further update
 
     tracing::info!("bots spawned: monitoring status");
 
@@ -136,8 +131,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!(%address, "lobby listening at:");
     let listner = tokio::net::TcpListener::bind(address).await?;
-
     axum::serve(listner, app).await?;
+
     Ok(())
 }
 
