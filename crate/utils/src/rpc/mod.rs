@@ -440,35 +440,40 @@ pub async fn acquire_unary_context(
 // Endpoint Index API
 
 /// Fetches the best endpoint index for sticky session initialization.
-/// 
-/// Designed for the `cortex` (orchestrator) to obtain a stick_index for the 
+///
+/// Designed for the `cortex` (orchestrator) to obtain a stick_index for the
 /// running pipeline.
 /// - uses the `EndpointPool` of `validator` since validator recieves the most traffic.
 /// - obtained sticky_index is consistent over the both actors since they share identicel `EndpointRegistry`s.
-/// 
+///
 /// ## Arguments
 /// * `client` - RPC client instance
 /// * `chain_id` - Target chain ID
 /// * `timeout` - Maximum duration to wait for permit acquisition
-/// 
+///
 /// ## Returns
-/// Optional endpoint index if available, None if no healthy endpoints found
-/// 
+/// Optional endpoint index if available, None if no healthy endpoints found.
+///
+/// ## Example
+/// ```ignore
+/// let index = acquire_healthy_endpoint(&client, &ChainId::from(1), Duration::from_secs(5)).await?;
+/// ```
 pub async fn acquire_healthy_endpoint(
     client: &RpcClient,
     chain_id: ChainId,
-    timeout: Duration
+    timeout: Duration,
 ) -> Result<Option<usize>, LobbyRpcError> {
     let actor = SelectActor::Validator;
-    let permit = client.get_provider_stack().get_semaphore(timeout, &actor).await?;
+    let permit = client
+        .get_provider_stack()
+        .get_semaphore(timeout, &actor)
+        .await?;
 
     // Get unary pool (lock-free DashMap read)
     let pool = client
         .get_provider_stack()
         .get_pool(&actor, chain_id)
-        .ok_or_else(|| LobbyRpcError::NoEndpointsAvailable {
-            chain_id,
-    })?;
+        .ok_or_else(|| LobbyRpcError::NoEndpointsAvailable { chain_id })?;
 
     let index = pool.best_endpoint_index().await;
     drop(permit);

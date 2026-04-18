@@ -68,8 +68,8 @@ pub struct UnaryContext {
 // ============================================================================
 // Provider Context Types
 
-/// Execution result returned by `execut_unary` function.
-/// accomodates the `index` of the `EndpointEntry` returned by the load balancer strategy.
+/// Execution result returned by `execute_unary` function after a successful RPC operation.
+/// Accomodates the `index` of the `EndpointEntry` returned by the load balancer strategy.
 pub struct RpcExecutionResult<R> {
     result: R,
     endpoitn_index: usize,
@@ -77,7 +77,10 @@ pub struct RpcExecutionResult<R> {
 
 impl<R> RpcExecutionResult<R> {
     pub fn new(result: R, index: usize) -> Self {
-        Self { result, endpoitn_index: index }
+        Self {
+            result,
+            endpoitn_index: index,
+        }
     }
 
     #[inline]
@@ -240,6 +243,7 @@ impl RpcClient {
         F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut,
         Fut: Future<Output = Result<R, TransportError>>,
     {
+        // recording duration for unary operation
         let start = Instant::now();
 
         match self
@@ -370,6 +374,14 @@ impl RpcClient {
 
         let provider = ProviderBuilder::new().connect_http(url);
         Ok(Arc::new(provider))
+    }
+
+    // ========================================================================
+    // Accessor helpers
+
+    #[inline]
+    pub fn get_provider_stack(&self) -> &RpcProviderStack {
+        &self.provider_stack
     }
 }
 
