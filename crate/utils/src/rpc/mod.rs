@@ -358,7 +358,7 @@ pub async fn get_block_number(
     chain_id: ChainId,
     strategy: LoadBalancingStrategy,
     timeout: Duration,
-) -> Result<U256, LobbyRpcError> {
+) -> Result<u64, LobbyRpcError> {
     let sticky_index = match strategy {
         LoadBalancingStrategy::StickySession { sticky_index } => Some(sticky_index),
         LoadBalancingStrategy::WeightedLeastResponseTime => None,
@@ -375,7 +375,7 @@ pub async fn get_block_number(
         .await
         .map_err(|e| LobbyRpcError::BlockNotFound(e.to_string()))?;
 
-    Ok(U256::from(block_num))
+    Ok(block_num)
 }
 
 // ============================================================================
