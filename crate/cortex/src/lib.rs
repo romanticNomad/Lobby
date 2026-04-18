@@ -28,8 +28,11 @@ use crate::{
     state::StatusRegistry,
 };
 use actors::{
-    broadcast::{self, BroadcastConfig},
-    nonce, relayhost, sign, validator,
+    broadcast::spawn_broadcast_actor,
+    nonce::spawn_nonce_actor,
+    relayhost::spawn_relayhost_actor,
+    sign::spawn_sign_actor,
+    validator::{ValidatorConfig, spawn_validator_actor},
 };
 use primitives::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
@@ -38,7 +41,7 @@ use primitives::{
 use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
-use utils::rpc::RpcProviderStack;
+use utils::rpc::RpcClient;
 
 // ============================================================
 // Cortex (orchestrator) struct.
@@ -47,6 +50,7 @@ struct Cortex {
     // state handles
     cortex_config: CortexConfig,
     status_registry: StatusRegistry,
+    rpc_client: Arc<RpcClient>,
 
     // actor handles
     relayhost: Arc<dyn IntentRelay>,
@@ -125,13 +129,13 @@ impl CortextHandle {
             validator_pool: Arc::clone(&orch.validator),
             retry_config: orch.cortex_config.retry.clone(),
             status: orch.status_registry.clone(),
+            rpc_client: Arc::clone(&orch.rpc_client),
         };
 
         // ===========================================================
 
-        // Spawn the pipeline task
-        // The semaphore permit is moved into the task and dropped when the
-        // task completes, automatically freeing a slot.
+        // The semaphore permit is moved into the spawned tokio task and
+        // dropped when the task completes, automatically freeing a slot.
         tokio::spawn(async move {
             let _permit = permit;
             run_pipeline(ctx).await;
@@ -141,8 +145,10 @@ impl CortextHandle {
     }
 
     // ===========================================================
+    // Accessor helper
 
     /// simple helper for obtaining StatusRegistry clone
+    #[inline]
     pub fn status_registry(&self) -> StatusRegistry {
         self.inner.status_registry.clone()
     }
@@ -155,7 +161,7 @@ impl CortextHandle {
 /// panics if number of shards in config = 0.
 pub async fn spawn_cortex(
     db: PgPool,
-    provider: RpcProviderStack,
+    provider_client: Arc<RpcClient>,
     config: CortexConfig,
 ) -> CortextHandle {
     tracing::debug!(
@@ -166,6 +172,15 @@ pub async fn spawn_cortex(
         pipeline = config.pipeline_concurrency,
         "spawning cortex actor pools: "
     );
+    // ============================================================
+    // relayhost handle
+
+    let relayhost_handle = {
+        let handle = spawn_relayhost_actor(db.clone(), config.actor_buffer);
+        tracing::debug!("relay_host actor spawned");
+
+        Arc::new(handle) as Arc<dyn IntentRelay>
+    };
 
     // ============================================================
     // nonce pool - keyed by from_address.
@@ -173,7 +188,7 @@ pub async fn spawn_cortex(
     let nonce_pool = {
         let shards: Vec<Arc<dyn NonceManager>> = (0..config.nonce_shards)
             .map(|i| {
-                let handle = nonce::spawn_nonce_actor(db.clone(), config.actor_buffer);
+                let handle = spawn_nonce_actor(db.clone(), config.actor_buffer);
                 tracing::debug!(shard = i, "nonce actor spawned");
                 Arc::new(handle) as Arc<dyn NonceManager>
             })
@@ -188,7 +203,7 @@ pub async fn spawn_cortex(
     let sign_pool = {
         let shards: Vec<Arc<dyn Signer>> = (0..config.sign_shards)
             .map(|i| {
-                let handle = sign::spawn_sign_actor(db.clone(), config.actor_buffer);
+                let handle = spawn_sign_actor(db.clone(), config.actor_buffer);
                 tracing::debug!(shard = i, "sign actor spawned");
                 Arc::new(handle) as Arc<dyn Signer>
             })
@@ -200,18 +215,12 @@ pub async fn spawn_cortex(
     // ============================================================
     // broadcast pool - keyed by chain_id.
 
-    let broadcast_config = BroadcastConfig::new(
-        config.rpc_broadcast_concurrency,
-        config.rpc_semaphore_timeout,
-    );
-
     let broadcast_pool = {
         let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shards)
             .map(|i| {
-                let handle = broadcast::spawn_broadcast_actor(
+                let handle = spawn_broadcast_actor(
                     db.clone(),
-                    Arc::clone(&provider.broadcast_registry),
-                    broadcast_config.clone(),
+                    Arc::clone(&provider_client),
                     config.actor_buffer,
                 );
                 tracing::debug!(shard = i, "broadcast actor spawned");
@@ -223,29 +232,15 @@ pub async fn spawn_cortex(
     };
 
     // ============================================================
-    // relayhost handle
-
-    let relayhost_handle = {
-        let handle = relayhost::spawn_relayhost_actor(db.clone(), config.actor_buffer);
-        tracing::debug!("relay_host actor spawned");
-
-        Arc::new(handle) as Arc<dyn IntentRelay>
-    };
-
-    // ============================================================
     // validator pool - keyed by chain_id.
 
-    let validator_config = validator::ValidatorConfig::new(
-        config.rpc_validator_concurrecny,
-        config.rpc_semaphore_timeout,
-    );
-
+    let validator_config = ValidatorConfig::default();
     let validator_pool = {
         let shards: Vec<Arc<dyn Validator>> = (0..config.validator_shards)
             .map(|i| {
-                let handle = validator::spawn_validator_actor(
+                let handle = spawn_validator_actor(
                     db.clone(),
-                    Arc::clone(&provider.validator_registry),
+                    Arc::clone(&provider_client),
                     validator_config.clone(),
                     config.actor_buffer,
                 );
@@ -259,6 +254,7 @@ pub async fn spawn_cortex(
 
     // ============================================================
     // pipeline semaphore
+
     let pipeline_semaphore = Arc::new(Semaphore::new(config.pipeline_concurrency));
 
     // ============================================================
@@ -275,6 +271,7 @@ pub async fn spawn_cortex(
     let inner = Arc::new(Cortex {
         cortex_config: config,
         status_registry,
+        rpc_client: provider_client,
         semaphore: pipeline_semaphore,
         relayhost: relayhost_handle,
         nonce: nonce_pool,

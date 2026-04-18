@@ -12,9 +12,10 @@ use primitives::{
         ValidatorOutcome,
     },
 };
-use std::sync::Arc;
 use std::time::Instant;
+use std::{sync::Arc, time::Duration};
 use tracing::Instrument;
+use utils::rpc::{LobbyRpcError, RpcClient, acquire_healthy_endpoint};
 
 // ============================================================
 // context
@@ -40,8 +41,9 @@ pub(crate) struct PipelineContext {
     // retry
     pub retry_config: RetryConfig,
 
-    // status polling
+    // pipeline state artifacts
     pub status: StatusRegistry,
+    pub rpc_client: Arc<RpcClient>,
 }
 
 // ============================================================
@@ -55,15 +57,15 @@ pub(crate) struct PipelineContext {
 ///
 /// ## Failure semantics
 ///
-/// | Stage       | On hard fail                              |
-/// |-------------|-------------------------------------------|
-/// | RelayHost   | No nonce reserved → just log and exit     |
-/// | Nonce       | No nonce reserved → just log and exit     |
-/// | Sign        | Release nonce via `resolve(false)` → exit |
-/// | Broadcast   | Release nonce via `resolve(false)` → exit |
-/// |             | NonceTooLow → sync and retry once         |
-/// |             | MissingProvider → immediate exit          |
-/// | Validator   | Release nonce via `resolve(false)` → exit |
+/// | Stage         | On hard fail                              |
+/// |-------------  |-------------------------------------------|
+/// | RelayHost     | No nonce reserved → just log and exit     |
+/// | Nonce         | No nonce reserved → just log and exit     |
+/// | Sign          | Release nonce via `resolve(false)` → exit |
+/// | FetchProvider | MissingProvider → immediate exit          |
+/// | Broadcast     | Release nonce via `resolve(false)` → exit |
+/// |               | NonceTooLow → sync and retry once         |
+/// | Validator     | Release nonce via `resolve(false)` → exit |
 ///
 /// ## Nonce mismatch recovery
 ///
@@ -166,9 +168,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         let mut signed = match retry_with_backoff(&ctx.retry_config, "sign", || {
             let sh = Arc::clone(&sign_handle);
-            let t = txn.clone();
+            let txn = txn.clone();
             async move {
-                sh.sign(chain_id, from_address, execution_id, t)
+                sh.sign(chain_id, from_address, execution_id, txn)
                     .await
                     .map_err(RetryDecision::Retry)
             }
@@ -193,6 +195,43 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         // ============================================================
+        // fetching the healthy endpoint index
+
+        let endpoint_timeout = Duration::from_secs(30); // semaphore wait hardcoded to 30 seconds.
+        let sticky_index =
+            match acquire_healthy_endpoint(&ctx.rpc_client, chain_id, endpoint_timeout).await {
+                Ok(Some(index)) => index,
+                Ok(None) => {
+                    tracing::warn!("no healthy endpoints found for chain {}", chain_id);
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
+                    record_faliure(
+                        &ctx.status,
+                        execution_id,
+                        &CortexError::NoHealthyRpcProvider(LobbyRpcError::NoEndpointsAvailable {
+                            chain_id,
+                        }),
+                        &start,
+                    );
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "failed to acquire healthy endpoint for chain {}: {:?}",
+                        chain_id,
+                        e
+                    );
+                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
+                    record_faliure(
+                        &ctx.status,
+                        execution_id,
+                        &CortexError::EndpointPoolFailed(e),
+                        &start,
+                    );
+                    return;
+                }
+            };
+
+        // ============================================================
         // broadcast (with nonce mismatch retry)
 
         // getting the broadcast handle from shard pool (sequenced by chain_id))
@@ -206,7 +245,13 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
                 async move {
                     match bh
-                        .broadcast(chain_id, from_address, execution_id, signed_clone)
+                        .broadcast(
+                            chain_id,
+                            from_address,
+                            execution_id,
+                            signed_clone,
+                            sticky_index,
+                        )
                         .await
                     {
                         Ok(result) => Ok(result),
@@ -394,6 +439,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 messege: String::from("Waiting for validation on-chain"),
             },
         );
+
         tracing::info!(
             elapsed_ms = start.elapsed().as_millis(),
             tx_hash = %format!("{:#x}", tx_hash),
@@ -405,10 +451,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
 
         // getting the validator handle from shard pool (sequenced by chain_id)
         let validator_handle = ctx.validator_pool.get(&ByChainId(&chain_id));
-        let v = Arc::clone(&validator_handle);
+        let vh = Arc::clone(&validator_handle);
         let validation = match {
             async move {
-                v.validate(chain_id, from_address, execution_id, tx_hash)
+                vh.validate(chain_id, execution_id, tx_hash, sticky_index)
                     .await
             }
         }
@@ -514,7 +560,7 @@ async fn release_nonce(
             "nonce release failed after retries, lease will expire in 5 min"
         );
     } else {
-        tracing::debug!(elapsed_ms = start.elapsed().as_millis(), "nonce released");
+        tracing::info!(elapsed_ms = start.elapsed().as_millis(), "nonce released");
     }
 }
 
