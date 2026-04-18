@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_connections(17)
         .connect(&database_url)
         .await?;
-    
+
     sqlx::migrate!("../database/migrations")
         .run(&db_pool)
         .await?;
