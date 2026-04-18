@@ -66,6 +66,32 @@ pub struct UnaryContext {
 }
 
 // ============================================================================
+// Provider Context Types
+
+/// Execution result returned by `execut_unary` function.
+/// accomodates the `index` of the `EndpointEntry` returned by the load balancer strategy.
+pub struct RpcExecutionResult<R> {
+    result: R,
+    endpoitn_index: usize,
+}
+
+impl<R> RpcExecutionResult<R> {
+    pub fn new(result: R, index: usize) -> Self {
+        Self { result, endpoitn_index: index }
+    }
+
+    #[inline]
+    pub fn result(&self) -> &R {
+        &self.result
+    }
+
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.endpoitn_index
+    }
+}
+
+// ============================================================================
 // RpcClient
 
 /// High-performance RPC client for unary operations
@@ -209,7 +235,7 @@ impl RpcClient {
         sticky_index: Option<usize>,
         timeout: Duration,
         operation: F,
-    ) -> Result<R, LobbyRpcError>
+    ) -> Result<RpcExecutionResult<R>, LobbyRpcError>
     where
         F: FnOnce(Arc<dyn Provider + Send + Sync>) -> Fut,
         Fut: Future<Output = Result<R, TransportError>>,
@@ -225,9 +251,10 @@ impl RpcClient {
 
                 match operation(provider).await {
                     Ok(result) => {
+                        let index = ctx.index();
                         ctx.record_success(start.elapsed());
                         drop(permit);
-                        Ok(result)
+                        Ok(RpcExecutionResult::new(result, index))
                     }
                     Err(e) => {
                         ctx.record_failure();
