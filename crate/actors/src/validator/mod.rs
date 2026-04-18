@@ -38,9 +38,9 @@ pub mod handle;
 
 use crate::validator::{engine::ValidatorEngine, handle::ValidatorHandle};
 use sqlx::PgPool;
-use utils::rpc::RpcClient;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
+use utils::rpc::RpcClient;
 
 // ============================================================
 

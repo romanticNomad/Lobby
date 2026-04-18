@@ -1,7 +1,7 @@
-use std::{sync::Arc, time::Duration};
 use crate::validator::{ValidatorConfig, handle::ValidatorCommand};
 use primitives::types::{ChainId, ExecutionId, TxHash, ValidatorError, ValidatorOutcome};
 use sqlx::PgPool;
+use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
 use utils::rpc::{LoadBalancingStrategy, RpcClient, get_block_number, get_transaction_reciept};
@@ -57,12 +57,7 @@ impl ValidatorEngine {
                     );
 
                     let result = self
-                        .handle_validation(
-                            chain_id,
-                            execution_id,
-                            tx_hash,
-                            sticky_index,
-                        )
+                        .handle_validation(chain_id, execution_id, tx_hash, sticky_index)
                         .instrument(span)
                         .await;
 

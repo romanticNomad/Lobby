@@ -221,7 +221,7 @@ impl SignedTransaction {
     pub fn new(rlp: Bytes, with_nonce: TxNonce) -> Self {
         Self { rlp, with_nonce }
     }
-    
+
     #[inline]
     pub fn rlp(&self) -> &Bytes {
         &self.rlp
