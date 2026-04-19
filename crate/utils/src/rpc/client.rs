@@ -14,7 +14,7 @@ use alloy::{
 };
 use dashmap::DashMap;
 use primitives::types::ChainId;
-use std::{fmt::Debug, future::Future, sync::Arc, time::Duration};
+use std::{collections::HashMap, fmt::Debug, future::Future, sync::Arc, time::Duration};
 use tokio::{sync::OwnedSemaphorePermit, time::Instant};
 use tracing::{debug, trace};
 use url::Url;
@@ -257,16 +257,6 @@ impl RpcClient {
         debug!(chain_id = %chain_id, "Registered unary chain");
     }
 
-    /// Gets the number of registered chains for broadcast actor.
-    pub fn registered_broadcast_chain_count(&self) -> usize {
-        self.provider_stack.broadcast_chain_count()
-    }
-
-    /// Gets the number of registered chains for validator actor.
-    pub fn registered_validator_chain_count(&self) -> usize {
-        self.provider_stack.validator_chain_count()
-    }
-
     // ========================================================================
     // Statistics and Monitoring
 
@@ -352,6 +342,33 @@ impl RpcClient {
     #[inline]
     pub fn get_provider_stack(&self) -> &RpcProviderStack {
         &self.provider_stack
+    }
+
+    /// Get a dictionary of chains and number of endpoints affiliated to each chain.
+    /// **meant to tracing purpose**
+    ///
+    /// Since broadcast and validator have identicle endpoints, choose any actor.
+    pub async fn get_endpoint_hashmap(&self) -> Result<HashMap<ChainId, usize>, LobbyRpcError> {
+        let mut endpoint_hashmap: HashMap<ChainId, usize> = HashMap::new();
+        let provider_stack = self.get_provider_stack();
+        let chains = provider_stack.get_registred_chains();
+
+        for chain_id in chains {
+            let endpoint_count = provider_stack
+                .get_pool(&SelectActor::Broadcast, chain_id)
+                .ok_or_else(|| {
+                    LobbyRpcError::EndpointPoolCorrupted(format!(
+                        "pool no found for: {:?}",
+                        chain_id
+                    ))
+                })?
+                .get_endpoint_count()
+                .await;
+
+            endpoint_hashmap.insert(chain_id, endpoint_count);
+        }
+
+        Ok(endpoint_hashmap)
     }
 }
 

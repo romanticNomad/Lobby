@@ -134,14 +134,15 @@ impl RpcProviderStack {
         self.validator.insert(chain_id, Arc::clone(&validator_pool));
     }
 
-    /// Gets total number of chains in broadcast_registry
-    pub fn broadcast_chain_count(&self) -> usize {
-        self.broadcast.len()
-    }
-
-    /// Gets total number of chains in validator_registry
-    pub fn validator_chain_count(&self) -> usize {
-        self.validator.len()
+    /// Gets a Vector of Chains present in the given `RpcProviderStack`
+    /// - used to tracing purpose and metric collections.
+    /// - indepentent of `actor` since, both share indentical enpoints.
+    pub fn get_registred_chains(&self) -> Vec<ChainId> {
+        // by default uses the broadcast EndpointRegistry
+        self.broadcast
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect()
     }
 }
 
@@ -229,6 +230,12 @@ impl EndpointPool {
         self.chain_id
     }
 
+    /// Number of endpoints present in the pool
+    #[inline]
+    pub async fn get_endpoint_count(&self) -> usize {
+        self.endpoints.read().await.len()
+    }
+
     /// Adds endpoint to pool (acquires write lock briefly)
     pub async fn add_endpoint(
         &self,
@@ -242,11 +249,6 @@ impl EndpointPool {
 
         // Update cache
         self.update_healthy_cache().await;
-    }
-
-    /// Number of endpoints present in the pool
-    pub async fn endpoint_count(&self) -> usize {
-        self.endpoints.read().await.len()
     }
 
     /// Count healthy endpoints using cached data when fresh
