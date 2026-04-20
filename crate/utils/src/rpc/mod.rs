@@ -11,7 +11,7 @@ use alloy::{
     rpc::types::TransactionReceipt,
 };
 use primitives::types::{ChainId, TxNonce};
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::OwnedSemaphorePermit;
 
 /// Re-export APIs Lobby crates
@@ -56,6 +56,19 @@ pub enum LobbyRpcError {
 
     #[error("Block not found for transaction: {0}")]
     BlockNotFound(String),
+
+    #[error("Endpoint pool corrupted: {0}")]
+    EndpointPoolCorrupted(String),
+}
+
+// ============================================================================
+// helper function
+
+/// export the `Hashmap` of `ChainId` with corresponding count of endpoints.
+pub async fn get_client_endpoint_hashmap(
+    rpc_client: &RpcClient,
+) -> Result<HashMap<ChainId, usize>, LobbyRpcError> {
+    rpc_client.get_endpoint_hashmap().await
 }
 
 // ============================================================================

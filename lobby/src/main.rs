@@ -18,7 +18,11 @@ use sqlx::postgres::PgPoolOptions;
 use std::{env, fs::OpenOptions, net::SocketAddr, sync::Arc};
 use tracing_forest::ForestLayer;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-use utils::{api::load_api_key_from_env, custody::export_custody_key_count, rpc::build_rpc_client};
+use utils::{
+    api::load_api_key_from_env,
+    custody::export_custody_key_count,
+    rpc::{build_rpc_client, get_client_endpoint_hashmap},
+};
 
 // ============================================================
 
@@ -77,6 +81,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let count = api_registry.len();
     tracing::info!("api_keys loaded: {count}");
 
+    // custody keys
+    let custody_keys_count = export_custody_key_count();
+    tracing::info!("custody accounts loaded: {custody_keys_count}");
+
     // rpc-endpoint registry
     let rcp_client = match build_rpc_client().await {
         Ok(client) => client,
@@ -85,11 +93,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     };
-    tracing::info!("rpc_endpoints loaded");
-
-    // custody keys
-    let custody_keys_count = export_custody_key_count();
-    tracing::info!("custody accounts loaded: {custody_keys_count}");
+    let endpoint_hashmap = get_client_endpoint_hashmap(&rcp_client).await?;
+    tracing::info!("rpc_endpoints loaded: {endpoint_hashmap:?}");
 
     // cortex handler
     let config = CortexConfig::from_env()?;
