@@ -4,7 +4,7 @@
 >
 > **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.
 >
-> **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text and I hope the instructions and contents of the file are easily understandable.
+> **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text to ensure that the instructions and contents remain clear.
 
 ---
 
@@ -16,7 +16,7 @@
 
 ## 1. Introduction to Lobby
 
-Lobby is a high-performance, low-latency blockchain transaction service designed for developers who need reliable, concurrent transaction processing at scale on EVM-compatible networks.
+Lobby is a high-performance, low-latency blockchain transaction service written in `rust` and designed for developers who need reliable, concurrent transaction processing at scale on EVM-compatible networks.
 
 ### What Makes Lobby Special
 
@@ -83,7 +83,7 @@ cd ../Lobby
 The `generate_api_keys` binary will automatically create the lobby-formated API keys
 from the `test-keys.json` and store them in the .env file
 
->Author note:  never store production API-keys and EVM pvt-keys in the .env file
+>**Author Note**:  never store production API-keys and EVM pvt-keys in the .env file
 
 ```bash
 #run the generate_api_keys binary
@@ -164,6 +164,7 @@ curl -X POST http://localhost:3000/v1/transactions \
 - [3.2 Pipeline Workflow](#32-pipeline-workflow)
 - [3.3 RPC Controls and Load Balancing](#33-rpc-controls-and-load-balancing)
 - [3.4 Error Handling](#34-error-handling)
+- [3.5 Private Key Security](#35-private-key-security)
 
 ---
 
@@ -472,7 +473,7 @@ Nonce cleanup rules by failure stage:
 
 ---
 
-## Private Key Security
+## 3.5 Private Key Security
 
 ### Current Prototype Implementation
 
