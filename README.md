@@ -1,6 +1,6 @@
 # Lobby
 
-> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.
+> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviours described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.
 >
 > **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.
 >
@@ -10,7 +10,7 @@
 
 **Version:** 0.1.0 (Prototype)  
 **Last Updated:** April 21 2026  
-**Target Audience:** Contributors, LLMs working on Lobby codebase and EVM transaction operators.
+**Target Audience:** Contributors, LLMs working on the Lobby codebase and EVM transaction operators.
 
 ---
 
@@ -20,7 +20,7 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 
 ### What Makes Lobby Special
 
-**Sub-second internal processing** — Nonce assignment and signing typically complete in under one second through optimized actor-based concurrency.
+**Sub-second internal processing** — Nonce assignment and signing are typically complete in under one second through optimised actor-based concurrency.
 
 **Concurrent pipeline architecture** — Process thousands of transactions simultaneously via actor-based sharding, with deterministic routing ensuring sequential nonce assignment per address while maintaining parallelism across different accounts.
 
@@ -56,17 +56,19 @@ cd ..
 ### 2. Generate Test Keys with Locket
 
 ```bash
+# exit control from the Lobby workspace
+cd ..
 # Clone and run Locket for test account generation
 git clone https://github.com/romanticNomad/Locket.git
 cd Locket
-# using 5 accounts as an example
+# using 5 as an example, you may use any (positive) number 
 cargo run -- accounts 5
 # Copy the generated key output
 mv accounts.json ../Lobby/test-keys.json
 cd ../Lobby
 ```
 
-`test_keys.json` will be created in the project root (ensure its in this format):
+`test_keys.json` will be created in the project root (ensure it's in this format):
 
 ```json
 {
@@ -80,10 +82,10 @@ cd ../Lobby
 
 ### 3. Generate test- API keys from the `test-keys.json` using the `generate_api_keys.rs` binary
 
-The `generate_api_keys` binary will automatically create the lobby-formated API keys
+The `generate_api_keys` binary will automatically create the lobby-formatted API keys
 from the `test-keys.json` and store them in the .env file
 
->**Author Note**:  never store production API-keys and EVM pvt-keys in the .env file
+>**Author Note**:  never store production API keys and EVM private keys in the .env file
 
 ```bash
 #run the generate_api_keys binary
@@ -102,7 +104,7 @@ export RUST_LOG="INFO"
 
 # API key format: <token>:<client_id>:<from_address>
 export LOBBY_API_KEY_1="<api-key-generated-by-the-binary>"
-# there must 1 or more API keys generated depending on the number `N` you chose.
+# There must 1 or more API keys generated, depending on the number `N` you chose.
 
 # RPC endpoints (comma-separated for multiple endpoints per chain)
 export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
@@ -485,16 +487,16 @@ The file is `.gitignore`d but must be manually managed by the operator.
 
 Future production versions will implement AWS KMS-backed envelope encryption:
 
-1. **Data Encryption Key (DEK):** Each private key encrypted at rest using a DEK.
-2. **Customer Master Key (CMK):** The DEK itself encrypted by an AWS KMS CMK.
+1. **Data Encryption Key (DEK):** Each private key is encrypted at rest using a DEK.
+2. **Customer Master Key (CMK):** The DEK itself is encrypted by an AWS KMS CMK.
 3. **Boot-time decryption:** Lobby calls AWS KMS `Decrypt` to obtain plaintext DEK, held only in process memory.
 4. **Runtime security:** Plaintext private keys held in memory for low-latency signing; all key material zeroized on shutdown.
 
 **Benefits:**
-- Private keys never stored in plaintext outside the running process
-- KMS access auditable via AWS CloudTrail
+- Private keys are never stored in plaintext outside the running process
+- KMS access is auditable via AWS CloudTrail
 - Lobby refuses to start if KMS is unreachable (boot-time security check)
-- Key rotation possible by re-encrypting blobs without code changes
+- Key rotation is possible by re-encrypting blobs without code changes
 
 **Note:** AWS Envelope Encryption will not be implemented in the prototype version of Lobby.
 
