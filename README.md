@@ -4,19 +4,19 @@
 >
 > **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.
 >
-> For test key generation, use the **[Locket](https://github.com/romanticNomad/Locket)** repository. Running `cargo run` in Locket will generate test accounts in the required format.
+> **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text and I hope the instructions and contents of the file are easily understandable.
 
 ---
 
 **Version:** 0.1.0 (Prototype)  
-**Last Updated:** April 2026  
-**Target Audience:** Developers, contributors, and operators of blockchain transaction infrastructure
+**Last Updated:** April 21 2026  
+**Target Audience:** Contributors, LLMs working on Lobby codebase and EVM transaction operators.
 
 ---
 
-## Introduction to Lobby
+## 1. Introduction to Lobby
 
-Lobby is a high-performance, low-latency blockchain transaction signing service designed for developers who need reliable, concurrent transaction processing at scale on EVM-compatible networks.
+Lobby is a high-performance, low-latency blockchain transaction service designed for developers who need reliable, concurrent transaction processing at scale on EVM-compatible networks.
 
 ### What Makes Lobby Special
 
@@ -30,15 +30,9 @@ Lobby is a high-performance, low-latency blockchain transaction signing service 
 
 **Real-time status tracking** — Poll transaction progress from submission through on-chain confirmation with detailed status at every pipeline stage.
 
-### Core Design Principles
-
-1. **Reliability over speed** — Every transaction is tracked end-to-end with automatic failure recovery and deterministic error handling.
-2. **Transparency** — Detailed status updates at every pipeline stage with full audit trail via revision-based database records.
-3. **Simplicity** — Clean REST API with standard EIP-1193 request format, making integration straightforward for existing Ethereum tooling.
-
 ---
 
-## Quick Installation Guide
+## 2. Quick Installation Guide
 
 ### Prerequisites
 
@@ -65,12 +59,14 @@ cd ..
 # Clone and run Locket for test account generation
 git clone https://github.com/romanticNomad/Locket.git
 cd Locket
-cargo run
+# using 5 accounts as an example
+cargo run -- accounts 5
 # Copy the generated key output
+mv accounts.json ../Lobby/test-keys.json
 cd ../Lobby
 ```
 
-Create `test_keys.json` in the project root:
+`test_keys.json` will be created in the project root (ensure its in this format):
 
 ```json
 {
@@ -82,25 +78,38 @@ Create `test_keys.json` in the project root:
 }
 ```
 
-### 3. Configure Environment
+### 3. Generate test- API keys from the `test-keys.json` using the `generate_api_keys.rs` binary
+
+The `generate_api_keys` binary will automatically create the lobby-formated API keys
+from the `test-keys.json` and store them in the .env file
+
+>Author note:  never store production API-keys and EVM pvt-keys in the .env file
+
+```bash
+#run the generate_api_keys binary
+cargo run --release generate_api_keys
+```
+
+### 4. Configure Environment
 
 Create `.env` in the project root:
 
 ```bash
-DATABASE_URL=postgresql://postgres:password@localhost/lobby
-SERVER_ADDR=0.0.0.0:3000
-REDIS_URL=redis://localhost:6379
-RUST_LOG=info
+export DATABASE_URL="postgresql://lobby:lobby_dev_password@localhost:5432/lobby-db"
+export SERVER_ADDR="0.0.0.0:3000"
+export REDIS_URL="redis://localhost:6379"
+export RUST_LOG="INFO"
 
 # API key format: <token>:<client_id>:<from_address>
-LOBBY_API_KEY_1=lobby_live_dev123:550e8400-e29b-41d4-a716-446655440000:<your_test_address>
+export LOBBY_API_KEY_1="<api-key-generated-by-the-binary>"
+# there must 1 or more API keys generated depending on the number `N` you chose.
 
 # RPC endpoints (comma-separated for multiple endpoints per chain)
-RPC_ENDPOINT_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
-RPC_ENDPOINT_560048=https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY
+export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
+export RPC_ENDPOINT_560048="https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY,https://hoodi.infura.io/v3/YOUR_KEY"
 ```
 
-### 4. Build and Run
+### 5. Build and Run
 
 ```bash
 source .env
@@ -109,25 +118,29 @@ cargo run --release --bin lobby
 
 Expected startup output:
 
-```
-INFO  api_keys loaded: 1
-INFO  rpc_endpoints loaded: [ChainId(560048), ChainId(1)]
-INFO  custody accounts loaded: 1
-INFO  StatusRegistry loaded | artifacts_count: 0
-INFO  cortex online
-INFO  bots spawned: monitoring status
-INFO  lobby listening at: | address: 0.0.0.0:3000
+```bash
+INFO     ｉ [info]: "relation \"_sqlx_migrations\" already exists, skipping"
+INFO     ｉ [info]: api_keys loaded: 5
+INFO     ｉ [info]: custody accounts loaded: 5
+INFO     ｉ [info]: rpc_endpoints loaded: {ChainId(560048): 2, ChainId(1): 2}
+INFO     ｉ [info]: StatusRegistry loaded | artifacts_count: 0
+INFO     ｉ [info]: cortex online
+INFO     ｉ [info]: bots spawned: monitoring status
+INFO     ｉ [info]: lobby listening at: | address: 0.0.0.0:3000
 ```
 
-### 5. Test Submission
+### 6. Test Submission
+* For standard test-mainnet gas parameters
+* Value = 0.1 eth
+* Use API of a valid `address` from the `test-keys.json` for testing.
 
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
-  -H "Authorization: Bearer lobby_live_dev123:550e8400-e29b-41d4-a716-446655440000:<your_address>" \
+  -H "Authorization: Bearer <api-key>" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
-    "method": "eth_sendTransaction",
+    "method": "eth_sendRawTransaction",
     "params": [{
       "from": "<your_address>",
       "to": "<recipient_address>",
@@ -145,7 +158,7 @@ curl -X POST http://localhost:3000/v1/transactions \
 
 ## Architectural Overview
 
-## Table of Contents
+## 3. Table of Contents
 
 - [3.1 Concurrency Management in Lobby](#31-concurrency-management-in-lobby)
 - [3.2 Pipeline Workflow](#32-pipeline-workflow)
@@ -154,11 +167,11 @@ curl -X POST http://localhost:3000/v1/transactions \
 
 ---
 
-### 3.1 Concurrency Management in Lobby
+## 3.1 Concurrency Management in Lobby
 
 Lobby employs a multi-layered concurrency model combining the actor pattern, sharding, and database-level atomicity.
 
-#### Actor Pattern with MPSC Channels
+### Actor Pattern with MPSC Channels
 
 Every mutable state in Lobby is owned exclusively by a single long-lived Tokio task (the *engine*). External code interacts via typed messages over MPSC channels with oneshot reply channels for request/response patterns.
 
@@ -208,11 +221,11 @@ impl NonceManager for NonceHandle {
 
 This design eliminates data races by construction — no shared mutexes or atomics over actor state.
 
-#### Pipeline Semaphore
+### Pipeline Semaphore
 
 A `tokio::sync::Semaphore` bounds concurrent pipeline executions (default: 17). If all permits are exhausted, `submit()` blocks for a configurable timeout before returning `BackpressureTimeout` (HTTP 503). This prevents unbounded concurrency from overwhelming the database connection pool, RPC rate limits, or system memory.
 
-#### Actor Sharding via ShardPool
+### Actor Sharding via ShardPool
 
 Rather than single-actor bottlenecks or fully concurrent access, Lobby runs N sharded actor instances with deterministic routing:
 
@@ -225,7 +238,7 @@ Rather than single-actor bottlenecks or fully concurrent access, Lobby runs N sh
 
 Routing uses `DefaultHasher`: `shard_index = hash(key) % N`. Same key maps to same actor ensuring sequential ordering; different keys run in true parallel.
 
-#### Database-Level Concurrency Safety
+### Database-Level Concurrency Safety
 
 PostgreSQL atomic operations with `FOR UPDATE SKIP LOCKED` ensure TOCTOU-safe operations. All insertions use the pattern:
 
@@ -243,7 +256,7 @@ Lease-based idempotency provides 2-5 minute windows for operation completion. Re
 
 ---
 
-### 3.2 Pipeline Workflow
+## 3.2 Pipeline Workflow
 
 Every transaction flows through a five-stage pipeline orchestrated by the Cortex:
 
@@ -265,7 +278,7 @@ Client Submit
   Confirmed or Failed
 ```
 
-#### Stage Details
+### Stage Details
 
 **Stage 1 — RelayHost:** Validates transaction fields (gas limits, fee sanity, supported chains) and persists to `relay_host.transaction_intents`. Idempotent by `execution_id`.
 
@@ -277,11 +290,11 @@ Client Submit
 
 **Stage 5 — Validator:** Polls `eth_getTransactionReceipt` until confirmation or timeout. Finalizes nonce on success; releases or consumes nonce on failure/timeout.
 
-#### Async Execution Model
+### Async Execution Model
 
 The HTTP handler responds immediately with `execution_id` and `status: "accepted"`. The pipeline runs entirely in a spawned background task, enabling fire-and-forget submission with subsequent status polling via `GET /status/:execution_id`.
 
-#### Status Tracking
+### Status Tracking
 
 `StatusRegistry` provides two-layer storage: in-memory `DashMap` for O(1) reads and Redis for distributed persistence. Status transitions include:
 
@@ -296,7 +309,7 @@ The HTTP handler responds immediately with `execution_id` and `status: "accepted
 
 The `utils::rpc` module provides high-throughput RPC operations with intelligent load balancing and endpoint health management.
 
-#### Dual EndpointPool Architecture
+### Dual EndpointPool Architecture
 
 Separate `EndpointPool` instances for Broadcast and Validator actors prevent broadcast traffic from affecting validator polling. Each endpoint is registered to both pools with separate provider instances and metrics for true isolation:
 
@@ -311,7 +324,7 @@ RpcProviderStack {
 
 Endpoint IDs follow the pattern `<actor>-<chain_id>-<index>` enabling per-actor metric tracking.
 
-#### Load Balancing Strategies
+### Load Balancing Strategies
 
 **WeightedLeastResponseTime:** Uses a roulette wheel algorithm based on endpoint health and response time:
 
@@ -323,7 +336,7 @@ Health states apply multipliers: `Healthy = 1.0`, `Degraded = 0.5`, `Unhealthy =
 
 **StickySession:** Index-based selection for endpoint affinity. Critical for nonce consistency — reading nonce from the same endpoint used for broadcasting avoids replication lag issues. Falls back to weighted selection if the sticky endpoint is unhealthy.
 
-#### Endpoint Health and Circuit Breaker
+### Endpoint Health and Circuit Breaker
 
 Three health states tracked per endpoint:
 
@@ -335,7 +348,7 @@ Circuit breaker activates on consecutive failures with exponential backoff: 10s 
 
 Metrics use lock-free atomic operations with 128-sample rolling windows for response times. Health calculations require minimum 10 requests to prevent volatile early readings.
 
-#### Generic RPC Execution Functions
+### Generic RPC Execution Functions
 
 **`execute_unary<F, Fut, R>`:** Primary generic execution function:
 
@@ -376,7 +389,7 @@ pub async fn acquire_healthy_endpoint(
 ) -> Result<Option<usize>, LobbyRpcError>
 ```
 
-#### High-Level Helper Functions
+### High-Level Helper Functions
 
 **`send_raw_transaction`:** Broadcasts signed transactions with configurable load balancing strategy.
 
@@ -388,11 +401,11 @@ pub async fn acquire_healthy_endpoint(
 
 ---
 
-### 3.4 Error Handling
+## 3.4 Error Handling
 
 Lobby categorizes errors as terminating (fatal, abort immediately) or non-terminating (transient, eligible for retry).
 
-#### Terminating Errors
+### Terminating Errors
 
 Terminating errors indicate deterministic failures that will not succeed on retry:
 
@@ -406,7 +419,7 @@ Terminating errors indicate deterministic failures that will not succeed on retr
 
 All terminating errors immediately abort the pipeline without further retry attempts.
 
-#### Non-Terminating Errors
+### Non-Terminating Errors
 
 Non-terminating errors trigger the `retry_with_backoff` mechanism using full-jitter exponential backoff:
 
@@ -426,7 +439,7 @@ pub enum RetryDecision<E> {
 
 Operations return `Result<T, RetryDecision<E>>` to signal retry eligibility. Each retry emits a WARN event; final failure emits ERROR.
 
-#### NonceTooLow Handling
+### NonceTooLow Handling
 
 When broadcast detects `NonceTooLow` (divergence between database and on-chain nonce):
 
@@ -438,7 +451,7 @@ When broadcast detects `NonceTooLow` (divergence between database and on-chain n
 
 A guard variable (`nonce_retry_attempted`) ensures recovery runs at most once per execution, preventing infinite loops.
 
-#### Nonce Gaps
+### Nonce Gaps
 
 Ethereum processes transactions strictly in nonce order. Missing nonces block all higher nonces indefinitely.
 
@@ -488,4 +501,3 @@ Future production versions will implement AWS KMS-backed envelope encryption:
 
 *Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
-
