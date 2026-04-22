@@ -89,7 +89,7 @@ from the `test-keys.json` and store them in the .env file
 
 ```bash
 #run the generate_api_keys binary
-cargo run --release generate_api_keys
+cargo run --release --bin generate_api_keys
 ```
 
 ### 4. Configure Environment
@@ -489,8 +489,8 @@ Future production versions will implement AWS KMS-backed envelope encryption:
 
 1. **Data Encryption Key (DEK):** Each private key is encrypted at rest using a DEK.
 2. **Customer Master Key (CMK):** The DEK itself is encrypted by an AWS KMS CMK.
-3. **Boot-time decryption:** Lobby calls AWS KMS `Decrypt` to obtain plaintext DEK, held only in process memory.
-4. **Runtime security:** Plaintext private keys held in memory for low-latency signing; all key material zeroized on shutdown.
+3. **Boot-time decryption:** Lobby calls AWS KMS `Decrypt` to obtain plaintext DEK, held only in process memory, which is then used to decrypt the private key (in memory) during runtime.
+4. **Runtime security:** Plaintext private keys are held in memory for ensuring low-latency signing; all key material is zeroized on shutdown.
 
 **Benefits:**
 - Private keys are never stored in plaintext outside the running process
