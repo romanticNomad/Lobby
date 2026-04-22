@@ -72,7 +72,7 @@ cd ../Lobby
 
 ```json
 {
-  "test_account": {
+  "account_N": {
     "pvt_key": "0x<64_hex_characters>",
     "pub_key": "0x<128_hex_characters>",
     "address": "0x<40_hex_characters>"
