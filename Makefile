@@ -1,15 +1,16 @@
-.PHONY: all setup db keys api run clean
+.PHONY: lobbyup db keys api reset
 
 KEYS_FILE := test_keys.json
 ENV_FILE := .env
 
 # Default: everything a new contributor needs
-all: db keys api
-	@echo "Setup complete. Run 'make run' to start Lobby."
+lobbyup: db keys api
+	@echo "Lobby Setup complete."
 
 # 1. Infrastructure (idempotent)
 db:
 	@echo "Starting PostgreSQL and Redis..."
+	cp .env.example .env
 	cd database && docker compose up -d
 	cd database && sqlx migrate run
 
@@ -24,18 +25,10 @@ keys:
 
 # 3. Generate API keys and create .env (skip if present)
 api: keys
-	@if [ ! -f $(ENV_FILE) ]; then \
-		echo "Generating API keys and creating .env..."; \
-		cargo run --release --quiet --bin generate_api_keys; \
-	else \
-		echo ".env already exists."; \
-	fi
+	@echo "Generating API keys and updating .env..."
+	cargo run --release --quiet --bin generate_api_keys
 
-# 4. Run the application
-run: db
-	source $(ENV_FILE) && cargo run --release --bin lobby
-
-# Cleanup
-clean:
+# 4. reset the lobby setup
+reset: 
 	cd database && docker compose down -v
-	rm -f $(KEYS_FILE) $(ENV_FILE)
+	rm -f .env && rm -f test_keys.json
