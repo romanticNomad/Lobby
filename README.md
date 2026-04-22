@@ -10,7 +10,7 @@
 
 **Version:** 0.1.0 (Prototype)  
 **Last Updated:** April 21 2026  
-**Target Audience:** Contributors, LLMs working on the Lobby codebase and EVM transaction operators.
+**Target Audience:** Contributors, Devs intrested in learning EVM transaction mechanics and LLMs.
 
 ---
 
@@ -40,29 +40,74 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 - Docker and Docker Compose
 - Access to EVM RPC endpoints (Alchemy, Infura, or self-hosted nodes)
 
-### 1. Clone and Setup Infrastructure
+### 1. Automatic Lobby Setup
 
+1. Clone the repository
 ```bash
 git clone https://github.com/romanticNomad/Lobby.git
 cd Lobby
-
-# Start PostgreSQL and Redis
-cd database
-docker compose up -d
-sqlx migrate run
-cd ..
 ```
 
-### 2. Generate Test Keys with Locket
+2. Run the Makefile setup
+```bash
+make lobbyup
+```
+Running the above command would:
+- Copy the database URLs from `.env.example` to `.env`. 
+- Build and run docker containers for `PostgreSQL` and `Redis` and `RedisInsights`.
+- Copy keys from `test_keys.json.example` to the required file `test_keys.json`.
+- Generates the `api_keys` from the copied test-keys and put them in the `.env`, *only safe for test environments*.
 
+expected outcome
+```bash
+Starting PostgreSQL and Redis...
+cp .env.example .env
+cd database && docker compose up -d
+[+] up 7/7
+ ✔ Network database_default                Created       0.0s
+ ✔ Volume database_lobby_pgdata            Created       0.0s
+ ✔ Volume database_lobby_redis_data        Created       0.0s
+ ✔ Volume database_lobby_redisinsight_data Created       0.0s
+ ✔ Container lobby-postgres                Started       0.3s
+ ✔ Container lobby-redis                   Started       0.3s
+ ✔ Container lobby-redis-insight           Started       0.4s
+cd database && sqlx migrate run
+Applied 20260128093012/migrate nonce (5.6074ms)
+Applied 20260203055307/migrate broadcast (3.722023ms)
+Applied 20260203062332/migrate sign (4.400378ms)
+Applied 20260210152024/migrate relayhost (4.498941ms)
+Applied 20260225203657/migrate validate (4.530109ms)
+Copying example test keys...
+Generating API keys and updating .env...
+cargo run --release --quiet --bin generate_api_keys
+Generated API keys appended to .env
+Lobby Setup complete
+```
+
+3. After running `make lobbyup`, you need to manually add your `RPC_ENDPOINT`(s) in the `.env` file created during setup
+in order to run any kind of transction. Boilerplate for the endpoint-format is present in the `.env.example` file.
+
+### 2. Custom Lobby Setup (skip if you have used the automatic setup)
+
+1. Clone the repository
+```bash
+git clone https://github.com/romanticNomad/Lobby.git
+cd Lobby
+```
+
+2. Generate custom evm-keys with `Locket`
+>[`Locket`](https://github.com/romanticNomad/Locket) is a rust app that I use to generate evm compatible keys for my testing environments.    
 ```bash
 # exit control from the Lobby workspace
 cd ..
+
 # Clone and run Locket for test account generation
 git clone https://github.com/romanticNomad/Locket.git
 cd Locket
+
 # using 5 as an example, you may use any (positive) number 
 cargo run -- accounts 5
+
 # Copy the generated key output
 mv accounts.json ../Lobby/test-keys.json
 cd ../Lobby
@@ -75,24 +120,35 @@ cd ../Lobby
   "account_N": {
     "pvt_key": "0x<64_hex_characters>",
     "pub_key": "0x<128_hex_characters>",
-    "address": "0x<40_hex_characters>"
+    "address": "0x<40_hex_characters>",
   }
 }
 ```
 
-### 3. Generate test- API keys from the `test-keys.json` using the `generate_api_keys.rs` binary
-
-The `generate_api_keys` binary will automatically create the lobby-formatted API keys
-from the `test-keys.json` and store them in the .env file
-
->**Author Note**:  never store production API keys and EVM private keys in the .env file
-
+3. Setup `PostgreSQL` and `Redis` database
 ```bash
-#run the generate_api_keys binary
+# append the database url(s) to .env
+cp .env.example .env
+
+# start docker
+cd database
+docker compose up -d
+
+# run sqlx migrations
+sqlx migrate run
+cd ..
+```
+
+4. Generate API-keys using the `generate_api_keys` binary (included with lobby)
+```bash
+# it will automatically generate lobby-formated api-keys and add them to .env
+# it is assumed that the keys are alread generate and stored in test_keys.json (step-1)
 cargo run --release --bin generate_api_keys
 ```
 
-### 4. Configure Environment
+5. manually add your `RPC_ENDPOINT`(s) in the `.env` (.env cofiguration show in the following step)
+
+### 3. Configure Environment
 
 Create `.env` in the project root:
 
@@ -104,14 +160,14 @@ export RUST_LOG="INFO"
 
 # API key format: <token>:<client_id>:<from_address>
 export LOBBY_API_KEY_1="<api-key-generated-by-the-binary>"
-# There must 1 or more API keys generated, depending on the number `N` you chose.
+# There must be atleast 1 API key(s) generated, depending on the number `N` you choice.
 
 # RPC endpoints (comma-separated for multiple endpoints per chain)
 export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
 export RPC_ENDPOINT_560048="https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY,https://hoodi.infura.io/v3/YOUR_KEY"
 ```
 
-### 5. Build and Run
+### 4. Build and Run
 
 ```bash
 source .env
@@ -131,7 +187,7 @@ INFO     ｉ [info]: bots spawned: monitoring status
 INFO     ｉ [info]: lobby listening at: | address: 0.0.0.0:3000
 ```
 
-### 6. Test Submission
+### 5. Test Submission
 * For standard test-mainnet gas parameters
 * Value = 0.1 eth
 * Use API of a valid `address` from the `test-keys.json` for testing.
@@ -156,6 +212,7 @@ curl -X POST http://localhost:3000/v1/transactions \
   }'
 ```
 
+**note**: Port for redis-insights is `5540`.
 ---
 
 ## Architectural Overview

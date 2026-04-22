@@ -10,7 +10,7 @@ lobbyup: db keys api
 # 1. Infrastructure (idempotent)
 db:
 	@echo "Starting PostgreSQL and Redis..."
-	cp .env.example .env
+	mv .env.example .env
 	cd database && docker compose up -d
 	cd database && sqlx migrate run
 
@@ -18,7 +18,7 @@ db:
 keys:
 	@if [ ! -f $(KEYS_FILE) ]; then \
 		echo "Copying example test keys..."; \
-		cp test_keys.json.example $(KEYS_FILE); \
+		mv test_keys.json.example $(KEYS_FILE); \
 	else \
 		echo "Test keys already exist."; \
 	fi
