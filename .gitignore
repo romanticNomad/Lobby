@@ -4,5 +4,4 @@ target
 test_keys.json
 api_keys
 context
-*.sh
 .windsurf
