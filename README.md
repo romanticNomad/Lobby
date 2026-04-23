@@ -54,9 +54,9 @@ make lobbyup
 ```
 Running the above command would:
 - Copy the database URLs from `.env.example` to `.env`. 
-- Build and run docker containers for `PostgreSQL` and `Redis` and `RedisInsights`.
+- Build and run Docker containers for `PostgreSQL`, `Redis` and `RedisInsights`.
 - Copy keys from `test_keys.json.example` to the required file `test_keys.json`.
-- Generates the `api_keys` from the copied test-keys and put them in the `.env`, *only safe for test environments*.
+- Generates the `api_keys` from the copied test-keys and puts them in the `.env`, *only safe for test environments*.
 
 expected outcome
 ```bash
@@ -85,9 +85,10 @@ Lobby Setup complete
 ```
 
 3. After running `make lobbyup`, you need to manually add your `RPC_ENDPOINT`(s) in the `.env` file created during setup
-in order to run any kind of transction. Boilerplate for the endpoint-format is present in the `.env.example` file.
+to run any kind of transaction. Boilerplate for the endpoint-format is present in the `.env.example` file.
 
-### 2. Custom Lobby Setup (skip if you have used the automatic setup)
+### 2. Custom Lobby Setup
+> Skip this step if you have used the automatic setup.
 
 1. Clone the repository
 ```bash
@@ -95,8 +96,8 @@ git clone https://github.com/romanticNomad/Lobby.git
 cd Lobby
 ```
 
-2. Generate custom evm-keys with `Locket`
->[`Locket`](https://github.com/romanticNomad/Locket) is a rust app that I use to generate evm compatible keys for my testing environments.    
+2. Generate custom EVM keys with `Locket`
+>[`Locket`](https://github.com/romanticNomad/Locket) is a Rust app that I use to generate EVM-compatible keys for my testing environments.    
 ```bash
 # exit control from the Lobby workspace
 cd ..
@@ -125,7 +126,7 @@ cd ../Lobby
 }
 ```
 
-3. Setup `PostgreSQL` and `Redis` database
+3. Set up `PostgreSQL` and `Redis` databases
 ```bash
 # append the database url(s) to .env
 cp .env.example .env
@@ -139,18 +140,18 @@ sqlx migrate run
 cd ..
 ```
 
-4. Generate API-keys using the `generate_api_keys` binary (included with lobby)
+4. Generate API keys using the `generate_api_keys` binary (included with lobby)
 ```bash
-# it will automatically generate lobby-formated api-keys and add them to .env
-# it is assumed that the keys are alread generate and stored in test_keys.json (step-1)
+# It will automatically generate lobby-formatted API keys and add them to .env
+# It is assumed that the keys are already generated and stored in test_keys.json (step-1)
 cargo run --release --bin generate_api_keys
 ```
 
-5. manually add your `RPC_ENDPOINT`(s) in the `.env` (.env cofiguration show in the following step)
+5. manually add your `RPC_ENDPOINT`(s) in the `.env` (.env configuration shows in the following step)
 
 ### 3. Configure Environment
 
-Create `.env` in the project root:
+Minimal `.env` configuration in the project root:
 
 ```bash
 export DATABASE_URL="postgresql://lobby:lobby_dev_password@localhost:5432/lobby-db"
@@ -160,7 +161,7 @@ export RUST_LOG="INFO"
 
 # API key format: <token>:<client_id>:<from_address>
 export LOBBY_API_KEY_1="<api-key-generated-by-the-binary>"
-# There must be atleast 1 API key(s) generated, depending on the number `N` you choice.
+# There must be at least 1 API key(s) generated, depending on the number `N` you choose.
 
 # RPC endpoints (comma-separated for multiple endpoints per chain)
 export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
@@ -190,7 +191,7 @@ INFO     ｉ [info]: lobby listening at: | address: 0.0.0.0:3000
 ### 5. Test Submission
 * For standard test-mainnet gas parameters
 * Value = 0.1 eth
-* Use API of a valid `address` from the `test-keys.json` for testing.
+* Use the API of a valid `address` from the `test-keys.json` for testing.
 
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
