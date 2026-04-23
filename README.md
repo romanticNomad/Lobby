@@ -190,7 +190,7 @@ INFO     ｉ [info]: lobby listening at: | address: 0.0.0.0:3000
 
 ### 5. Test Submission
 * For standard test-mainnet gas parameters
-* Value = 0.1 eth
+* Value = 0.01 eth
 * Use the API of a valid `address` from the `test-keys.json` for testing.
 
 ```bash
