@@ -26,6 +26,7 @@ use url::Url;
 const STATS_CACHE_TTL_MS: u64 = 1000;
 
 /// Default timeout for provider operations
+#[allow(dead_code)]
 const DEFAULT_OPERATION_TIMEOUT_MS: u64 = 30000;
 
 // ============================================================================
