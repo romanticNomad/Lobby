@@ -13,7 +13,7 @@ resolver = "2"
 tokio = { version = "1", features = ["full"] }
 axum = "0.8.8"
 reqwest = { version = "0.12", features = ["json", "http2"] }
-testcontainers = "0.23"
+testcontainers = "0.26.0"
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
 metrics = "0.24"
 hdrhistogram = "7"
