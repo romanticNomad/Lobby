@@ -103,4 +103,10 @@ impl InfraStack {
         let _ = self.redis_container.stop().await;
         let _ = self.redis_container.rm().await;
     }
+
+    // pool_accessor
+    #[inline]
+    pub fn get_pool(&self) -> &PgPool {
+        &self.pool
+    }
 }
