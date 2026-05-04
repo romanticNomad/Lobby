@@ -213,7 +213,30 @@ curl -X POST http://localhost:3000/v1/transactions \
   }'
 ```
 
-**note**: Port for redis-insights is `5540`.
+* On successful acceptance, lobby sends an immidiate message to the client:
+Success Response (202 Accepted):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "accepted"
+  },
+  "id": 1
+}
+```
+
+> for live status update, you may use the terminal of redis-insights    
+> **note**: Port for redis-insights is `5540`.
+
+### 6. Get Transaction Status
+* You would need a valid `API-Key` and `ExecutionId` to recieve transaction status
+
+``` bash
+curl -X GET http://localhost:3000/status/{execution_id} \
+  -H "Authorization: Bearer <api-key>"
+```
 ---
 
 ## Architectural Overview
