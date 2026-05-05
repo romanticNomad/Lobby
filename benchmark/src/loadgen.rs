@@ -285,17 +285,4 @@
 //             },
 //         })
 //     }
-
-//     /// Generates `N` test accounts with lobby-formatted API keys.
-//     fn generate_accounts(count: usize) -> Vec<TestAccount> {
-//         (0..count).map(|i| {
-//             let address = format!("0x{:040x}", i);
-//             let token_suffix = Uuid::new_v4().simple().to_string();
-//             let api_token = format!("lobby_live_{}", &token_suffix[..9]);
-//             let client_id = Uuid::new_v4().to_string();
-//             let api_key = format!("{}:{}:{}", api_token, client_id, address);
-
-//             TestAccount { address, api_key }
-//         }).collect()
-//     }
 // }
