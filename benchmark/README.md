@@ -140,7 +140,7 @@ impl MockRpcState {
 - **Sticky Affinity Simulation:** If Lobby passes `chain_id` in headers, route to chain-specific `MockRpcState` instances to validate load-balancer routing.
 
 ### `loadgen.rs` (Account Generation + Ramp Phase)
-**Account Gen:** Generate 250 `PrivateKeySigner` instances. Fund mock accounts via `eth_sendTransaction` RPC call pre-bench. Map 1:1 API keys.
+**Account Gen:** Generate 250 `PrivateKeySigner` instances. Map 1:1 API keys.
 **Ramp Algorithm:**
 1. Define phases: `ramp(10s) → steady(30s) → cooldown(5s)`.
 2. Use `tokio::time::interval` with 100ms ticks.
