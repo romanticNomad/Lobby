@@ -65,7 +65,7 @@
 // }
 
 // struct TestAccount {
-//     address: String,
+//     address: Hashmap<Adrress, [u8; 32]>,
 //     api_key: String,
 // }
 
