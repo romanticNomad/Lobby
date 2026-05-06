@@ -4,5 +4,5 @@ members = [
     "crate/actors",
     "crate/cortex",
     "crate/utils",
-    "lobby",
+    "lobby", "benchmark",
 ]
