@@ -40,6 +40,28 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 - Docker and Docker Compose
 - Access to EVM RPC endpoints (Alchemy, Infura, or self-hosted nodes)
 
+### Setting up test EVM keys
+>[`Locket`](https://github.com/romanticNomad/Locket) is a Rust app that I use to generate EVM-compatible keys for my testing environments. 
+
+1. Clone `Locket` for EVM compatible keys generation
+```bash
+# Clone and run Locket for test account generation
+git clone https://github.com/romanticNomad/Locket.git
+cd Locket
+
+# using 5 as an example, you may use any (positive) number 
+# doing so generates the N keys and puts them in a `accounts.json` file.
+cargo run -- accounts 5
+
+# move out of the locket repo
+cd ..
+```
+
+**Expected outcome**
+```bash
+Generated 5 account(s) in accounts.json
+```
+
 ### 1. Automatic Lobby Setup
 
 1. Clone the repository
@@ -48,47 +70,51 @@ git clone https://github.com/romanticNomad/Lobby.git
 cd Lobby
 ```
 
-2. Run the Makefile setup
+2. Move the `accounts.json` keys to `test_keys.json`
+```bash
+mv ../Locket/accounts.json test_keys.json
+```
+
+3. Run the Makefile setup
 ```bash
 make lobbyup
 ```
 Running the above command would:
 - Copy the database URLs from `.env.example` to `.env`. 
 - Build and run Docker containers for `PostgreSQL`, `Redis` and `RedisInsights`.
-- Copy keys from `test_keys.json.example` to the required file `test_keys.json`.
-- Generates the `api_keys` from the copied test-keys and puts them in the `.env`, *only safe for test environments*.
+- Generates the `api_keys` from the copied test_keys and puts them in the `.env`, *only safe for test environments*.
 
-expected outcome
+**Expected outcome**
 ```bash
 Starting PostgreSQL and Redis...
-cp .env.example .env
+mv .env.example .env
 cd database && docker compose up -d
 [+] up 7/7
- ✔ Network database_default                Created       0.0s
- ✔ Volume database_lobby_pgdata            Created       0.0s
- ✔ Volume database_lobby_redis_data        Created       0.0s
- ✔ Volume database_lobby_redisinsight_data Created       0.0s
- ✔ Container lobby-postgres                Started       0.3s
- ✔ Container lobby-redis                   Started       0.3s
- ✔ Container lobby-redis-insight           Started       0.4s
+ ✔ Network database_default                Created    0.0s
+ ✔ Volume database_lobby_redisinsight_data Created    0.0s
+ ✔ Volume database_lobby_pgdata            Created    0.0s
+ ✔ Volume database_lobby_redis_data        Created    0.0s
+ ✔ Container lobby-redis                   Started    0.3s
+ ✔ Container lobby-postgres                Started    0.4s
+ ✔ Container lobby-redis-insight           Started    0.4s
 cd database && sqlx migrate run
-Applied 20260128093012/migrate nonce (5.6074ms)
-Applied 20260203055307/migrate broadcast (3.722023ms)
-Applied 20260203062332/migrate sign (4.400378ms)
-Applied 20260210152024/migrate relayhost (4.498941ms)
-Applied 20260225203657/migrate validate (4.530109ms)
-Copying example test keys...
-Generating API keys and updating .env...
+Applied 20260128093012/migrate nonce (5.645409ms)
+Applied 20260203055307/migrate broadcast (3.37226ms)
+Applied 20260203062332/migrate sign (4.484934ms)
+Applied 20260210152024/migrate relayhost (4.415593ms)
+Applied 20260225203657/migrate validate (4.664533ms)
+Generating API keys and updating .env ...
 cargo run --release --quiet --bin generate_api_keys
 Generated API keys appended to .env
-Lobby Setup complete
+Lobby Setup complete.
 ```
 
-3. After running `make lobbyup`, you need to manually add your `RPC_ENDPOINT`(s) in the `.env` file created during setup
-to run any kind of transaction. Boilerplate for the endpoint-format is present in the `.env.example` file.
+4. After running `make lobbyup`, you need to manually add your `RPC_ENDPOINT`(s) in the `.env` file created during setup to run any kind of transaction. 
+
+**Boilerplate for the endpoint-format is present in the `.env.example` file.**
 
 ### 2. Custom Lobby Setup
-> Skip this step if you have used the automatic setup.
+**Skip this step if you have used the automatic setup.**
 
 1. Clone the repository
 ```bash
@@ -96,22 +122,9 @@ git clone https://github.com/romanticNomad/Lobby.git
 cd Lobby
 ```
 
-2. Generate custom EVM keys with `Locket`
->[`Locket`](https://github.com/romanticNomad/Locket) is a Rust app that I use to generate EVM-compatible keys for my testing environments.    
+2. Move the `accounts.json` keys to `test_keys.json`
 ```bash
-# exit control from the Lobby workspace
-cd ..
-
-# Clone and run Locket for test account generation
-git clone https://github.com/romanticNomad/Locket.git
-cd Locket
-
-# using 5 as an example, you may use any (positive) number 
-cargo run -- accounts 5
-
-# Copy the generated key output
-mv accounts.json ../Lobby/test-keys.json
-cd ../Lobby
+mv ../Locket/accounts.json test_keys.json
 ```
 
 `test_keys.json` will be created in the project root (ensure it's in this format):
@@ -154,18 +167,30 @@ cargo run --release --bin generate_api_keys
 Minimal `.env` configuration in the project root:
 
 ```bash
+
+# urls
 export DATABASE_URL="postgresql://lobby:lobby_dev_password@localhost:5432/lobby-db"
 export SERVER_ADDR="0.0.0.0:3000"
 export REDIS_URL="redis://localhost:6379"
+
+# log level
 export RUST_LOG="INFO"
 
 # API key format: <token>:<client_id>:<from_address>
+# There must be at least 1 API key(s) generated, depending on the number `N` you choose for key generation in Locket.
 export LOBBY_API_KEY_1="<api-key-generated-by-the-binary>"
-# There must be at least 1 API key(s) generated, depending on the number `N` you choose.
 
 # RPC endpoints (comma-separated for multiple endpoints per chain)
 export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
 export RPC_ENDPOINT_560048="https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY,https://hoodi.infura.io/v3/YOUR_KEY"
+
+# shards and semaphore settings (can be customized according to requirements)
+export NONCE_SHARDS=100
+export SIGN_SHARDS=10000
+export BROADCAST_SHARDS=100
+export VALIDATOR_SHARDS=400
+export PIPELINE_CONCURRENCY=10000
+export ACTOR_BUFFER_SIZE=10000
 ```
 
 ### 4. Build and Run
@@ -178,20 +203,20 @@ cargo run --release --bin lobby
 Expected startup output:
 
 ```bash
-INFO     ｉ [info]: "relation \"_sqlx_migrations\" already exists, skipping"
-INFO     ｉ [info]: api_keys loaded: 5
-INFO     ｉ [info]: custody accounts loaded: 5
-INFO     ｉ [info]: rpc_endpoints loaded: {ChainId(560048): 2, ChainId(1): 2}
-INFO     ｉ [info]: StatusRegistry loaded | artifacts_count: 0
-INFO     ｉ [info]: cortex online
-INFO     ｉ [info]: bots spawned: monitoring status
-INFO     ｉ [info]: lobby listening at: | address: 0.0.0.0:3000
+INFOｉ [info]: "relation \"_sqlx_migrations\" already exists, skipping"
+INFOｉ [info]: api_keys loaded: 5
+INFOｉ [info]: custody accounts loaded: 5
+INFOｉ [info]: rpc_endpoints loaded: {ChainId(560048): 2, ChainId(1): 2}
+INFOｉ [info]: StatusRegistry loaded | artifacts_count: 0
+INFOｉ [info]: cortex online
+INFOｉ [info]: bots spawned: monitoring status
+INFOｉ [info]: lobby listening at: | address: 0.0.0.0:3000
 ```
 
 ### 5. Test Submission
 * For standard test-mainnet gas parameters
 * Value = 0.01 eth
-* Use the API of a valid `address` from the `test-keys.json` for testing.
+* Use the API of a valid `address` from the `test_keys.json` for testing.
 
 ```bash
 curl -X POST http://localhost:3000/v1/transactions \
@@ -201,13 +226,13 @@ curl -X POST http://localhost:3000/v1/transactions \
     "jsonrpc": "2.0",
     "method": "eth_sendRawTransaction",
     "params": [{
-      "from": "<your_address>",
-      "to": "<recipient_address>",
-      "value": "0x2386f26fc10000",
-      "chainId": "0x88bb0",
-      "gas": "0x5208",
-      "maxFeePerGas": "0xba43b7400",
-      "maxPriorityFeePerGas": "0x77359400"
+ "from": "<your_address>",
+ "to": "<recipient_address>",
+ "value": "0x2386f26fc10000",
+ "chainId": "0x88bb0",
+ "gas": "0x5208",
+ "maxFeePerGas": "0xba43b7400",
+ "maxPriorityFeePerGas": "0x77359400"
     }],
     "id": 1
   }'
@@ -277,12 +302,12 @@ pub fn spawn_nonce_actor(db: PgPool, buffer_size: usize) -> NonceHandle {
 ```rust
 pub async fn run(mut self) {
     while let Some(cmd) = self.rx.recv().await {
-        match cmd {
-            NonceCommand::Reserve { reply, .. } => {
-                let result = self.handle_reserve(...).await;
-                let _ = reply.send(result);
-            }
-        }
+   match cmd {
+  NonceCommand::Reserve { reply, .. } => {
+ let result = self.handle_reserve(...).await;
+ let _ = reply.send(result);
+  }
+   }
     }
 }
 ```
@@ -296,9 +321,9 @@ pub struct NonceHandle { tx: mpsc::Sender<NonceCommand> }
 #[async_trait]
 impl NonceManager for NonceHandle {
     async fn reserve(&self, ...) -> Result<TxNonce, LocalError> {
-        let (reply, rx) = oneshot::channel();
-        self.tx.send(NonceCommand::Reserve { ..., reply }).await?;
-        rx.await?
+   let (reply, rx) = oneshot::channel();
+   self.tx.send(NonceCommand::Reserve { ..., reply }).await?;
+   rx.await?
     }
 }
 ```
@@ -332,7 +357,7 @@ SELECT $1, COALESCE((SELECT MAX(revision) FROM table WHERE execution_id=$1), 0) 
 WHERE NOT EXISTS (
     SELECT 1 FROM table
     WHERE execution_id = $1
-      AND (state = 'finalized' OR (state = 'reserved' AND updated_at > now() - interval '2 minutes'))
+ AND (state = 'finalized' OR (state = 'reserved' AND updated_at > now() - interval '2 minutes'))
 )
 ```
 
@@ -346,19 +371,19 @@ Every transaction flows through a five-stage pipeline orchestrated by the Cortex
 
 ```
 Client Submit
-      |
-      v
+ |
+ v
 ┌─────────────────────────────────────────────────────────────┐
-│                    LOBBY PIPELINE                           │
+│LOBBY PIPELINE  │
 ├─────────────────────────────────────────────────────────────┤
-│  1. RelayHost        → Validate & persist transaction       │
-│  2. Nonce Reserve    → Assign sequential nonce              │
-│  3. Sign             → Generate EIP-1559 signature          │
-│  4. Broadcast        → Submit to blockchain RPC             │
-│  5. Validator        → Confirm on-chain inclusion           │
+│  1. RelayHost   → Validate & persist transaction  │
+│  2. Nonce Reserve    → Assign sequential nonce    │
+│  3. Sign   → Generate EIP-1559 signature│
+│  4. Broadcast   → Submit to blockchain RPC   │
+│  5. Validator   → Confirm on-chain inclusion │
 └─────────────────────────────────────────────────────────────┘
-      |
-      v
+ |
+ v
   Confirmed or Failed
 ```
 
@@ -439,11 +464,11 @@ Metrics use lock-free atomic operations with 128-sample rolling windows for resp
 ```rust
 pub async fn execute_unary<F, Fut, R>(
     &self,
-    actor: SelectActor,           // Broadcast or Validator
+    actor: SelectActor, // Broadcast or Validator
     chain_id: ChainId,
     sticky_index: Option<usize>, // Endpoint affinity
     timeout: Duration,
-    operation: F,                // Closure taking provider
+    operation: F, // Closure taking provider
 ) -> Result<R, LobbyRpcError>
 ```
 
@@ -516,8 +541,8 @@ sleep = rand(0, window)
 
 ```rust
 pub enum RetryDecision<E> {
-    Retry(E),              // Transient, backoff and retry
-    FailImmediately(E),      // Fatal, abort now
+    Retry(E),    // Transient, backoff and retry
+    FailImmediately(E), // Fatal, abort now
 }
 ```
 
