@@ -1,7 +1,6 @@
-use std::path::PathBuf;
-
 use anyhow::{Ok, Result};
 use sqlx::{PgPool, migrate::Migrator};
+use std::path::PathBuf;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tokio::process::Command;
 
@@ -29,7 +28,8 @@ const PG_CMD: [&str; 13] = [
 /// Lobby-Api keys stack, to be set up in the environment along with docker urls
 ///
 /// API Key format:
-/// * `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
+/// 
+/// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
 pub struct ApiStack {
     key: String,
     api: String,
