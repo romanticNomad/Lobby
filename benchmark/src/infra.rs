@@ -2,7 +2,6 @@ use anyhow::{Ok, Result};
 use sqlx::{PgPool, migrate::Migrator};
 use std::path::PathBuf;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
-use tokio::process::Command;
 
 // ============================================================
 // Postgres with benchmark-tuned CLI flags (bypasses default healthcheck)
@@ -95,22 +94,23 @@ impl InfraStack {
     }
 
     // ============================================================
+    // Needs to be in the orchestrator ...
 
-    /// Returns a pre-configured `Command` builder for the `lobby` binary.
-    /// Injects dynamic URLs, disables source `.env` requirement, and sets benchmark flags.
-    pub fn lobby_command(&self, api_keys: Vec<ApiStack>) -> Command {
-        let mut cmd = Command::new("cargo");
-        cmd.args(["run", "--release", "--features", "bench", "--bin", "lobby"])
-            .env("DATABASE_URL", &self.pg_url)
-            .env("REDIS_URL", &self.redis_url)
-            .env("SERVER_ADDR", "127.0.0.1:3000")
-            .env("RUST_LOG", "WARN"); // Reduce overhead during bench
+    // /// Returns a pre-configured `Command` builder for the `lobby` binary.
+    // /// Injects dynamic URLs, disables source `.env` requirement, and sets benchmark flags.
+    // pub fn lobby_command(&self, api_keys: Vec<ApiStack>) -> Command {
+    //     let mut cmd = Command::new("cargo");
+    //     cmd.args(["run", "--release", "--features", "bench", "--bin", "lobby"])
+    //         .env("DATABASE_URL", &self.pg_url)
+    //         .env("REDIS_URL", &self.redis_url)
+    //         .env("SERVER_ADDR", "127.0.0.1:3000")
+    //         .env("RUST_LOG", "WARN"); // Reduce overhead during bench
 
-        for api_key in api_keys {
-            cmd.env(api_key.key, api_key.api);
-        }
-        cmd
-    }
+    //     for api_key in api_keys {
+    //         cmd.env(api_key.key, api_key.api);
+    //     }
+    //     cmd
+    // }
 
     // ============================================================
 

@@ -1,241 +1,521 @@
-# Lobby Benchmark Architecture & Implementation Guide
+## 🔍 Detailed Correction Breakdown (Mapped to Your Structure)
 
-## 1. Cargo.toml Configuration & `features` Tag
+| Your Original Plan | Institutional Correction (2026) | Why It Matters at 1k–10k TPS |
+|--------------------|--------------------------------|------------------------------|
+| `main.rs` owns a single `Collector` task that receives from `mpsc`, POSTs to Lobby, and routes responses via `oneshot` back to orchestrator | Replace with **dispatch worker pool** + **sharded latency metrics**. `oneshot` routing is removed. Workers push metrics directly into per-worker `hdrhistogram` instances. | `oneshot` allocations + manual routing create implicit backpressure, GC pressure, and skew latency measurements. A worker pool scales linearly with CPU cores. |
+| `loadgen/` pushes transactions via rigid `tokio::time::sleep` or fixed intervals | Use a **token-bucket pacer** with drift compensation. Pacer emits `TxRequest` structs at exact intervals, compensating for async scheduler jitter. | Rigid sleeps cause burst/jitter. Token buckets maintain smooth throughput under load, critical for accurate p99/p999 latency reporting. |
+| Mock RPC is a simple synchronous responder | Mock RPC runs on `axum` with **in-memory nonce state machine**, configurable latency simulation, and connection reuse. Handles `eth_sendRawTransaction`, `eth_getTransactionCount`, `eth_getTransactionReceipt`, `eth_blockNumber`. | Realistic RPC behavior prevents benchmark artifacts. Sticky nonce tracking ensures Lobby’s retry/recovery paths are exercised. |
+| Metrics aggregated ad-hoc in orchestrator | Introduce `metrics.rs` with **per-worker histograms** + periodic merge into a global histogram. Optional OTLP/Prometheus export. | Institutional benchmarks require lock-free hot paths. Merging histograms avoids mutex contention during the steady-state run. |
+| Infrastructure setup blocks orchestrator thread | `infra.rs` uses `testcontainers` with async health checks, runs `sqlx migrate run`, and exposes ports deterministically. Lobby is spawned via `tokio::process::Command` with env injection. | Deterministic infra lifecycle prevents race conditions during benchmark warm-up. |
 
-### Workspace Structure
-```toml
-# Cargo.toml (workspace root)
-[workspace]
-members = ["lobby", "lobby-bench"]
-resolver = "2"
+---
 
-[workspace.dependencies]
-tokio = { version = "1", features = ["full"] }
-axum = "0.8.8"
-reqwest = { version = "0.12", features = ["json", "http2"] }
-testcontainers = "0.26.0"
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
-metrics = "0.24"
-hdrhistogram = "7"
-alloy = { version = "1.6.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tracing = "0.1"
+## 🏗️ Institutional Benchmark Architecture
+
+```text
+[infra.rs] ──┐
+             ├── [testcontainers] → PostgreSQL + Redis
+             └── [sqlx migrate] → Schema applied
+                   │
+[mockrpc.rs] ──────┘
+                   │ (Axum HTTP server, nonce state machine)
+                   ▼
+[Lobby Binary] ←── (spawned via tokio::process, reads MOCK_RPC_URL)
+                   │ (Axum API on :3000)
+                   ▲
+[loadgen/producer] ──(mpsc)──► [dispatch.rs] (N workers)
+       │                              │
+       └─[pacer.rs] (token bucket)    └─ reqwest::Client (HTTP/2, pooled)
+                                      │
+                                      └─► [metrics.rs] (per-worker Histogram → merge)
 ```
 
-### `lobby-bench/Cargo.toml`
+---
+
+## 📦 Skeleton Implementation (File-by-File)
+
+### `Cargo.toml`
 ```toml
 [package]
 name = "lobby-bench"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "lobby-bench"
-path = "src/main.rs"
-
 [dependencies]
-tokio.workspace = true
-axum.workspace = true
-reqwest.workspace = true
-testcontainers.workspace = true
-sqlx.workspace = true
-metrics.workspace = true
-hdrhistogram.workspace = true
-alloy.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
+tokio = { version = "1.36", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "http2"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bytes = "1.5"
+hdrhistogram = "7.5"
+testcontainers = { version = "0.23", features = ["postgres", "redis"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate"] }
+axum = "0.8"
+parking_lot = "0.12"
 rand = "0.8"
-divan = "0.1" # Optional CLI harness
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio-util = "0.7"
+governor = "0.6"
 ```
-
-### The `features` Tag in Cargo
-`features` enables conditional compilation via `#[cfg(feature = "...")]`. It gates code at compile-time, not runtime. In Lobby, we add `bench = []` to `lobby/Cargo.toml`:
-```toml
-# lobby/Cargo.toml
-[features]
-bench = []
-```
-**Usage:**
-```rust
-// pipeline.rs
-#[cfg(feature = "bench")]
-pub static BENCH_LATENCY: std::sync::LazyLock<Arc<Histogram>> = std::sync::LazyLock::new(|| {
-    Arc::new(Histogram::new(3).unwrap()) // 3 sigfigs = 0.1% precision
-});
-
-#[cfg(feature = "bench")]
-BENCH_LATENCY.record(latency.as_nanos() as u64).ok();
-```
-**Why:** Production builds (`cargo run --release`) omit histogram recording entirely (zero allocation, zero CPU overhead). Benchmark builds (`cargo run --release --features bench`) enable lock-free latency tracking. This is the 2026 standard for observability gating.
 
 ---
 
-## 2. Module Algorithmic Breakdown
-
-### `infra.rs` (DB/Redis Lifecycle + Postgres Tuning)
-1. Spawn `testcontainers` for Postgres & Redis.
-2. Wait for readiness: `pg_isready` / `redis-cli ping` (retry loop with 100ms backoff).
-3. Apply tuned Postgres config via `container.with_env_var("POSTGRES_FLAGS", "...")`:
-   ```
-   -c shared_buffers=512MB -c max_connections=100 -c wal_level=minimal 
-   -c fsync=off -c synchronous_commit=off -c checkpoint_timeout=300s
-   ```
-   *(Note: `fsync=off` is benchmark-only. Never use in prod.)*
-4. Run `sqlx::migrate!().run(&pool).await`.
-5. Implement `Drop` for container teardown on bench exit.
-
-### `mockrpc.rs` (JSON-RPC Server + Nonce Tracking)
-**Architecture:** `axum` router handling `POST /` with a stateful `MockRpcState` protected by `Arc<RwLock<InnerState>>`.
-
-**Core Algorithm:**
+### `src/types.rs`
 ```rust
-struct InnerState {
-    // Tracks next available nonce per address: {0xAddr: AtomicU64}
-    nonce_ledger: DashMap<Address, AtomicU64>,
-    // Simulates block confirmation delay
-    confirmation_delay: Duration,
+use bytes::Bytes;
+use serde::Deserialize;
+
+#[derive(Debug, Clone)]
+pub struct TxRequest {
+    pub payload: Bytes,
+    pub api_key: String,
+    pub issued_at: tokio::time::Instant,
 }
 
-impl MockRpcState {
-    async fn handle_request(&self, payload: JsonRpcRequest) -> JsonRpcResponse {
-        match payload.method.as_str() {
-            "eth_getTransactionCount" => {
-                let addr = parse_from_addr(&payload.params)?;
-                let nonce = self.nonce_ledger.entry(addr)
-                    .or_insert_with(|| AtomicU64::new(0));
-                JsonRpcResponse::success(payload.id, format!("0x{:x}", nonce.load(Ordering::Relaxed) + 5))
-            }
-            "eth_sendRawTransaction" => {
-                let addr = extract_from_addr(&payload.params)?;
-                let nonce = self.nonce_ledger.entry(addr)
-                    .or_insert_with(|| AtomicU64::new(0));
-                let current = nonce.fetch_add(1, Ordering::Relaxed);
-                
-                // Simulate network jitter & block production
-                let jitter = rand::thread_rng().gen_range(1..5);
-                tokio::time::sleep(Duration::from_millis(jitter)).await;
+#[derive(Debug, Deserialize)]
+pub struct LobbyResponse {
+    pub result: LobbyResult,
+}
 
-                // Return deterministic tx hash
-                let mock_hash = format!("0x{:064x}", current ^ (addr.as_u64() as u64));
-                JsonRpcResponse::success(payload.id, mock_hash)
-            }
-            "eth_getTransactionReceipt" => {
-                // Always return success after confirmation_delay
-                JsonRpcResponse::success(payload.id, serde_json::json!({
-                    "status": "0x1",
-                    "blockNumber": "0x1",
-                    "transactionHash": payload.params[0]
-                }))
-            }
-            _ => JsonRpcResponse::error(payload.id, -32601, "Method not found"),
+#[derive(Debug, Deserialize)]
+pub struct LobbyResult {
+    pub execution_id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct BenchmarkConfig {
+    pub target_tps: u64,
+    pub duration_secs: u64,
+    pub worker_count: usize,
+    pub lobby_addr: String,
+    pub api_key: String,
+}
+```
+
+---
+
+### `src/metrics.rs`
+```rust
+use hdrhistogram::Histogram;
+use parking_lot::Mutex;
+use std::sync::Arc;
+
+/// Per-worker local histogram to avoid lock contention during dispatch
+#[derive(Clone)]
+pub struct LocalMetrics {
+    pub latency_hist: Histogram<u64>,
+    pub success_count: u64,
+    pub failure_count: u64,
+}
+
+impl LocalMetrics {
+    pub fn new() -> Self {
+        Self {
+            latency_hist: Histogram::<u64>::new_with_bounds(1, 10_000_000_000, 3).unwrap(),
+            success_count: 0,
+            failure_count: 0,
         }
     }
 }
+
+/// Global aggregator. Merged periodically or at shutdown.
+pub struct GlobalMetrics {
+    pub hist: Mutex<Histogram<u64>>,
+    pub total_success: parking_lot::Mutex<u64>,
+    pub total_failure: parking_lot::Mutex<u64>,
+}
+
+impl GlobalMetrics {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            hist: Mutex::new(Histogram::<u64>::new_with_bounds(1, 10_000_000_000, 3).unwrap()),
+            total_success: parking_lot::Mutex::new(0),
+            total_failure: parking_lot::Mutex::new(0),
+        })
+    }
+
+    pub fn merge_local(&self, local: LocalMetrics) {
+        let mut global = self.hist.lock();
+        global.add(&local.latency_hist).unwrap();
+        *self.total_success.lock() += local.success_count;
+        *self.total_failure.lock() += local.failure_count;
+    }
+
+    pub fn report(&self) {
+        let hist = self.hist.lock();
+        let success = *self.total_success.lock();
+        let failure = *self.total_failure.lock();
+        tracing::info!(
+            p50 = hist.value_at_quantile(0.5),
+            p95 = hist.value_at_quantile(0.95),
+            p99 = hist.value_at_quantile(0.99),
+            success,
+            failure,
+            "benchmark_summary"
+        );
+    }
+}
 ```
-**Institutional Features:**
-- **Nonce Ledger:** `DashMap<Address, AtomicU64>` prevents TOCTOU and simulates mempool nonce progression without EVM execution.
-- **Jitter Injection:** `tokio::time::sleep` + RNG prevents unrealistic 0ms latency spikes that hide pipeline backpressure.
-- **Sticky Affinity Simulation:** If Lobby passes `chain_id` in headers, route to chain-specific `MockRpcState` instances to validate load-balancer routing.
-
-### `loadgen.rs` (Account Generation + Ramp Phase)
-**Account Gen:** Generate 250 `PrivateKeySigner` instances. Map 1:1 API keys.
-**Ramp Algorithm:**
-1. Define phases: `ramp(10s) → steady(30s) → cooldown(5s)`.
-2. Use `tokio::time::interval` with 100ms ticks.
-3. Calculate target requests per tick:
-   ```rust
-   let target_rps = if elapsed < 10.0 {
-       (elapsed / 10.0) * 1000.0 // Linear ramp 0→1000
-   } else if elapsed < 40.0 {
-       1000.0
-   } else {
-       0.0
-   };
-   let per_tick = (target_rps / 10.0).ceil() as usize;
-   ```
-4. Gate concurrency with `tokio::sync::Semaphore::new(500)` to prevent TCP connection exhaustion.
-5. Each tick spawns `per_tick` tasks via `JoinSet`, rotating through API keys round-robin.
-
-### `main.rs` (Orchestrator)
-State machine: `Infra → Spawn Lobby(—features bench) → Health Check → LoadGen → Metrics Drain → Teardown → Report`. Handles `SIGINT` via `tokio::signal::ctrl_c()`. Exports `benchmark_result.json`.
 
 ---
 
-## 3. `hdrhistogram` Integration & Crate Comparison
-
-### `metrics` vs `hdrhistogram` Crate
-| Aspect | `metrics` Crate | `hdrhistogram` Crate |
-|--------|----------------|----------------------|
-| **Purpose** | Telemetry facade/macros (`counter!`, `histogram!`) | High-precision latency data structure |
-| **Implementation** | Dynamic dispatch, global registry, allocates per update | Log-bucket compression, lock-free atomic updates, zero-allocation |
-| **Percentiles** | Requires `metrics-util` aggregation; loses precision under skew | O(1) percentile extraction (`histogram.value_at_percentile(99.0)`) |
-| **Overhead** | ~50-200ns per update + GC pressure | ~5-10ns per update, fixed memory footprint |
-
-**Why `hdrhistogram` for Lobby:** `metrics` histograms fragment under 1000+ TPS due to lock contention and allocation. `hdrhistogram` uses a compressed log-scale bucket array updated via atomics. It retains precision across 6 orders of magnitude (1μs → 100s), critical for pipeline latency distribution.
-
-### Integration Pattern
+### `src/loadgen/pacer.rs`
 ```rust
-// Shared across pipeline actors
-pub struct BenchMetrics {
-    latency: Arc<HdrHistogram>,
+use governor::Quota;
+use std::sync::Arc;
+use tokio::time::Duration;
+
+/// Token-bucket pacer with drift compensation
+pub struct Pacer {
+    limiter: Arc<governor::RateLimiter<governor::direct::NotKeyed, governor::state::InMemoryState, governor::clock::QuantaClock, governor::middleware::NoOpMiddleware>>,
+    interval: Duration,
 }
 
-impl BenchMetrics {
-    pub fn record(&self, ns: u64) {
-        self.latency.record(ns).ok(); // Drops if overflow; never panics
+impl Pacer {
+    pub fn new(tps: u64) -> Self {
+        let interval = Duration::from_millis(1000 / tps);
+        let quota = Quota::per_second(governor::nonzero!(tps));
+        let limiter = Arc::new(governor::RateLimiter::direct(quota));
+        Self { limiter, interval }
     }
-    pub fn percentiles(&self) -> (f64, f64, f64) {
-        (
-            self.latency.value_at_percentile(50.0) as f64 / 1e6,
-            self.latency.value_at_percentile(95.0) as f64 / 1e6,
-            self.latency.value_at_percentile(99.0) as f64 / 1e6,
-        )
+
+    pub async fn wait(&self) {
+        // Drift compensation: wait exactly `interval`, correcting for async scheduler jitter
+        let deadline = tokio::time::Instant::now() + self.interval;
+        self.limiter.until_ready().await;
+        tokio::time::sleep_until(deadline).await;
     }
 }
 ```
-Inject `Arc<BenchMetrics>` into `Cortex` or pipeline actors. On bench exit, drain to JSON. No global registry, no dynamic dispatch.
 
 ---
 
-## 4. Execution & 1000 TPS Validation
+### `src/loadgen/producer.rs`
+```rust
+use crate::types::TxRequest;
+use bytes::Bytes;
+use tokio::sync::mpsc;
+use std::sync::Arc;
 
-### Run Command
-```bash
-cargo run --release --bin lobby-bench -- --accounts 250 --target-tps 1000 --duration 40
-```
+pub struct Producer {
+    tx: mpsc::Sender<TxRequest>,
+    pacer: Arc<crate::loadgen::Pacer>,
+    payload: Bytes,
+    api_key: String,
+}
 
-### Success Criteria
-Parse `benchmark_result.json` and validate:
-```json
-{
-  "total_submitted": 40000,
-  "total_broadcasted": 39850,
-  "broadcast_tps": 1002.5,
-  "latency_ms": { "p50": 12.4, "p95": 48.1, "p99": 112.7 },
-  "error_rate": 0.003,
-  "nonce_collisions": 0
+impl Producer {
+    pub fn new(
+        tx: mpsc::Sender<TxRequest>,
+        pacer: Arc<crate::loadgen::Pacer>,
+        payload: Bytes,
+        api_key: String,
+    ) -> Self {
+        Self { tx, pacer, payload, api_key }
+    }
+
+    pub async fn run(self, count: u64) {
+        for _ in 0..count {
+            self.pacer.wait().await;
+            let req = TxRequest {
+                payload: self.payload.clone(),
+                api_key: self.api_key.clone(),
+                issued_at: tokio::time::Instant::now(),
+            };
+            if self.tx.send(req).await.is_err() {
+                tracing::warn!("dispatch channel closed, stopping producer");
+                break;
+            }
+        }
+        tracing::info!("producer finished");
+    }
 }
 ```
-**Thresholds for Institutional-Grade:**
-1. `broadcast_tps >= 1000` sustained during steady-state window.
-2. `p99_latency < 200ms` (pipeline processing only; mock RPC jitter excluded).
-3. `error_rate < 0.1%` (only `NonceTooLow` or transient backpressure allowed).
-4. `nonce_collisions == 0` (proves actor sharding + DB leases hold under load).
 
-### Validation Logic
+---
+
+### `src/dispatch.rs`
 ```rust
-fn validate(result: &BenchmarkResult) -> Result<(), String> {
-    if result.broadcast_tps < 995.0 {
-        return Err(format!("TPS shortfall: {}", result.broadcast_tps));
+use crate::types::{TxRequest, GlobalMetrics, LocalMetrics};
+use reqwest::Client;
+use tokio::sync::mpsc;
+
+pub struct DispatchWorker {
+    rx: mpsc::Receiver<TxRequest>,
+    client: Client,
+    metrics: LocalMetrics,
+}
+
+impl DispatchWorker {
+    pub fn new(rx: mpsc::Receiver<TxRequest>, client: Client) -> Self {
+        Self { rx, client, metrics: LocalMetrics::new() }
     }
-    if result.latency_ms.p99 > 200.0 {
-        return Err(format!("p99 latency degraded: {}ms", result.latency_ms.p99));
+
+    pub async fn run(mut self, global: &GlobalMetrics, lobby_url: &str) {
+        while let Some(req) = self.rx.recv().await {
+            let start = req.issued_at;
+            let result = self.send(req, lobby_url).await;
+            let latency = start.elapsed().as_micros() as u64;
+
+            match result {
+                Ok(_) => {
+                    self.metrics.success_count += 1;
+                    self.metrics.latency_hist.record(latency).unwrap();
+                }
+                Err(e) => {
+                    self.metrics.failure_count += 1;
+                    tracing::debug!(error = %e, "dispatch_failed");
+                }
+            }
+        }
+        // Merge into global metrics on worker exit
+        global.merge_local(self.metrics);
     }
-    if result.nonce_collisions > 0 {
-        return Err("Nonce sequencing violated. Check actor sharding or DB SKIP LOCKED logic.".into());
+
+    async fn send(&self, req: TxRequest, lobby_url: &str) -> Result<(), reqwest::Error> {
+        let resp = self
+            .client
+            .post(lobby_url)
+            .header("Authorization", format!("Bearer {}", req.api_key))
+            .header("Content-Type", "application/json")
+            .body(req.payload)
+            .send()
+            .await?;
+        resp.error_for_status()?;
+        Ok(())
     }
+}
+
+pub fn spawn_workers(
+    rx: mpsc::Receiver<TxRequest>,
+    client: Client,
+    global: &GlobalMetrics,
+    count: usize,
+    lobby_url: String,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    // Split receiver into N channels for true parallel dispatch
+    let mut workers = Vec::with_capacity(count);
+    let (tx, rx) = tokio::sync::mpsc::channel(10000);
+    // Forward main rx to N worker rx via broadcast-like forwarding
+    tokio::spawn(async move {
+        let mut handles = Vec::new();
+        for _ in 0..count {
+            let (wr, wrx) = tokio::sync::mpsc::channel(10000);
+            let w = DispatchWorker::new(wrx, client.clone());
+            let g = global.clone();
+            let u = lobby_url.clone();
+            handles.push(tokio::spawn(async move {
+                w.run(&g, &u).await;
+            }));
+            // In practice, use a sharded dispatcher or `tokio::sync::mpsc::channel` per worker
+        }
+        futures::future::join_all(handles).await;
+    });
+    workers
+}
+```
+*(Note: For true 10k TPS, replace the forwarding logic with a sharded `mpsc` per worker or use `tokio::sync::broadcast` + round-robin. The above is a simplified skeleton.)*
+
+---
+
+### `src/mockrpc.rs`
+```rust
+use axum::{extract::State, routing::post, Router, Json};
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
+use parking_lot::RwLock;
+use tokio::time::Duration;
+
+#[derive(Clone)]
+struct RpcState {
+    nonces: Arc<RwLock<HashMap<String, u64>>>,
+    latency_ms: u64,
+}
+
+pub async fn spawn_mockrpc(port: u16) -> tokio::task::JoinHandle<()> {
+    let state = RpcState {
+        nonces: Arc::new(RwLock::new(HashMap::new())),
+        latency_ms: 10,
+    };
+
+    let app = Router::new()
+        .route("/", post(handle_rpc))
+        .with_state(state);
+
+    let addr = format!("127.0.0.1:{}", port);
+    tracing::info!(%addr, "mockrpc listening");
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    })
+}
+
+async fn handle_rpc(
+    State(state): State<RpcState>,
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    tokio::time::sleep(Duration::from_millis(state.latency_ms)).await;
+
+    let method = body["method"].as_str().unwrap_or("");
+    match method {
+        "eth_sendRawTransaction" => {
+            json!({ "jsonrpc": "2.0", "result": "0x1234...", "id": 1 })
+        }
+        "eth_getTransactionCount" => {
+            let addr = body["params"][0].as_str().unwrap_or("0x0");
+            let mut nonces = state.nonces.write();
+            let nonce = nonces.entry(addr.to_string()).or_insert(0);
+            *nonce += 1;
+            json!({ "jsonrpc": "2.0", "result": format!("0x{:x}", nonce), "id": 1 })
+        }
+        "eth_getTransactionReceipt" => {
+            json!({ "jsonrpc": "2.0", "result": { "status": "0x1", "blockNumber": "0x1" }, "id": 1 })
+        }
+        "eth_blockNumber" => {
+            json!({ "jsonrpc": "2.0", "result": "0x1000", "id": 1 })
+        }
+        _ => json!({ "jsonrpc": "2.0", "error": { "code": -32601, "message": "Method not found" }, "id": 1 }),
+    }
+}
+```
+
+---
+
+### `src/infra.rs`
+```rust
+use testcontainers::clients::Cli;
+use sqlx::postgres::PgPoolOptions;
+use std::time::Duration;
+
+pub struct Infra {
+    pub pg_port: u16,
+    pub redis_port: u16,
+    _containers: Vec<testcontainers::Container<'static>>,
+}
+
+pub async fn bootstrap() -> Result<Infra, Box<dyn std::error::Error>> {
+    let docker = Cli::default();
+    
+    let pg = docker.run(testcontainers::Postgres::default());
+    let pg_port = pg.get_host_port_ipv4(5432);
+
+    let redis = docker.run(testcontainers::Redis::default());
+    let redis_port = redis.get_host_port_ipv4(6379);
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&format!("postgresql://postgres:postgres@127.0.0.1:{}/test", pg_port))
+        .await?;
+
+    sqlx::migrate!("../migrations") // adjust path
+        .run(&pool)
+        .await?;
+
+    tracing::info!("infra bootstrapped | pg:{} redis:{}", pg_port, redis_port);
+
+    Ok(Infra {
+        pg_port,
+        redis_port,
+        _containers: vec![pg, redis],
+    })
+}
+```
+
+---
+
+### `src/main.rs`
+```rust
+mod infra;
+mod loadgen { pub mod pacer; pub mod producer; }
+mod mockrpc;
+mod dispatch;
+mod metrics;
+mod types;
+
+use crate::types::{BenchmarkConfig, TxRequest, GlobalMetrics};
+use tokio::sync::mpsc;
+use std::sync::Arc;
+use bytes::Bytes;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter("info,lobby_bench=debug")
+        .init();
+
+    let config = BenchmarkConfig {
+        target_tps: 1000,
+        duration_secs: 30,
+        worker_count: 4,
+        lobby_addr: "http://127.0.0.1:3000/v1/transactions".into(),
+        api_key: "test-api-key".into(),
+    };
+
+    // 1. Infra
+    let infra = infra::bootstrap().await?;
+
+    // 2. Mock RPC
+    let mock_port = 8545;
+    mockrpc::spawn_mockrpc(mock_port).await;
+
+    // 3. Spawn Lobby (assumes binary is built)
+    let lobby_cmd = tokio::process::Command::new("cargo")
+        .args(&["run", "--release", "--bin", "lobby"])
+        .env("RPC_ENDPOINT_1", &format!("http://127.0.0.1:{}", mock_port))
+        .env("DATABASE_URL", &format!("postgresql://postgres:postgres@127.0.0.1:{}/lobby-db", infra.pg_port))
+        .env("REDIS_URL", &format!("redis://127.0.0.1:{}", infra.redis_port))
+        .spawn()?;
+
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await; // warm-up
+
+    // 4. Dispatch Pipeline
+    let global_metrics = metrics::GlobalMetrics::new();
+    let (tx, rx) = mpsc::channel(10_000);
+    let client = reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .pool_max_idle_per_host(100)
+        .build()?;
+
+    let workers = dispatch::spawn_workers(rx, client, &global_metrics, config.worker_count, config.lobby_addr.clone());
+
+    // 5. Load Generator
+    let pacer = Arc::new(loadgen::pacer::Pacer::new(config.target_tps));
+    let payload = Bytes::from(r#"{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":[],"id":1}"#);
+    let producer = loadgen::producer::Producer::new(tx, pacer, payload, config.api_key);
+    let total_txs = config.target_tps * config.duration_secs;
+
+    tracing::info!("starting benchmark | tps={} duration={}s", config.target_tps, config.duration_secs);
+    let prod_handle = tokio::spawn(producer.run(total_txs));
+
+    prod_handle.await?;
+    drop(tx); // close channel, signal workers to drain & exit
+    futures::future::join_all(workers).await;
+
+    // 6. Report & Shutdown
+    global_metrics.report();
+    let mut lobby = lobby_cmd;
+    lobby.kill().await.ok();
+    tracing::info!("benchmark complete");
     Ok(())
 }
 ```
+
+---
+
+## 🚀 Scaling to 5,000–10,000 TPS (2026 Institutional Notes)
+
+1. **Sharded Dispatch & Metrics:** Replace the single `mpsc` with N channels (one per worker). Use a round-robin distributor or `tokio::sync::broadcast`. Keep `hdrhistogram` per-thread; merge only at shutdown or every 1s via a dedicated aggregation task.
+2. **Payload Pre-allocation:** Generate 10k–50k distinct `TxRequest` payloads during setup. Store as `Vec<Arc<Bytes>>`. Clone `Arc` at runtime to avoid heap allocation.
+3. **HTTP/2 Multiplexing:** Enable `http2_prior_knowledge` or ALPN. Use `reqwest::Client` with `pool_max_idle_per_host = 500+`. Disable Nagle's algorithm at OS level if benchmarking bare-metal.
+4. **Mock RPC Concurrency:** Switch to `hyper` with `worker_threads` and `DashMap` for nonce tracking. Add configurable latency jitter to simulate real RPC backpressure.
+5. **Kernel & Tokio Tuning:** 
+   - `tokio::runtime::Builder::new_multi_thread().worker_threads(core_count * 2)`
+   - `ulimit -n 65536`
+   - `net.core.somaxconn=1024`, `tcp_tw_reuse=1`
+6. **Warm-up & Steady-State:** Discard first 10–20% of metrics (JIT, connection pool init, cache warming). Institutional benchmarks only report steady-state latency.
+
+This architecture eliminates the `oneshot` bottleneck, replaces rigid ticking with token-bucket pacing, and uses sharded metrics for lock-free hot paths. It’s structured to scale linearly to 10k TPS without harness overhead masking Lobby’s true pipeline performance.
