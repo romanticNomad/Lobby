@@ -178,7 +178,7 @@ export RUST_LOG="INFO"
 
 # API key format: <token>:<client_id>:<from_address>
 # There must be at least 1 API key(s) generated, depending on the number `N` you choose for key generation in Locket.
-export LOBBY_API_KEY_1="<api-key-generated-by-the-binary>"
+export LOBBY_API_KEY_1="<api-key-generated-by-the-generate_api_key-binary>"
 
 # RPC endpoints (comma-separated for multiple endpoints per chain)
 export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
@@ -374,13 +374,14 @@ Client Submit
  |
  v
 ┌─────────────────────────────────────────────────────────────┐
-│LOBBY PIPELINE  │
+│LOBBY PIPELINE                                               │
 ├─────────────────────────────────────────────────────────────┤
-│  1. RelayHost   → Validate & persist transaction  │
-│  2. Nonce Reserve    → Assign sequential nonce    │
-│  3. Sign   → Generate EIP-1559 signature│
-│  4. Broadcast   → Submit to blockchain RPC   │
-│  5. Validator   → Confirm on-chain inclusion │
+│  0. Authorization → Validates 'Authorization' header        │
+│  1. RelayHost     → Tx normalization & record persisting    │
+│  2. Nonce Reserve → Assign sequential nonce                 │
+│  3. Sign          → Generate EIP-1559 signature             │
+│  4. Broadcast     → Submit to blockchain RPC                │
+│  5. Validator     → Confirm on-chain inclusion              │
 └─────────────────────────────────────────────────────────────┘
  |
  v
@@ -388,6 +389,30 @@ Client Submit
 ```
 
 ### Stage Details
+**Stage 0 — Authorization:** Lobby's HTTP request requires an `Authorization` header
+
+```bash
+-H "Authorization: Bearer <api-key>" \
+```
+The API key is required to be in the following format:
+
+```bash
+# API key format: <token>:<client_id>:<from_address>. 
+# where <token> is of the format 'lobby_live_{first 9 bytes of an Uuid}'.
+# Example API_KEY_1:
+LOBBY_API_KEY_1="lobby_live_5d6ea411d:07976c80-2601-4f1b-a500-a85a6353d681:0xfea6645d31443cf7cf96ef1db7823eb9365f98bf"
+```
+
+* This allows the `auth` module to authorizes the HTTP request by mapping the `<token>` to the custody `ClientConfig`.
+* For transaction to succeed the `from_address` in the API-KEY must also be present in the `test_keys.json` in the default format.
+
+```json
+"account1": {
+    "pvt_key": "0x1b83d15d0c9c4d84d501d...",
+    "pub_key": "0x04e4a701883b403f553d4...",
+    "address": "0xaeb0ca871fe7aaaf3c797..."
+  }
+```
 
 **Stage 1 — RelayHost:** Validates transaction fields (gas limits, fee sanity, supported chains) and persists to `relay_host.transaction_intents`. Idempotent by `execution_id`.
 
