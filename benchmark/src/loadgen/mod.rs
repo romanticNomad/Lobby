@@ -1,2 +1,3 @@
 #[allow(dead_code)]
-mod keys_gen;
+mod keys;
+mod trigger;
