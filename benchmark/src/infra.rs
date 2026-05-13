@@ -1,11 +1,11 @@
-use std::path::PathBuf;
-
 use anyhow::{Ok, Result};
 use sqlx::{PgPool, migrate::Migrator};
+use std::path::PathBuf;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
-use tokio::process::Command;
 
+// ============================================================
 // Postgres with benchmark-tuned CLI flags (bypasses default healthcheck)
+
 const PG_CMD: [&str; 13] = [
     "postgres",
     "-c",
@@ -22,6 +22,20 @@ const PG_CMD: [&str; 13] = [
     "checkpoint_timeout=300s",
 ];
 
+// ============================================================
+
+/// Lobby-Api keys stack, to be set up in the environment along with docker urls
+///
+/// API Key format:
+///
+/// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
+pub struct ApiStack {
+    key: String,
+    api: String,
+}
+
+// ============================================================
+
 /// Central infrastructure context for the benchmark harness.
 /// Manages container lifecycles, health_check probes, migrations, and dynamic port resolution.
 pub struct InfraStack {
@@ -33,6 +47,8 @@ pub struct InfraStack {
 }
 
 impl InfraStack {
+    // ============================================================
+
     /// Initializes Postgres & Redis, waits for health_checks, and applies migrations.
     pub async fn build() -> Result<Self> {
         // 1. Postgres startup
@@ -44,14 +60,12 @@ impl InfraStack {
             .with_ready_conditions(vec![WaitFor::message_on_stdout(
                 "database system is ready to accept connections",
             )]);
-
         let pg_container = pg_image.start().await?;
 
         // 2. Redis startup
         let redis_image = GenericImage::new("redis", "8.6-alpine").with_wait_for(
             WaitFor::message_on_stdout("Ready to accept connections tcp"),
         );
-
         let redis_container = redis_image.start().await?;
 
         // 3. Resolve dynamic host ports
@@ -68,7 +82,6 @@ impl InfraStack {
         let migration_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../database/migrations");
         let pool = PgPool::connect(&pg_url).await?;
-
         Migrator::new(migration_path).await?.run(&pool).await?;
 
         Ok(Self {
@@ -80,21 +93,26 @@ impl InfraStack {
         })
     }
 
-    /// Returns a pre-configured `Command` builder for the `lobby` binary.
-    /// Injects dynamic URLs, disables source `.env` requirement, and sets benchmark flags.
-    pub fn lobby_command(&self, api_keys: Vec<(&str, &str)>) -> Command {
-        let mut cmd = Command::new("cargo");
-        cmd.args(["run", "--release", "--features", "bench", "--bin", "lobby"])
-            .env("DATABASE_URL", &self.pg_url)
-            .env("REDIS_URL", &self.redis_url)
-            .env("SERVER_ADDR", "127.0.0.1:3000")
-            .env("RUST_LOG", "WARN"); // Reduce overhead during bench
+    // ============================================================
+    // Needs to be in the orchestrator ...
 
-        for (k, v) in api_keys {
-            cmd.env(k, v);
-        }
-        cmd
-    }
+    // /// Returns a pre-configured `Command` builder for the `lobby` binary.
+    // /// Injects dynamic URLs, disables source `.env` requirement, and sets benchmark flags.
+    // pub fn lobby_command(&self, api_keys: Vec<ApiStack>) -> Command {
+    //     let mut cmd = Command::new("cargo");
+    //     cmd.args(["run", "--release", "--features", "bench", "--bin", "lobby"])
+    //         .env("DATABASE_URL", &self.pg_url)
+    //         .env("REDIS_URL", &self.redis_url)
+    //         .env("SERVER_ADDR", "127.0.0.1:3000")
+    //         .env("RUST_LOG", "WARN"); // Reduce overhead during bench
+
+    //     for api_key in api_keys {
+    //         cmd.env(api_key.key, api_key.api);
+    //     }
+    //     cmd
+    // }
+
+    // ============================================================
 
     /// Explicit async teardown. Prefer over relying solely on `Drop` for benchmarks.
     pub async fn teardown(self) {
@@ -104,9 +122,13 @@ impl InfraStack {
         let _ = self.redis_container.rm().await;
     }
 
+    // ============================================================
     // pool_accessor
+
     #[inline]
     pub fn get_pool(&self) -> &PgPool {
         &self.pool
     }
 }
+
+// ============================================================
