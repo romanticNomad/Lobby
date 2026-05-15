@@ -20,9 +20,22 @@ pub struct SignEngine {
 
 impl SignEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
-        let custody_keys = JsonPolicyEngine::load_file(path.to_str().unwrap());
+        let keys_path = match std::env::var("LOBBY_TEST_KEYS") {
+            Ok(path) => PathBuf::from(path),
+            Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json"),
+        };
 
+        match keys_path.try_exists() {
+            Ok(true) => {}
+            Ok(false) => {
+                panic!("invalid path provided: {:?}", keys_path.to_str())
+            }
+            Err(_) => {
+                panic!("unauthorized path provided: {:?}", keys_path.to_str())
+            }
+        }
+
+        let custody_keys = JsonPolicyEngine::load_file(keys_path.to_str().unwrap());
         Self {
             db,
             custody_keys,
