@@ -86,26 +86,26 @@ Running the above command would:
 
 **Expected outcome**
 ```bash
-Starting PostgreSQL and Redis...
-mv .env.example .env
+Setting up Environment
+cp .env.example .env
 cd database && docker compose up -d
 [+] up 7/7
- ✔ Network database_default                Created    0.0s
- ✔ Volume database_lobby_redisinsight_data Created    0.0s
- ✔ Volume database_lobby_pgdata            Created    0.0s
- ✔ Volume database_lobby_redis_data        Created    0.0s
- ✔ Container lobby-redis                   Started    0.3s
- ✔ Container lobby-postgres                Started    0.4s
- ✔ Container lobby-redis-insight           Started    0.4s
+ ✔ Network database_default                Created      0.0s
+ ✔ Volume database_lobby_redis_data        Created      0.0s
+ ✔ Volume database_lobby_redisinsight_data Created      0.0s
+ ✔ Volume database_lobby_pgdata            Created      0.0s
+ ✔ Container lobby-redis                   Started      0.3s
+ ✔ Container lobby-postgres                Started      0.4s
+ ✔ Container lobby-redis-insight           Started      0.4s
 cd database && sqlx migrate run
-Applied 20260128093012/migrate nonce (5.645409ms)
-Applied 20260203055307/migrate broadcast (3.37226ms)
-Applied 20260203062332/migrate sign (4.484934ms)
-Applied 20260210152024/migrate relayhost (4.415593ms)
-Applied 20260225203657/migrate validate (4.664533ms)
-Generating API keys and updating .env ...
-cargo run --release --quiet --bin generate_api_keys
-Generated API keys appended to .env
+Applied 20260128093012/migrate nonce (6.281891ms)
+Applied 20260203055307/migrate broadcast (3.831075ms)
+Applied 20260203062332/migrate sign (4.943295ms)
+Applied 20260210152024/migrate relayhost (4.213486ms)
+Applied 20260225203657/migrate validate (4.286634ms)
+Generating API keys for the test-accounts
+⏳ Compiling and generating keys:    (76s)
+   Generated API keys appended to .env
 Lobby Setup complete.
 ```
 

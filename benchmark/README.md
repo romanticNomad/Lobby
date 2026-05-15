@@ -33,7 +33,7 @@ governor = "0.6"
     ├── main.rs           # Primary orchestrator of the bench harness
     ├── mockrpc.rs        # Axum mock EVM RPC (nonce tracking, latency simulation)
     ├── metrics.rs        # HDRHistogram telemetry, 15s–55s window filtering, p99 reporting
-    ├── loadbdt
+    ├── loadtx
     │   ├── mod.rs        # Facade: exports pool and dispatcher modules
     │   ├── dispatch.rs   # orchestrates dispatching machanics using the wroker pool
     │   └── pool.rs       # Async HTTP worker pool, reqwest pooling, latency recording
