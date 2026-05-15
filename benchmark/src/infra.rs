@@ -24,18 +24,6 @@ const PG_CMD: [&str; 13] = [
 
 // ============================================================
 
-/// Lobby-Api keys stack, to be set up in the environment along with docker urls
-///
-/// API Key format:
-///
-/// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
-pub struct ApiStack {
-    key: String,
-    api: String,
-}
-
-// ============================================================
-
 /// Central infrastructure context for the benchmark harness.
 /// Manages container lifecycles, health_check probes, migrations, and dynamic port resolution.
 pub struct InfraStack {

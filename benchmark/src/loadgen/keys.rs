@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fs};
 use hex::encode;
 use k256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
+use std::{collections::HashMap, fs};
 
 // ============================================================
 
@@ -20,7 +20,7 @@ impl EvmKeyExport {
         Self {
             pvt_key,
             pub_key,
-            address
+            address,
         }
     }
 }
@@ -38,7 +38,7 @@ pub type ApiStack = HashMap<u64, String>;
 // test_keys.json generater
 
 /// Generates the test_keys.json file for benchmark
-/// 
+///
 /// File format:
 /// ```json
 /// {
