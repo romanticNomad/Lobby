@@ -4,11 +4,6 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
-[[bin]]
-name = "lobby-bench"
-path = "src/main.rs"
-features = "bench"
-
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 alloy = { version = "1.6.0", features = ["full"] }
