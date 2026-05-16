@@ -2,9 +2,11 @@ use hex::encode;
 use k256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha3::{Digest, Keccak256};
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, path::Path};
 
+// test-keys.json elements
 // ============================================================
 
 /// SerDe format for private key, public key, and public address.
@@ -24,15 +26,6 @@ impl EvmKeyExport {
         }
     }
 }
-
-// ============================================================
-
-/// Lobby-Api keys stack, to be set up in the environment along with docker urls
-///
-/// API Key format:
-///
-/// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
-pub type ApiStack = HashMap<u64, String>;
 
 // ============================================================
 // test_keys.json generater
@@ -91,9 +84,61 @@ fn kgen() -> (String, String, String) {
 
     // evm_address
     let keccak_hash = Keccak256::digest(&pub_key_bytes[1..]);
-    let evm_addredd_hex = format!("0x{}", encode(&keccak_hash[12..]));
+    let evm_address_hex = format!("0x{}", encode(&keccak_hash[12..]));
 
-    (private_key_hex, pub_key_hex, evm_addredd_hex)
+    (private_key_hex, pub_key_hex, evm_address_hex)
+}
+
+// lobby-api keys elements
+// ============================================================
+
+/// Lobby-Api keys stack, to be set up in the environment along with docker urls
+///
+/// API Key format:
+///
+/// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
+pub type ApiStack = HashMap<u64, String>;
+
+
+/// Generates API keys for the provided accounts.json file.
+/// 
+/// File format required:
+/// ```json
+/// {
+///   "account1": {
+///     "pvt_key": "0xeca7c841791...",
+///     "pub_key": "0xffdefb6deb0...",
+///     "address": "0x430b3af2c71..."
+///    },
+/// }
+/// ```
+pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Error>> {
+    let mut api_stack: ApiStack = HashMap::new();
+
+    let file_contents = fs::read_to_string(fileplath)?;
+    let parsed_content: Value = serde_json::from_str(&file_contents)?;
+
+    let object_map = parsed_content
+        .as_object()
+        .ok_or("test_keys.json must contain a top-level JSON object")?;
+    let extracted_accounts: Vec<(&String, &Value)> = object_map.iter().collect();
+
+    for (account_name, keys) in extracted_accounts {
+        let account_num = account_name
+            .strip_prefix("account")
+            .and_then(|num_str| num_str.parse::<u64>().ok())
+            .ok_or("invalid account naming")?;
+        
+        let from_address = keys
+            .get("address")
+            .and_then(|address| address.as_str())
+            .ok_or("invalid account address")?
+            .to_string();
+
+        api_stack.insert(account_num, from_address);
+    }
+
+    Ok(api_stack)
 }
 
 // ============================================================
