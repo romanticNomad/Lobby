@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha3::{Digest, Keccak256};
 use std::{collections::HashMap, fs, path::Path};
+use uuid::Uuid;
 
 // test-keys.json elements
 // ============================================================
@@ -99,9 +100,8 @@ fn kgen() -> (String, String, String) {
 /// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
 pub type ApiStack = HashMap<u64, String>;
 
-
 /// Generates API keys for the provided accounts.json file.
-/// 
+///
 /// File format required:
 /// ```json
 /// {
@@ -128,14 +128,21 @@ pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Er
             .strip_prefix("account")
             .and_then(|num_str| num_str.parse::<u64>().ok())
             .ok_or("invalid account naming")?;
-        
+
         let from_address = keys
             .get("address")
             .and_then(|address| address.as_str())
             .ok_or("invalid account address")?
             .to_string();
 
-        api_stack.insert(account_num, from_address);
+        let client_id = Uuid::new_v4();
+        let api_token = {
+            let token_string = Uuid::new_v4().simple().to_string();
+            format!("lobby_live_{}", &token_string[..9])
+        };
+
+        let lobby_api_key = format!("{}:{}:{}", api_token, client_id, from_address);
+        api_stack.insert(account_num, lobby_api_key);
     }
 
     Ok(api_stack)
