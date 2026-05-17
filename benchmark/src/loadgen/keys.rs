@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use hex::encode;
 use k256::ecdsa::SigningKey;
 use rand::rngs::OsRng;
@@ -98,7 +99,7 @@ fn kgen() -> (String, String, String) {
 /// API Key format:
 ///
 /// `LOBBY_API_KEY_<N>=<api_token>:<client_id>:<from_address>`
-pub type ApiStack = HashMap<u64, String>;
+pub type ApiStack = DashMap<u64, String>;
 
 /// Generates API keys for the provided accounts.json file.
 ///
@@ -113,7 +114,7 @@ pub type ApiStack = HashMap<u64, String>;
 /// }
 /// ```
 pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Error>> {
-    let mut api_stack: ApiStack = HashMap::new();
+    let api_stack: ApiStack = DashMap::new();
 
     let file_contents = fs::read_to_string(fileplath)?;
     let parsed_content: Value = serde_json::from_str(&file_contents)?;
@@ -154,14 +155,13 @@ pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Er
 // ============================================================
 
 /// Collects addresses from the `ApiStack`.
-/// 
+///
 /// return a `Vec<String>`.
 pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
-    let mut address_stack: Vec<String> = Vec::new();
-
-    for index in api_stack.iter() {
-        address_stack.push(index.1.clone());
-    }
+    let address_stack: Vec<String> = api_stack
+        .iter()
+        .map(|element| element.value().to_owned())
+        .collect();
 
     address_stack
 }
