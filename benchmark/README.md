@@ -33,14 +33,10 @@ governor = "0.6"
     ├── main.rs           # Primary orchestrator of the bench harness
     ├── mockrpc.rs        # Axum mock EVM RPC (nonce tracking, latency simulation)
     ├── metrics.rs        # HDRHistogram telemetry, 15s–55s window filtering, p99 reporting
-    ├── loadtx
-    │   ├── mod.rs        # Facade: exports pool and dispatcher modules
-    │   ├── dispatch.rs   # orchestrates dispatching machanics using the wroker pool
-    │   └── pool.rs       # Async HTTP worker pool, reqwest pooling, latency recording
     └── loadgen
         ├── mod.rs        # Facade: exports trigger and keys module
         ├── keys.rs       # EVM key generation, test_keys.json, LOBBY_API_KEY_N derivation, payload pre-serialization
-        └── trigger.rs    # Round-robin account distribution, mpsc push orchestration
+        └── trigger.rs    # builds lobby-tx request using random account distribution, and sequences tx for precise throughput
 ```
 
 ### Module Responsibility Matrix
@@ -51,18 +47,13 @@ governor = "0.6"
 | `infra.rs` | Spins up PostgreSQL/Redis via `testcontainers`, runs `sqlx` migrations, returns host ports. | Container lifecycle isolation, migration idempotency, port discovery. |
 | `mockrpc.rs` | Simulates EVM JSON-RPC. Tracks per-address nonces, returns `eth_*` responses, injects configurable latency/jitter. | Sticky-session nonce consistency, state-machine isolation, realistic backpressure simulation. |
 | `metrics.rs` | Per-worker `hdrhistogram`, filters samples strictly within `[15.0s, 55.0s]`, merges at shutdown, reports p50/p95/p99/p999. | Lock-free aggregation, warmup/drain exclusion, institutional percentile standards. |
-| `loadtx/pool.rs` | Worker pool: consumes `mpsc`, dispatches pre-serialized `Arc<Bytes>` payloads via pooled `reqwest`, records latency. | HTTP/2 multiplexing, connection reuse, fire-and-forget with async metric injection. |
-| `loadtx/dispatch.rs` | Time-based rate controller: linear ramp (0–10s), steady (10–55s), drop (55-60s). Drift-compensated sleep. | Token-bucket pacing, scheduler jitter correction, predictable throughput profiling. |
 | `loadgen/keys.rs` | Generates valid EVM keypairs, writes `test_keys.json`, derives `LOBBY_API_KEY_N`, pre-serializes JSON-RPC payloads. | Deterministic auth routing, zero-runtime `serde_json`, exact Lobby format compliance. |
-| `loadgen/trigger.rs` | Round-robins across N accounts, applies pacer delay, pushes `TxRequest` into `mpsc`. | `ByAddress` nonce sharding exploitation, atomic distribution, bounded channel backpressure. |
+| `loadgen/trigger.rs` | makes random selection across N accounts, returns built transaction matching the throughput set by the orchestrator, main.`    
 
 ### Implimentation Order of Modules
 
 * infra
 * loadgen
-* loadtx
 * mockrpc
 * metrics -> alongside hdrhistogram integration to lobby pipeline
 * main -> assembling the harness
-
-> Deadline: May 15 2026

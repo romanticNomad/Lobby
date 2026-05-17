@@ -2,7 +2,6 @@
 mod infra;
 #[allow(dead_code)]
 mod loadgen;
-mod loadtx;
 mod metrics;
 mod mockrpc;
 
