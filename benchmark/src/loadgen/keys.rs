@@ -149,3 +149,21 @@ pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Er
 }
 
 // ============================================================
+
+// Helper functions
+// ============================================================
+
+/// Collects addresses from the `ApiStack`.
+/// 
+/// return a `Vec<String>`.
+pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
+    let mut address_stack: Vec<String> = Vec::new();
+
+    for index in api_stack.iter() {
+        address_stack.push(index.1.clone());
+    }
+
+    address_stack
+}
+
+// ============================================================
