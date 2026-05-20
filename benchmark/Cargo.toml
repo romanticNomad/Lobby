@@ -11,12 +11,15 @@ serde = { version = "1.0", features = ["derive"] }
 reqwest = { version = "0.13.3", features = ["json", "http2"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres",] }
 k256 = { version = "0.13", features = ["ecdsa"] }
+uuid = { version = "1.19", features = ["v4", "serde"] }
 sha3 = "0.10"
 rand = "0.8"
 hex = "0.4"
 tracing = "0.1"
 testcontainers = "0.26.0"
 hdrhistogram = "7.5"
+dashmap = "6.1.0"
 axum = "0.8.8"
 serde_json = "1.0.149"
 anyhow = "1.0.102"
+bytes = "1.11.1"
