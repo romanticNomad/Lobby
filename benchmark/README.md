@@ -32,7 +32,7 @@ governor = "0.6"
     ├── infra.rs          # Testcontainers lifecycle & schema migration
     ├── main.rs           # Primary orchestrator of the bench harness
     ├── mockrpc.rs        # Axum mock EVM RPC (nonce tracking, latency simulation)
-    ├── metrics.rs        # HDRHistogram telemetry, 15s–55s window filtering, p99 reporting
+    ├── metrics.rs        # HDRHistogram telemetry, 5s–55s window filtering, p99 reporting
     └── loadgen
         ├── mod.rs        # Facade: exports trigger and keys module
         ├── keys.rs       # EVM key generation, test_keys.json, LOBBY_API_KEY_N derivation, payload pre-serialization
@@ -46,8 +46,8 @@ governor = "0.6"
 | `main.rs` | Orchestrator: sequences infra boot, mock RPC spawn, Lobby process launch, phase coordination, final teardown & reporting. | Explicit phase boundaries, deterministic env injection, clean signal handling. |
 | `infra.rs` | Spins up PostgreSQL/Redis via `testcontainers`, runs `sqlx` migrations, returns host ports. | Container lifecycle isolation, migration idempotency, port discovery. |
 | `mockrpc.rs` | Simulates EVM JSON-RPC. Tracks per-address nonces, returns `eth_*` responses, injects configurable latency/jitter. | Sticky-session nonce consistency, state-machine isolation, realistic backpressure simulation. |
-| `metrics.rs` | Per-worker `hdrhistogram`, filters samples strictly within `[15.0s, 55.0s]`, merges at shutdown, reports p50/p95/p99/p999. | Lock-free aggregation, warmup/drain exclusion, institutional percentile standards. |
-| `loadgen/keys.rs` | Generates valid EVM keypairs, writes `test_keys.json`, derives `LOBBY_API_KEY_N`, pre-serializes JSON-RPC payloads. | Deterministic auth routing, zero-runtime `serde_json`, exact Lobby format compliance. |
+| `metrics.rs` | Per-worker `hdrhistogram`, filters samples strictly within `[5.0s, 55.0s]`, merges at shutdown, reports p50/p95/p99/p999. | Lock-free aggregation, warmup/drain exclusion, institutional percentile standards. |
+| `loadgen/keys.rs` | Generates valid EVM keypairs, writes `test_keys.json`, derives `LOBBY_API_KEY_N`. | Deterministic auth routing, zero-runtime `serde_json`, exact Lobby format compliance. |
 | `loadgen/trigger.rs` | makes random selection across N accounts, returns built transaction matching the throughput set by the orchestrator, main.`    
 
 ### Implimentation Order of Modules
