@@ -160,7 +160,15 @@ pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Er
 pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
     let address_stack: Vec<String> = api_stack
         .iter()
-        .map(|element| element.value().to_owned())
+        .map(|element| {
+            let api_key_split: Vec<&str> = element.value().split(":").collect();
+            if !api_key_split.len() == 3 {
+                panic!("invalid address keys");
+            } else {
+                let from_address = api_key_split[2];
+                from_address.to_string()
+            }
+        })
         .collect();
 
     address_stack
