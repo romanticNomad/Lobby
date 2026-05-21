@@ -44,10 +44,10 @@ impl EvmKeyExport {
 ///    },
 /// }
 /// ```
-pub fn tkgen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>> {
+pub fn keys_json_gen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>> {
     let mut test_keys_map: HashMap<String, EvmKeyExport> = HashMap::new();
     for i in 0..=sample_size {
-        let (pvt_key, pub_key, address) = kgen();
+        let (pvt_key, pub_key, address) = key_gen();
         let account = EvmKeyExport::new(pvt_key, pub_key, address);
         let entry = format!("account{}", i);
 
@@ -71,7 +71,7 @@ pub fn tkgen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>> {
 /// * `pvt_key`
 /// * `pub_key`
 /// * `evm_address`
-fn kgen() -> (String, String, String) {
+fn key_gen() -> (String, String, String) {
     // pvt_key
     let signing_key = SigningKey::random(&mut OsRng);
     let verify_key = signing_key.verifying_key();
@@ -147,31 +147,6 @@ pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Er
     }
 
     Ok(api_stack)
-}
-
-// ============================================================
-
-// Helper functions
-// ============================================================
-
-/// Collects addresses from the `ApiStack`.
-///
-/// return a `Vec<String>`.
-pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
-    let address_stack: Vec<String> = api_stack
-        .iter()
-        .map(|element| {
-            let api_key_split: Vec<&str> = element.value().split(":").collect();
-            if !api_key_split.len() == 3 {
-                panic!("invalid address keys");
-            } else {
-                let from_address = api_key_split[2];
-                from_address.to_string()
-            }
-        })
-        .collect();
-
-    address_stack
 }
 
 // ============================================================

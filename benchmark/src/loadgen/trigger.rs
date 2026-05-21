@@ -1,4 +1,4 @@
-use crate::loadgen::keys::{ApiStack, get_addresses};
+use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
 
 // contants
@@ -10,23 +10,6 @@ use bytes::Bytes;
 pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61";
 
 // structs
-// ============================================================
-
-/// Placeholder for collection of addresses derived from the `ApiStack`
-///
-/// `Collection` -> Vec<Address>.
-pub struct Addresses {
-    collection: Vec<String>,
-}
-
-impl Addresses {
-    pub fn new(api_stack: &ApiStack) -> Self {
-        let collection = get_addresses(api_stack);
-
-        Self { collection }
-    }
-}
-
 // ============================================================
 
 /// Presirealized payloads from each api_key in the `ApiStack`
@@ -44,7 +27,7 @@ impl Payloads {
     /// * valus: 0.01 eth
     /// * chain_id: Hoodi testnet
     ///
-    /// **Note**: json-body values (exepct `chain_id` and `to`) don't matter since we will be using a mock_rpc anyways.
+    /// **Note**: json-body values (exepct `chain_id` and `to`) don't matter since we will be using a `mock_rpc` anyways.
     pub fn build_payloads(api_stack: &ApiStack) -> Self {
         let collection: Vec<(String, Bytes)> = api_stack
             .iter()
