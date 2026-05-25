@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
 use thiserror::Error;
@@ -12,6 +14,7 @@ pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61"
 
 // structs
 // ============================================================
+// errors
 
 /// Errors involved in trigger action to Lobby server
 #[derive(Debug, Error)]
@@ -26,14 +29,28 @@ pub enum TriggerError {
     MissingExecutionId,
 
     #[error("Json deserialization failed: {0}")]
-    SerDe(#[from] serde_json::Error)
+    SerDe(#[from] serde_json::Error),
+}
+
+// ============================================================
+// payload structs
+
+/// Thread-safe, pre-serialized transaction payload with associated API key.
+/// Designed for O(1) random selection and zero-copy cloning via `Bytes`.
+#[derive(Debug, Clone)]
+pub struct PayloadEntry {
+    pub index: usize,
+    pub api_key: String,
+    pub payload: Bytes,
 }
 
 /// Presirealized payloads from each api_key in the `ApiStack`
 ///
-/// `Collection` -> Vec<(api_key, tx_payload_bytes)>.
+/// Features:
+/// * Cheap to clone across Tokio workers (`Arc`-backed).
+/// * No Dynamic memory allocation.
 pub struct Payloads {
-    collection: Vec<(String, bytes::Bytes)>,
+    entries: Arc<[PayloadEntry]>,
 }
 
 impl Payloads {
@@ -46,10 +63,12 @@ impl Payloads {
     ///
     /// **Note**: json-body values (exepct `chain_id` and `to`) don't matter since we will be using a `mock_rpc` anyways.
     pub fn build_payloads(api_stack: &ApiStack) -> Self {
-        let collection: Vec<(String, Bytes)> = api_stack
+        let entries: Vec<PayloadEntry> = api_stack
             .iter()
             .map(|elements| {
                 let api_key = elements.value().to_string();
+                let index =
+                    usize::try_from(elements.key().clone()).expect("value exeeds usize limit");
                 let api_key_elements: Vec<&str> = elements.value().split(":").collect();
                 let from_address = api_key_elements[2];
 
@@ -67,15 +86,21 @@ impl Payloads {
                     }],
                     "id": 1
                 });
-                let tx_payload_bytes: bytes::Bytes = serde_json::to_vec(&rpc_payload)
+                let payload: bytes::Bytes = serde_json::to_vec(&rpc_payload)
                     .expect("Presirealization failed.")
                     .into();
 
-                (api_key, tx_payload_bytes)
+                PayloadEntry {
+                    index,
+                    api_key,
+                    payload,
+                }
             })
             .collect();
 
-        Self { collection }
+        Self {
+            entries: entries.into(),
+        }
     }
 }
 
@@ -83,6 +108,4 @@ impl Payloads {
 
 /// High-throughput transaction trigger with deterministic rate control.
 /// Designed to be shared across multiple Tokio worker tasks via `Arc`.
-pub struct TxTrigger {
-    
-}
+pub struct TxTrigger {}
