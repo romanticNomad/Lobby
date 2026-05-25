@@ -48,7 +48,7 @@ governor = "0.6"
 | `mockrpc.rs` | Simulates EVM JSON-RPC. Tracks per-address nonces, returns `eth_*` responses, injects configurable latency/jitter. | Sticky-session nonce consistency, state-machine isolation, realistic backpressure simulation. |
 | `metrics.rs` | Per-worker `hdrhistogram`, filters samples strictly within `[5.0s, 55.0s]`, merges at shutdown, reports p50/p95/p99/p999. | Lock-free aggregation, warmup/drain exclusion, institutional percentile standards. |
 | `loadgen/keys.rs` | Generates valid EVM keypairs, writes `test_keys.json`, derives `LOBBY_API_KEY_N`. | Deterministic auth routing, zero-runtime `serde_json`, exact Lobby format compliance. |
-| `loadgen/trigger.rs` | Pre-serializing JSON-RPC payloads into Bytes. Makes random selection across N accounts, returns built transaction matching the throughput set by the orchestrator, `main`. | O(1) atomic cloning (zero-copy), simulates realistic traffic and leverages `Lobby`'s nonce sharding `ByAddress`.  
+| `loadgen/trigger.rs` | Pre-serializing JSON-RPC payloads into Bytes. Makes random selection across N accounts, returns built transactions, matching the throughput set by the orchestrator, `main`. | O(1) atomic cloning (zero-copy), simulates realistic traffic and leverages `Lobby`'s nonce sharding `ByAddress`.  
 
 ### Implimentation Order of Modules
 

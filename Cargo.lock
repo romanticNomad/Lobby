@@ -1241,6 +1241,7 @@ dependencies = [
  "sha3",
  "sqlx",
  "testcontainers",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "uuid",
