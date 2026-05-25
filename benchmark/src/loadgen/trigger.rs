@@ -1,5 +1,6 @@
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
+use thiserror::Error;
 
 // contants
 // ============================================================
@@ -11,6 +12,22 @@ pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61"
 
 // structs
 // ============================================================
+
+/// Errors involved in trigger action to Lobby server
+#[derive(Debug, Error)]
+pub enum TriggerError {
+    #[error("Http request error: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("Unexpected status code recieved: {0}")]
+    UnexpectedStatus(reqwest::StatusCode),
+
+    #[error("Missing execution_id in responce")]
+    MissingExecutionId,
+
+    #[error("Json deserialization failed: {0}")]
+    SerDe(#[from] serde_json::Error)
+}
 
 /// Presirealized payloads from each api_key in the `ApiStack`
 ///
@@ -63,3 +80,9 @@ impl Payloads {
 }
 
 // ============================================================
+
+/// High-throughput transaction trigger with deterministic rate control.
+/// Designed to be shared across multiple Tokio worker tasks via `Arc`.
+pub struct TxTrigger {
+    
+}
