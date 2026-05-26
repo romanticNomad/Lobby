@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
@@ -127,7 +127,24 @@ impl Payloads {
     }
 }
 
+// =============================================================================
+// Dispatch Record
+
+/// Structured output from a successful dispatch, consumed by `metrics.rs`.
+#[derive(Debug, Clone)]
+pub struct DispatchRecord {
+    /// `execution_id` for status retrival
+    execution_id: uuid::Uuid,
+    /// Timestamp immediately before HTTP POST.
+    pub t_send: Instant,
+    /// Timestamp on HTTP 202 Accepted.
+    pub t_accept: Instant,
+    /// Index of the API key/account used (useful for shard-distribution validation).
+    pub api_key_index: usize,
+}
+
 // ============================================================
+// main struct `TxTrigger`
 
 /// High-throughput transaction dispatcher with deterministic rate control.
 ///
@@ -182,4 +199,10 @@ impl TxTrigger {
             .choose(&mut rnd)
             .expect("Payload collection must have valid elements")
     }
+
+    /// Dispatches a single transaction to Lobby, respecting the rate limiter.
+    ///
+    /// Returns a `DispatchRecord` containing timestamps and identifiers
+    /// required by `metrics.rs` to compute client-acceptance latency.
+    pub async fn dispatch(&self) {}
 }
