@@ -2,7 +2,12 @@ use std::sync::Arc;
 
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
-use governor::{RateLimiter, clock::DefaultClock, middleware::NoOpMiddleware, state::NotKeyed};
+use governor::{
+    RateLimiter,
+    clock::DefaultClock,
+    middleware::NoOpMiddleware,
+    state::{InMemoryState, NotKeyed},
+};
 use reqwest::Client;
 use thiserror::Error;
 
@@ -19,7 +24,7 @@ pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61"
 
 /// Unkeyed, direct-state rate limiter using the default tokio clock.
 /// Shared across workers via `Arc` to distribute permits without contention.
-pub type TriggerRateLimiter = RateLimiter<NotKeyed, DefaultClock, NoOpMiddleware>;
+pub type TriggerRateLimiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>;
 
 // structs
 // ============================================================
@@ -125,5 +130,5 @@ pub struct TxTrigger {
     payloads: Payloads,
     rate_limiter: Arc<TriggerRateLimiter>,
     client: Client,
-    base_url: String 
+    base_url: String,
 }
