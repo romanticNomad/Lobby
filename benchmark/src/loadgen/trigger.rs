@@ -120,8 +120,7 @@ impl Payloads {
         }
     }
 
-    /// Helper function to build the TxTrigger
-    /// from the already built `Payloads` struct.
+    /// Helper function to build the TxTrigger from the already built `Payloads` struct.
     pub fn entries(&self) -> Arc<[PayloadEntry]> {
         self.entries.clone()
     }
@@ -134,7 +133,7 @@ impl Payloads {
 #[derive(Debug, Clone)]
 pub struct DispatchRecord {
     /// `execution_id` for status retrival
-    execution_id: uuid::Uuid,
+    execution_id: String,
     /// Timestamp immediately before HTTP POST.
     pub t_send: Instant,
     /// Timestamp on HTTP 202 Accepted.
@@ -185,7 +184,7 @@ impl TxTrigger {
     /// **Note:** This is intended for the steady-state phase (5s–55s).
     /// During the ramp phase (0s–5s), the orchestrator should use
     /// `tokio::time::sleep` with a linearly decreasing interval instead.
-    pub async fn aquire_permit(&self) {
+    pub async fn acquire_permit(&self) {
         self.rate_limiter.until_ready().await;
     }
 
@@ -204,5 +203,52 @@ impl TxTrigger {
     ///
     /// Returns a `DispatchRecord` containing timestamps and identifiers
     /// required by `metrics.rs` to compute client-acceptance latency.
-    pub async fn dispatch(&self) {}
+    pub async fn dispatch(&self) -> Result<DispatchRecord, TriggerError> {
+        // rate control
+        self.acquire_permit().await;
+
+        // payload selection (random distribution)
+        let payload_entry = self.select_payload();
+        let api_key_index = payload_entry.index;
+
+        // mark submission instant
+        let t_send = Instant::now();
+
+        // submit request to Lobby server
+        let response = self
+            .client
+            .post(&self.base_url)
+            .header("Authorization", format!("Bearer {}", payload_entry.api_key))
+            .header("Content-Type", "application/json")
+            .body(payload_entry.payload.clone()) // Bytes::clone() is reference-counted (zero-copy)
+            .send()
+            .await?;
+
+        // validate submission
+        let status = response.status();
+        if status != reqwest::StatusCode::ACCEPTED {
+            return Err(TriggerError::UnexpectedStatus(status)); // expected status_code = 202
+        }
+
+        // marke acceptance instant
+        let t_accept = Instant::now();
+
+        // extract execution_id
+        let response_body: serde_json::Value = response.json().await?;
+        let execution_id = response_body
+            .get("result")
+            .and_then(|r| r.get("execution_id"))
+            .and_then(|id| id.as_str())
+            .ok_or(TriggerError::MissingExecutionId)?
+            .to_string();
+
+        Ok(DispatchRecord {
+            execution_id,
+            t_send,
+            t_accept,
+            api_key_index,
+        })
+    }
 }
+
+// ============================================================
