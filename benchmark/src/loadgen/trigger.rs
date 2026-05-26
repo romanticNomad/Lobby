@@ -8,6 +8,7 @@ use governor::{
     middleware::NoOpMiddleware,
     state::{InMemoryState, NotKeyed},
 };
+use rand::seq::SliceRandom;
 use reqwest::Client;
 use thiserror::Error;
 
@@ -63,6 +64,7 @@ pub struct PayloadEntry {
 /// Features:
 /// * Cheap to clone across Tokio workers (`Arc`-backed).
 /// * Avoids heap calls by using array of `PayloadEntry` instead of vector.
+#[derive(Debug, Clone)]
 pub struct Payloads {
     entries: Arc<[PayloadEntry]>,
 }
@@ -117,6 +119,12 @@ impl Payloads {
             entries: entries.into(),
         }
     }
+
+    /// Helper function to build the TxTrigger
+    /// from the already built `Payloads` struct.
+    pub fn entries(&self) -> Arc<[PayloadEntry]> {
+        self.entries.clone()
+    }
 }
 
 // ============================================================
@@ -127,8 +135,51 @@ impl Payloads {
 /// `Arc`-backed state for payloads and rate limiting to avoid lock contention
 /// and heap allocations during the hot dispatch path.
 pub struct TxTrigger {
-    payloads: Payloads,
+    payloads: Arc<[PayloadEntry]>,
     rate_limiter: Arc<TriggerRateLimiter>,
     client: Client,
     base_url: String,
+}
+
+impl TxTrigger {
+    /// Creates a new `TxTrigger` instance.
+    ///
+    /// * `payloads` - Pre-serialized transaction payloads.
+    /// * `rate_limiter` - Shared governor instance for steady-state TPS control.
+    /// * `client` - Pre-warmed `reqwest::Client` with connection pooling enabled.
+    /// * `base_url` - Target Lobby submission endpoint (e.g., `http://127.0.0.1:3000/v1/transactions`).
+    pub fn new(
+        payloads: Payloads,
+        rate_limiter: Arc<TriggerRateLimiter>,
+        client: Client,
+        base_url: String,
+    ) -> Self {
+        Self {
+            payloads: payloads.entries(),
+            rate_limiter,
+            client,
+            base_url,
+        }
+    }
+
+    /// Acquires a rate-limit permit asynchronously.
+    ///
+    /// Yields to the Tokio scheduler until a token is available.
+    /// **Note:** This is intended for the steady-state phase (5s–55s).
+    /// During the ramp phase (0s–5s), the orchestrator should use
+    /// `tokio::time::sleep` with a linearly decreasing interval instead.
+    pub async fn aquire_permit(&self) {
+        self.rate_limiter.until_ready().await;
+    }
+
+    /// Selects a random payload in O(1) without locking.
+    ///
+    /// Uses `rand::thread_rng` for uniform distribution across `ByAddress`
+    /// shards in Lobby's pipeline.
+    pub fn select_payload(&self) -> &PayloadEntry {
+        let mut rnd = rand::thread_rng();
+        self.payloads
+            .choose(&mut rnd)
+            .expect("Payload collection must have valid elements")
+    }
 }
