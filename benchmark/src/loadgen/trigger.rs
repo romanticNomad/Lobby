@@ -1,5 +1,3 @@
-use std::{sync::Arc, time::Instant};
-
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
 use governor::{
@@ -10,6 +8,7 @@ use governor::{
 };
 use rand::seq::SliceRandom;
 use reqwest::Client;
+use std::{sync::Arc, time::Instant};
 use thiserror::Error;
 
 // contants
@@ -120,7 +119,8 @@ impl Payloads {
         }
     }
 
-    /// Helper function to build the TxTrigger from the already built `Payloads` struct.
+    /// Helper function to build the `TxTrigger` from 
+    /// the already built `Payloads` struct.
     pub fn entries(&self) -> Arc<[PayloadEntry]> {
         self.entries.clone()
     }
@@ -230,7 +230,7 @@ impl TxTrigger {
             return Err(TriggerError::UnexpectedStatus(status)); // expected status_code = 202
         }
 
-        // marke acceptance instant
+        // mark acceptance instant
         let t_accept = Instant::now();
 
         // extract execution_id
