@@ -1,9 +1,11 @@
-use std::sync::Arc;
-
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
-use governor::{RateLimiter, clock::DefaultClock, middleware::NoOpMiddleware, state::NotKeyed};
+use rand::seq::SliceRandom;
 use reqwest::Client;
+use std::{
+    sync::{Arc, mpsc},
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 // contants
@@ -13,13 +15,6 @@ use thiserror::Error;
 ///
 /// **Used for lobby benchmarking only, and no real funds are ever sent to this account.**
 pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61";
-
-// rate limiter type alias
-// ============================================================
-
-/// Unkeyed, direct-state rate limiter using the default tokio clock.
-/// Shared across workers via `Arc` to distribute permits without contention.
-pub type TriggerRateLimiter = RateLimiter<NotKeyed, DefaultClock, NoOpMiddleware>;
 
 // structs
 // ============================================================
@@ -58,6 +53,7 @@ pub struct PayloadEntry {
 /// Features:
 /// * Cheap to clone across Tokio workers (`Arc`-backed).
 /// * Avoids heap calls by using array of `PayloadEntry` instead of vector.
+#[derive(Debug, Clone)]
 pub struct Payloads {
     entries: Arc<[PayloadEntry]>,
 }
@@ -112,9 +108,77 @@ impl Payloads {
             entries: entries.into(),
         }
     }
+
+    /// Helper function to build the `TxTrigger` from
+    /// the already built `Payloads` struct.
+    pub fn entries(&self) -> Arc<[PayloadEntry]> {
+        self.entries.clone()
+    }
+}
+
+// =============================================================================
+// Dispatch Record
+
+/// Structured output from a successful dispatch, consumed by `metrics.rs`.
+#[derive(Debug, Clone)]
+pub struct DispatchRecord {
+    /// `execution_id` for status retrival
+    execution_id: String,
+    /// Timestamp immediately before HTTP POST.
+    pub t_send: Instant,
+    /// Timestamp on HTTP 202 Accepted.
+    pub t_accept: Instant,
+    /// Index of the API key/account used (useful for shard-distribution validation).
+    pub api_key_index: usize,
+}
+
+// =============================================================================
+// Rate Controller
+
+/// Deterministic inter-arrival scheduler.
+/// Calculates exact sleep duration based on elapsed wall-clock time.
+/// Naturally handles linear ramp → steady-state without phase boundaries.
+pub struct DynamicRateController {
+    ramp_duration_us: f64,
+    min_inter_arrival_us: f64,
+    max_inter_arrival_us: f64,
+}
+
+impl DynamicRateController {
+    /// Creates a new rate controller.
+    /// * `ramp_secs`: Duration of the linear ramp (e.g., 5.0)
+    /// * `target_tps`: Steady-state throughput (e.g., 1000.0)
+    /// * `initial_delay_us`: Starting inter-arrival delay (e.g., 10_000 for ~100 TPS)
+    pub fn new(ramp_secs: f64, target_tps: f64, initial_delay_us: f64) -> Self {
+        Self {
+            ramp_duration_us: ramp_secs * 1_000_000.0,
+            min_inter_arrival_us: 1_000_000.0 / target_tps,
+            max_inter_arrival_us: initial_delay_us,
+        }
+    }
+
+    /// Blocks the async task until the exact next dispatch slot.
+    /// Uses closed-loop drift correction: recalculates delay every iteration.
+    pub async fn wait_for_next_slot(&self, start_instant: Instant) {
+        let elapsed_us = start_instant.elapsed().as_micros() as f64;
+
+        // Linear interpolation of inter-arrival time during ramp
+        let delay_us = if elapsed_us < self.ramp_duration_us {
+            let progress = elapsed_us / self.ramp_duration_us;
+            self.max_inter_arrival_us
+                - (progress * (self.max_inter_arrival_us - self.min_inter_arrival_us))
+        } else {
+            // Steady state: constant inter-arrival
+            self.min_inter_arrival_us
+        };
+
+        // Sleep until the calculated deadline
+        tokio::time::sleep(Duration::from_micros(delay_us as u64)).await;
+    }
 }
 
 // ============================================================
+// main struct `TxTrigger`
 
 /// High-throughput transaction dispatcher with deterministic rate control.
 ///
@@ -122,8 +186,86 @@ impl Payloads {
 /// `Arc`-backed state for payloads and rate limiting to avoid lock contention
 /// and heap allocations during the hot dispatch path.
 pub struct TxTrigger {
-    payloads: Payloads,
-    rate_limiter: Arc<TriggerRateLimiter>,
+    payloads: Arc<[PayloadEntry]>,
     client: Client,
-    base_url: String 
+    base_url: String,
+    rate_controller: Arc<DynamicRateController>,
 }
+
+impl TxTrigger {
+    pub fn new(
+        payloads: Payloads,
+        client: Client,
+        base_url: String,
+        rate_controller: Arc<DynamicRateController>,
+    ) -> Self {
+        Self {
+            payloads: payloads.entries,
+            client,
+            base_url,
+            rate_controller,
+        }
+    }
+
+    /// Unified dispatch function. Handles timing, payload selection, HTTP POST,
+    /// and metric emission in a single call. No phase switching required.
+    ///
+    /// * `start_instant` - Wall-clock benchmark start time (shared across workers).
+    /// * `metrics_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
+    pub async fn ramp_dispatch(
+        &self,
+        start_instant: Instant,
+        metrics_tx: &mpsc::Sender<DispatchRecord>,
+    ) -> Result<(), TriggerError> {
+        // 1. Wait for exact inter-arrival slot (ramp or steady handled automatically)
+        self.rate_controller.wait_for_next_slot(start_instant).await;
+
+        // 2. Zero-copy payload selection (O(1), lock-free)
+        let mut rng = rand::thread_rng();
+        let entry = self
+            .payloads
+            .choose(&mut rng)
+            .expect("Payloads collection is empty");
+
+        let t_send = Instant::now();
+
+        // 3. Fire request (reqwest streams Bytes directly to kernel socket)
+        let response = self
+            .client
+            .post(&self.base_url)
+            .header("Authorization", format!("Bearer {}", entry.api_key))
+            .header("Content-Type", "application/json")
+            .body(entry.payload.clone()) // Arc-bump, zero allocation
+            .send()
+            .await?;
+
+        let status = response.status();
+        if status != reqwest::StatusCode::ACCEPTED {
+            return Err(TriggerError::UnexpectedStatus(status));
+        }
+
+        let t_accept = Instant::now();
+
+        // 4. Extract execution_id for server-side pipeline correlation
+        let body: serde_json::Value = response.json().await?;
+        let execution_id = body
+            .get("result")
+            .and_then(|r| r.get("execution_id"))
+            .and_then(|id| id.as_str())
+            .ok_or(TriggerError::MissingExecutionId)?
+            .to_string();
+
+        // 5. Emit metric record (non-blocking, drop if backpressured)
+        let record = DispatchRecord {
+            execution_id,
+            t_send,
+            t_accept,
+            api_key_index: entry.index,
+        };
+        let _ = metrics_tx.try_send(record);
+
+        Ok(())
+    }
+}
+
+// ============================================================
