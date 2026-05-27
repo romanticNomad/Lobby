@@ -1,14 +1,11 @@
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
-use governor::{
-    RateLimiter,
-    clock::DefaultClock,
-    middleware::NoOpMiddleware,
-    state::{InMemoryState, NotKeyed},
-};
 use rand::seq::SliceRandom;
 use reqwest::Client;
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::{Arc, mpsc},
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 // contants
@@ -18,13 +15,6 @@ use thiserror::Error;
 ///
 /// **Used for lobby benchmarking only, and no real funds are ever sent to this account.**
 pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61";
-
-// rate limiter type alias
-// ============================================================
-
-/// Unkeyed, direct-state rate limiter using the default tokio clock.
-/// Shared across workers via `Arc` to distribute permits without contention.
-pub type TriggerRateLimiter = RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>;
 
 // structs
 // ============================================================
@@ -119,7 +109,7 @@ impl Payloads {
         }
     }
 
-    /// Helper function to build the `TxTrigger` from 
+    /// Helper function to build the `TxTrigger` from
     /// the already built `Payloads` struct.
     pub fn entries(&self) -> Arc<[PayloadEntry]> {
         self.entries.clone()
@@ -142,6 +132,51 @@ pub struct DispatchRecord {
     pub api_key_index: usize,
 }
 
+// =============================================================================
+// Rate Controller
+
+/// Deterministic inter-arrival scheduler.
+/// Calculates exact sleep duration based on elapsed wall-clock time.
+/// Naturally handles linear ramp → steady-state without phase boundaries.
+pub struct DynamicRateController {
+    ramp_duration_us: f64,
+    min_inter_arrival_us: f64,
+    max_inter_arrival_us: f64,
+}
+
+impl DynamicRateController {
+    /// Creates a new rate controller.
+    /// * `ramp_secs`: Duration of the linear ramp (e.g., 5.0)
+    /// * `target_tps`: Steady-state throughput (e.g., 1000.0)
+    /// * `initial_delay_us`: Starting inter-arrival delay (e.g., 10_000 for ~100 TPS)
+    pub fn new(ramp_secs: f64, target_tps: f64, initial_delay_us: f64) -> Self {
+        Self {
+            ramp_duration_us: ramp_secs * 1_000_000.0,
+            min_inter_arrival_us: 1_000_000.0 / target_tps,
+            max_inter_arrival_us: initial_delay_us,
+        }
+    }
+
+    /// Blocks the async task until the exact next dispatch slot.
+    /// Uses closed-loop drift correction: recalculates delay every iteration.
+    pub async fn wait_for_next_slot(&self, start_instant: Instant) {
+        let elapsed_us = start_instant.elapsed().as_micros() as f64;
+
+        // Linear interpolation of inter-arrival time during ramp
+        let delay_us = if elapsed_us < self.ramp_duration_us {
+            let progress = elapsed_us / self.ramp_duration_us;
+            self.max_inter_arrival_us
+                - (progress * (self.max_inter_arrival_us - self.min_inter_arrival_us))
+        } else {
+            // Steady state: constant inter-arrival
+            self.min_inter_arrival_us
+        };
+
+        // Sleep until the calculated deadline
+        tokio::time::sleep(Duration::from_micros(delay_us as u64)).await;
+    }
+}
+
 // ============================================================
 // main struct `TxTrigger`
 
@@ -152,102 +187,84 @@ pub struct DispatchRecord {
 /// and heap allocations during the hot dispatch path.
 pub struct TxTrigger {
     payloads: Arc<[PayloadEntry]>,
-    rate_limiter: Arc<TriggerRateLimiter>,
     client: Client,
     base_url: String,
+    rate_controller: Arc<DynamicRateController>,
 }
 
 impl TxTrigger {
-    /// Creates a new `TxTrigger` instance.
-    ///
-    /// * `payloads` - Pre-serialized transaction payloads.
-    /// * `rate_limiter` - Shared governor instance for steady-state TPS control.
-    /// * `client` - Pre-warmed `reqwest::Client` with connection pooling enabled.
-    /// * `base_url` - Target Lobby submission endpoint (e.g., `http://127.0.0.1:3000/v1/transactions`).
     pub fn new(
         payloads: Payloads,
-        rate_limiter: Arc<TriggerRateLimiter>,
         client: Client,
         base_url: String,
+        rate_controller: Arc<DynamicRateController>,
     ) -> Self {
         Self {
-            payloads: payloads.entries(),
-            rate_limiter,
+            payloads: payloads.entries,
             client,
             base_url,
+            rate_controller,
         }
     }
 
-    /// Acquires a rate-limit permit asynchronously.
+    /// Unified dispatch function. Handles timing, payload selection, HTTP POST,
+    /// and metric emission in a single call. No phase switching required.
     ///
-    /// Yields to the Tokio scheduler until a token is available.
-    /// **Note:** This is intended for the steady-state phase (5s–55s).
-    /// During the ramp phase (0s–5s), the orchestrator should use
-    /// `tokio::time::sleep` with a linearly decreasing interval instead.
-    pub async fn acquire_permit(&self) {
-        self.rate_limiter.until_ready().await;
-    }
+    /// * `start_instant` - Wall-clock benchmark start time (shared across workers).
+    /// * `metrics_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
+    pub async fn ramp_dispatch(
+        &self,
+        start_instant: Instant,
+        metrics_tx: &mpsc::Sender<DispatchRecord>,
+    ) -> Result<(), TriggerError> {
+        // 1. Wait for exact inter-arrival slot (ramp or steady handled automatically)
+        self.rate_controller.wait_for_next_slot(start_instant).await;
 
-    /// Selects a random payload in O(1) without locking.
-    ///
-    /// Uses `rand::thread_rng` for uniform distribution across `ByAddress`
-    /// shards in Lobby's pipeline.
-    pub fn select_payload(&self) -> &PayloadEntry {
-        let mut rnd = rand::thread_rng();
-        self.payloads
-            .choose(&mut rnd)
-            .expect("Payload collection must have valid elements")
-    }
+        // 2. Zero-copy payload selection (O(1), lock-free)
+        let mut rng = rand::thread_rng();
+        let entry = self
+            .payloads
+            .choose(&mut rng)
+            .expect("Payloads collection is empty");
 
-    /// Dispatches a single transaction to Lobby, respecting the rate limiter.
-    ///
-    /// Returns a `DispatchRecord` containing timestamps and identifiers
-    /// required by `metrics.rs` to compute client-acceptance latency.
-    pub async fn dispatch(&self) -> Result<DispatchRecord, TriggerError> {
-        // rate control
-        self.acquire_permit().await;
-
-        // payload selection (random distribution)
-        let payload_entry = self.select_payload();
-        let api_key_index = payload_entry.index;
-
-        // mark submission instant
         let t_send = Instant::now();
 
-        // submit request to Lobby server
+        // 3. Fire request (reqwest streams Bytes directly to kernel socket)
         let response = self
             .client
             .post(&self.base_url)
-            .header("Authorization", format!("Bearer {}", payload_entry.api_key))
+            .header("Authorization", format!("Bearer {}", entry.api_key))
             .header("Content-Type", "application/json")
-            .body(payload_entry.payload.clone()) // Bytes::clone() is reference-counted (zero-copy)
+            .body(entry.payload.clone()) // Arc-bump, zero allocation
             .send()
             .await?;
 
-        // validate submission
         let status = response.status();
         if status != reqwest::StatusCode::ACCEPTED {
-            return Err(TriggerError::UnexpectedStatus(status)); // expected status_code = 202
+            return Err(TriggerError::UnexpectedStatus(status));
         }
 
-        // mark acceptance instant
         let t_accept = Instant::now();
 
-        // extract execution_id
-        let response_body: serde_json::Value = response.json().await?;
-        let execution_id = response_body
+        // 4. Extract execution_id for server-side pipeline correlation
+        let body: serde_json::Value = response.json().await?;
+        let execution_id = body
             .get("result")
             .and_then(|r| r.get("execution_id"))
             .and_then(|id| id.as_str())
             .ok_or(TriggerError::MissingExecutionId)?
             .to_string();
 
-        Ok(DispatchRecord {
+        // 5. Emit metric record (non-blocking, drop if backpressured)
+        let record = DispatchRecord {
             execution_id,
             t_send,
             t_accept,
-            api_key_index,
-        })
+            api_key_index: entry.index,
+        };
+        let _ = metrics_tx.try_send(record);
+
+        Ok(())
     }
 }
 
