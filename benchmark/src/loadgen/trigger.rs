@@ -3,10 +3,11 @@ use bytes::Bytes;
 use rand::seq::SliceRandom;
 use reqwest::Client;
 use std::{
-    sync::{Arc, mpsc},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 // contants
 // ============================================================
@@ -40,6 +41,7 @@ pub enum TriggerError {
 // payload structs
 
 /// Thread-safe, pre-serialized transaction payload with associated API key.
+///
 /// Designed for O(1) random selection and zero-copy cloning via `Bytes`.
 #[derive(Debug, Clone)]
 pub struct PayloadEntry {
@@ -136,6 +138,7 @@ pub struct DispatchRecord {
 // Rate Controller
 
 /// Deterministic inter-arrival scheduler.
+///
 /// Calculates exact sleep duration based on elapsed wall-clock time.
 /// Naturally handles linear ramp → steady-state without phase boundaries.
 pub struct DynamicRateController {
