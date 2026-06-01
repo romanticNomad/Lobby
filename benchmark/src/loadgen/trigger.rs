@@ -9,7 +9,7 @@ use std::{
 use thiserror::Error;
 use tokio::sync::mpsc;
 
-// contants
+// constants
 // ============================================================
 
 /// A dummy EVM adddress used for recieving transactions.
