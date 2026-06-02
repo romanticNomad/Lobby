@@ -3,6 +3,7 @@ mod infra;
 #[allow(dead_code, unused_imports)]
 mod loadgen;
 mod metrics;
+#[allow(dead_code)]
 mod mockrpc;
 
 use anyhow::Ok;
