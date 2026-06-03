@@ -18,10 +18,10 @@ pub enum AuthError {
 }
 
 // ============================================================
-// authentication and responce handeling
+// authentication and response handling
 
 pub async fn auth_middleware(
-    State(api_resigrty): State<ApiRegistry>,
+    State(api_registry): State<ApiRegistry>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
@@ -46,7 +46,7 @@ pub async fn auth_middleware(
     };
 
     // lookup api key in DashMap (api_registry) and authenticate
-    let client_config = api_resigrty
+    let client_config = api_registry
         .get(api_token)
         .map(|entry| entry.value().clone())
         .ok_or(AuthError::InvalidApiKey)?;
@@ -59,7 +59,7 @@ pub async fn auth_middleware(
 }
 
 // ============================================================
-// IntoResponse implintations for the used errors
+// IntoResponse implementations for the used errors
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
