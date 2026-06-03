@@ -11,7 +11,7 @@ use uuid::Uuid;
 // test-keys.json elements
 // ============================================================
 
-/// SerDe format for private key, public key, and public address.
+/// Serde format for private key, public key, and public address.
 #[derive(Serialize, Deserialize)]
 pub struct EvmKeyExport {
     pvt_key: String,
@@ -30,7 +30,7 @@ impl EvmKeyExport {
 }
 
 // ============================================================
-// test_keys.json generater
+// test_keys.json generator
 
 /// Generates the test_keys.json file for benchmark
 ///
@@ -65,7 +65,7 @@ pub fn keys_json_gen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>>
 // ============================================================
 // keys generator
 
-/// Helper function that generates EVM compatibel keys
+/// Helper function that generates EVM compatible keys
 ///
 /// Generates:
 /// * `pvt_key`
@@ -94,7 +94,7 @@ fn key_gen() -> (String, String, String) {
 // lobby-api keys elements
 // ============================================================
 
-/// Lobby-Api keys stack, to be set up in the environment along with docker urls
+/// Lobby-Api keys stack, to be set up in the environment along with docker URLs
 ///
 /// API Key format:
 ///
@@ -113,10 +113,10 @@ pub type ApiStack = DashMap<u64, String>;
 ///    },
 /// }
 /// ```
-pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Error>> {
+pub fn get_apistack(filepath: &Path) -> Result<ApiStack, Box<dyn std::error::Error>> {
     let api_stack: ApiStack = DashMap::new();
 
-    let file_contents = fs::read_to_string(fileplath)?;
+    let file_contents = fs::read_to_string(filepath)?;
     let parsed_content: Value = serde_json::from_str(&file_contents)?;
 
     let object_map = parsed_content
@@ -147,6 +147,20 @@ pub fn get_apistack(fileplath: &Path) -> Result<ApiStack, Box<dyn std::error::Er
     }
 
     Ok(api_stack)
+}
+
+pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
+    let addresses: Vec<String> = api_stack
+        .into_iter()
+        .map(|element| {
+            let api_key = element.value();
+            let api_key_elements: Vec<&str> = api_key.split(':').collect();
+            let address = api_key_elements[2].to_string();
+            address
+        })
+        .collect();
+
+    addresses
 }
 
 // ============================================================
