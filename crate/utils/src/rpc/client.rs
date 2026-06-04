@@ -111,7 +111,7 @@ impl RpcClient {
     /// - Total latency: <100μs typical
     ///
     /// # Arguments
-    /// * `actor` - `SelectActor` enum, seperate providers for `broadcast` and `validator` actor.
+    /// * `actor` - `SelectActor` enum, separate providers for `broadcast` and `validator` actor.
     /// * `chain_id` - Target chain for the operation
     /// * `sticky_index` - Optional sticky session index for endpoint affinity
     /// * `timeout` - Maximum time to wait for permit acquisition
@@ -348,7 +348,7 @@ impl RpcClient {
     /// Get a dictionary of chains and number of endpoints affiliated to each chain.
     /// **meant to tracing purpose**
     ///
-    /// Since broadcast and validator have identicle endpoints, choose any actor.
+    /// Since broadcast and validator have identical endpoints, choose any actor.
     pub async fn get_endpoint_hashmap(&self) -> Result<HashMap<ChainId, usize>, LobbyRpcError> {
         let mut endpoint_hashmap: HashMap<ChainId, usize> = HashMap::new();
         let provider_stack = self.get_provider_stack();

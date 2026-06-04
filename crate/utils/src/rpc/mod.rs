@@ -313,7 +313,7 @@ pub async fn get_transaction_count(
 ///     Duration::from_secs(5),
 /// ).await?;
 /// ```
-pub async fn get_transaction_reciept(
+pub async fn get_transaction_receipt(
     client: &RpcClient,
     chain_id: ChainId,
     strategy: LoadBalancingStrategy,

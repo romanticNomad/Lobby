@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, time::Instant};
 use tracing::Instrument;
-use utils::rpc::{LoadBalancingStrategy, RpcClient, get_block_number, get_transaction_reciept};
+use utils::rpc::{LoadBalancingStrategy, RpcClient, get_block_number, get_transaction_receipt};
 
 // ============================================================
 
@@ -110,7 +110,7 @@ impl ValidatorEngine {
             }
 
             // fetch receipt using sticky session routing
-            match get_transaction_reciept(&client, chain_id, strategy, tx_hash, timeout).await {
+            match get_transaction_receipt(&client, chain_id, strategy, tx_hash, timeout).await {
                 Ok(Some(receipt)) => {
                     // transaction is mined -> check status
                     // status=0

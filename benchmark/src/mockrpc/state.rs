@@ -1,13 +1,28 @@
+use crate::loadgen::RECIPIENT_ADDRESS;
 use alloy::primitives::ChainId;
 use dashmap::DashMap;
 use serde::Serialize;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, atomic::AtomicU64};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use thiserror::Error;
 // ============================================================
+
+/// Constant `block_number`.
+pub const BLOCK_NUMBER: u64 = 18_000_000;
 
 /// Primary state registry for mockrpc.
 pub type ChainRegistry = DashMap<ChainId, Arc<ChainState>>;
 
+// ============================================================
+// StateError
+
+#[derive(Clone, Debug, Error)]
+pub enum StateError {
+    #[error("ChainState update failed: {0}")]
+    UpdateError(String),
+}
 // ============================================================
 
 /// Lightweight EVM receipt template.
@@ -29,6 +44,31 @@ pub struct StaticReceipt {
     pub logs: Vec<serde_json::Value>, // Empty for mock
 }
 
+impl StaticReceipt {
+    pub fn gen_receipts(addresses: Vec<String>) -> DashMap<String, Arc<StaticReceipt>> {
+        let receipt_collection = DashMap::new();
+        for from in addresses {
+            let receipt = Arc::new(StaticReceipt {
+                transaction_hash: format!("0x{:0>64}", "mocktransactionhash"),
+                status: 1,
+                block_number: BLOCK_NUMBER,
+                block_hash: format!("0x{:0>64}", "mockblockhash"),
+                from: from.clone(),
+                to: Some(RECIPIENT_ADDRESS.to_string()),
+                gas_used: 21_000,
+                cumulative_gas_used: 21_000,
+                effective_gas_price: 1_000_000_000,
+                tx_type: 2,
+                logs: vec![],
+            });
+
+            receipt_collection.insert(from, receipt.clone());
+        }
+
+        receipt_collection
+    }
+}
+
 // ============================================================
 
 /// State Collection of Benchmark RPC servers.
@@ -40,8 +80,6 @@ pub struct ChainState {
     pub nonce_collection: DashMap<String, AtomicU64>,
     /// TxHash -> Deterministic Receipt (zero-copy reads)
     pub receipt_collection: DashMap<String, Arc<StaticReceipt>>,
-    /// Trivial block counter for `eth_blockNumber`
-    pub current_block: AtomicU64,
 }
 
 // ============================================================
@@ -50,44 +88,31 @@ pub struct ChainState {
 impl ChainState {
     pub fn new(addresses: Vec<String>) -> Self {
         let nonce_collection = DashMap::new();
-        for address in addresses {
-            nonce_collection.insert(address, AtomicU64::new(0));
+        for address in addresses.iter() {
+            nonce_collection.insert(address.to_owned(), AtomicU64::new(0));
         }
-
-        let receipt_collection = DashMap::new();
-        let current_block = AtomicU64::new(18_000_000); // A dummy block number
-
+        let receipt_collection = StaticReceipt::gen_receipts(addresses);
         Self {
             nonce_collection,
             receipt_collection,
-            current_block,
         }
     }
 
-    /// Called after successful nonce validation in `eth_sendRawTransaction`
-    pub fn store_receipt(
-        &self,
-        tx_hash: String,
-        from: String,
-        to: Option<String>,
-    ) -> Arc<StaticReceipt> {
-        let block = self.current_block.fetch_add(1, Ordering::Relaxed);
-        let receipt = Arc::new(StaticReceipt {
-            transaction_hash: tx_hash.clone(),
-            status: 1,
-            block_number: block,
-            block_hash: format!("0x{:0>64}", "mockblockhash"),
-            from,
-            to,
-            gas_used: 21_000,
-            cumulative_gas_used: 21_000,
-            effective_gas_price: 1_000_000_000,
-            tx_type: 2,
-            logs: vec![],
-        });
+    /// Called after successful nonce validation in `eth_sendRawTransaction`.
+    ///
+    /// Demo receipt are already built using `StaticReceipt::gen_receipts`
+    /// therefore only nonce is updated after validation.
+    pub fn update_state(&self, from: String) -> Result<(), StateError> {
+        match self.nonce_collection.get(&from) {
+            Some(nonce) => {
+                nonce.fetch_add(1, Ordering::Relaxed);
+            }
+            None => Err(StateError::UpdateError(format!(
+                "address not found: {from}"
+            )))?,
+        }
 
-        self.receipt_collection.insert(tx_hash, receipt.clone());
-        receipt
+        Ok(())
     }
 }
 
