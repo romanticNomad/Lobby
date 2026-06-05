@@ -1,6 +1,8 @@
+use crate::mockrpc::{ChainRegistry, state::ChainState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
+use std::sync::Arc;
+use dashmap::DashMap;
 // ============================================================
 // JSON-RPC wrappers
 
@@ -57,3 +59,37 @@ impl RpcResponse {
 }
 
 // ============================================================
+// Context for axum app (Shared state among handlers)
+
+#[derive(Clone)]
+pub struct ChainContext {
+    chain_id: u64,
+    rpc_state: Arc<ChainState>,
+}
+
+impl ChainContext {
+    pub fn new(chain_id: u64, addresses: Vec<String>) -> Self {
+        let rpc_state = Arc::new(ChainState::new(addresses));
+
+        Self {
+            chain_id,
+            rpc_state,
+        }
+    }
+}
+
+// ============================================================
+// Mock Rpc AppState.
+
+pub struct RpcAppState {
+    registry: Arc<ChainRegistry>,
+}
+
+// impl RpcAppState {
+//     pub fn new(chain_ids: Vec<u64>, addresses: Vec<String>) -> Self {
+//         let chain_registry = DashMap::new();
+//         for chain_id in chain_ids {
+//             chain_registry.insert(chain_id, Arc::new(ChainState::new(addresses)));
+//         };
+//     }
+// }

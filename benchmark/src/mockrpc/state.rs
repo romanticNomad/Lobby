@@ -1,5 +1,4 @@
 use crate::loadgen::RECIPIENT_ADDRESS;
-use alloy::primitives::ChainId;
 use dashmap::DashMap;
 use serde::Serialize;
 use std::sync::{
@@ -11,9 +10,6 @@ use thiserror::Error;
 
 /// Constant `block_number`.
 pub const BLOCK_NUMBER: u64 = 18_000_000;
-
-/// Primary state registry for mockrpc.
-pub type ChainRegistry = DashMap<ChainId, Arc<ChainState>>;
 
 // ============================================================
 // StateError
