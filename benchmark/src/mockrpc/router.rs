@@ -1,8 +1,14 @@
-use crate::mockrpc::{ChainRegistry, state::ChainState};
+use crate::mockrpc::state::ChainState;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use dashmap::DashMap;
+
+// ============================================================
+
+/// Primary app registry for mockrpc.
+pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
+
 // ============================================================
 // JSON-RPC wrappers
 
@@ -85,11 +91,17 @@ pub struct RpcAppState {
     registry: Arc<ChainRegistry>,
 }
 
-// impl RpcAppState {
-//     pub fn new(chain_ids: Vec<u64>, addresses: Vec<String>) -> Self {
-//         let chain_registry = DashMap::new();
-//         for chain_id in chain_ids {
-//             chain_registry.insert(chain_id, Arc::new(ChainState::new(addresses)));
-//         };
-//     }
-// }
+impl RpcAppState {
+    pub fn new(chain_ids: Vec<u64>, addresses: Vec<String>) -> Self {
+        let chain_registry = DashMap::new();
+        for chain_id in chain_ids {
+            chain_registry.insert(chain_id, Arc::new(ChainState::new(addresses.clone())));
+        }
+
+        Self {
+            registry: Arc::new(chain_registry),
+        }
+    }
+}
+
+// ============================================================
