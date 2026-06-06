@@ -1,10 +1,19 @@
 use crate::mockrpc::state::ChainState;
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
+use axum::{Extension, Json, Router};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 // ============================================================
+// type alias
 
 /// Primary app registry for mockrpc.
 pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
@@ -65,28 +74,30 @@ impl RpcResponse {
 }
 
 // ============================================================
-// Context for axum app (Shared state among handlers)
+// router contexct
 
+/// `chain` scoped router context for the axum server.
 #[derive(Clone)]
 pub struct ChainContext {
     chain_id: u64,
-    rpc_state: Arc<ChainState>,
+    chain_state: Arc<ChainState>,
 }
 
 impl ChainContext {
-    pub fn new(chain_id: u64, addresses: Vec<String>) -> Self {
-        let rpc_state = Arc::new(ChainState::new(addresses));
-
+    pub fn new(chain_id: u64, chain_state: Arc<ChainState>) -> Self {
         Self {
             chain_id,
-            rpc_state,
+            chain_state,
         }
     }
 }
 
 // ============================================================
-// Mock Rpc AppState.
+// RpcAppState.
 
+/// Primary AppState for mock rpc servers.
+///
+/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
 pub struct RpcAppState {
     registry: Arc<ChainRegistry>,
 }
@@ -102,6 +113,80 @@ impl RpcAppState {
             registry: Arc::new(chain_registry),
         }
     }
+
+    /// Spawns isolated Axum servers per chain_id.
+    /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
+    pub async fn spawn_mockrpc_servers(&self) -> (HashMap<u64, u16>, CancellationToken) {
+        let mut port_map = HashMap::with_capacity(self.registry.len());
+        let cancellation_token = CancellationToken::new();
+
+        for map_ref in self.registry.iter() {
+            let (chain_id, chain_state) = (map_ref.key().clone(), map_ref.value().clone());
+            let chain_context = ChainContext::new(chain_id, chain_state);
+            let app = build_router(chain_context);
+
+            let listner = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
+                .await
+                .expect("[router] Failed to bind to address");
+            let port = listner.local_addr().unwrap().port();
+            port_map.insert(chain_id, port);
+
+            let token = cancellation_token.clone();
+            tokio::spawn(async move {
+                info!(chain_id, port, "Mockrpc server online");
+                axum::serve(listner, app)
+                    .with_graceful_shutdown(async move {
+                        token.cancelled().await;
+                    })
+                    .await
+                    .expect("[router] Failed to spawn server");
+            });
+        }
+
+        (port_map, cancellation_token)
+    }
+}
+
+// ============================================================
+// handler function
+
+// TODO: programme the handlers to accomodate nonce validation and RpcResponse generation.
+async fn handle_jsonrpc(
+    Extension(ctx): Extension<ChainContext>,
+    Json(req): Json<RpcRequest>,
+) -> Response {
+    let responce = match req.method.as_str() {
+        "eth_sendRawTransaction" => handle_send_raw_transaction(&ctx, &req.params).await,
+        "eth_getTransactionReceipt" => handle_get_transaction_receipt(&ctx, &req.params).await,
+        _ => RpcResponse::method_not_found(req.id),
+    };
+
+    Json(responce).into_response()
+}
+
+async fn handle_send_raw_transaction(
+    ctx: &ChainContext,
+    params: &Option<Vec<Value>>,
+) -> RpcResponse {
+    // dummy response
+    RpcResponse::method_not_found(Some(Value::Null))
+}
+
+async fn handle_get_transaction_receipt(
+    ctx: &ChainContext,
+    params: &Option<Vec<Value>>,
+) -> RpcResponse {
+    // dummy response
+    RpcResponse::method_not_found(Some(Value::Null))
+}
+
+// ============================================================
+// helper functions
+
+fn build_router(ctx: ChainContext) -> Router {
+    Router::new()
+        .route("/", post(handle_jsonrpc))
+        .layer(Extension(ctx))
 }
 
 // ============================================================
