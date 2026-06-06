@@ -1,17 +1,17 @@
-use std::collections::HashMap;
-use std::net::Ipv4Addr;
 use crate::mockrpc::state::ChainState;
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
+use axum::{Extension, Json, Router};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
-use axum::{Extension, Json, Router};
-use axum::response::{IntoResponse, Response};
-use axum::routing::post;
-use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+
 // ============================================================
 // type alias
 
@@ -87,7 +87,7 @@ impl ChainContext {
     pub fn new(chain_id: u64, chain_state: Arc<ChainState>) -> Self {
         Self {
             chain_id,
-           chain_state,
+            chain_state,
         }
     }
 }
@@ -99,7 +99,7 @@ impl ChainContext {
 ///
 /// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
 pub struct RpcAppState {
-    registry: ChainRegistry,
+    registry: Arc<ChainRegistry>,
 }
 
 impl RpcAppState {
@@ -110,7 +110,7 @@ impl RpcAppState {
         }
 
         Self {
-            registry: chain_registry,
+            registry: Arc::new(chain_registry),
         }
     }
 
@@ -120,25 +120,26 @@ impl RpcAppState {
         let mut port_map = HashMap::with_capacity(self.registry.len());
         let cancellation_token = CancellationToken::new();
 
-        for (chain_id, chain_state) in self.registry.into_iter() {
+        for map_ref in self.registry.iter() {
+            let (chain_id, chain_state) = (map_ref.key().clone(), map_ref.value().clone());
             let chain_context = ChainContext::new(chain_id, chain_state);
-            let app = build_router(chain_context.clone());
+            let app = build_router(chain_context);
 
-            // dynamic port allocation by OS
             let listner = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
                 .await
-                .expect("[router] failed to bind TcpListner");
-
+                .expect("[router] Failed to bind to address");
             let port = listner.local_addr().unwrap().port();
             port_map.insert(chain_id, port);
-            let tocken = cancellation_token.clone();
 
+            let token = cancellation_token.clone();
             tokio::spawn(async move {
-               info!(chain_id, port, "Starting mock RPC server");
+                info!(chain_id, port, "Mockrpc server online");
                 axum::serve(listner, app)
-                    .with_graceful_shutdown(tocken.cancelled())
+                    .with_graceful_shutdown(async move {
+                        token.cancelled().await;
+                    })
                     .await
-                    .expect("[router] server exited unexpectedly");
+                    .expect("[router] Failed to spawn server");
             });
         }
 
@@ -152,23 +153,29 @@ impl RpcAppState {
 // TODO: programme the handlers to accomodate nonce validation and RpcResponse generation.
 async fn handle_jsonrpc(
     Extension(ctx): Extension<ChainContext>,
-    Json(req): Json<RpcRequest>
+    Json(req): Json<RpcRequest>,
 ) -> Response {
     let responce = match req.method.as_str() {
         "eth_sendRawTransaction" => handle_send_raw_transaction(&ctx, &req.params).await,
         "eth_getTransactionReceipt" => handle_get_transaction_receipt(&ctx, &req.params).await,
-        _ => RpcResponse::method_not_found(req.id)
+        _ => RpcResponse::method_not_found(req.id),
     };
 
     Json(responce).into_response()
 }
 
-async fn handle_send_raw_transaction(ctx: &ChainContext, params: &Option<Vec<Value>>) -> RpcResponse {
+async fn handle_send_raw_transaction(
+    ctx: &ChainContext,
+    params: &Option<Vec<Value>>,
+) -> RpcResponse {
     // dummy response
     RpcResponse::method_not_found(Some(Value::Null))
 }
 
-async fn handle_get_transaction_receipt(ctx: &ChainContext, params: &Option<Vec<Value>>) -> RpcResponse {
+async fn handle_get_transaction_receipt(
+    ctx: &ChainContext,
+    params: &Option<Vec<Value>>,
+) -> RpcResponse {
     // dummy response
     RpcResponse::method_not_found(Some(Value::Null))
 }
@@ -176,7 +183,7 @@ async fn handle_get_transaction_receipt(ctx: &ChainContext, params: &Option<Vec<
 // ============================================================
 // helper functions
 
-fn build_router(ctx: ChainContext) -> Router  {
+fn build_router(ctx: ChainContext) -> Router {
     Router::new()
         .route("/", post(handle_jsonrpc))
         .layer(Extension(ctx))
