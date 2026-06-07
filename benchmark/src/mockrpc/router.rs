@@ -12,23 +12,13 @@ use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 // ============================================================
 // type alias
 
 /// Primary app registry for mockrpc.
 pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
-
-// ============================================================
-// server errors
-
-/// Errors expected from mock-rcp server side module.
-#[derive(Debug, Error)]
-pub enum ServerError {
-    #[error("Unable to startserver: {0}")]
-    SpawnError(String),
-}
 
 // ============================================================
 // JSON-RPC wrappers
@@ -146,20 +136,20 @@ impl RpcAppState {
             let app = build_router(chain_context);
 
             let listner = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
-                .await
-                .expect("[router] Failed to bind to address");
+                .await?;
             let port = listner.local_addr()?.port();
             port_map.insert(chain_id, port);
 
             let token = cancellation_token.clone();
             tokio::spawn(async move {
-                info!(chain_id, port, "Mockrpc server online");
                 axum::serve(listner, app)
                     .with_graceful_shutdown(async move {
                         token.cancelled().await;
                     })
                     .await
-                    .expect("[router] Failed to spawn server");
+                    .unwrap_or(warn!(chain_id, port, "Failed to spawn server"));
+
+                info!(chain_id, port, "Mockrpc server online");
             });
         }
 
