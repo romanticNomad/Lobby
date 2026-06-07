@@ -1,13 +1,15 @@
 use crate::mockrpc::state::ChainState;
-use axum::response::{IntoResponse, Response};
-use axum::routing::post;
-use axum::{Extension, Json, Router};
+use alloy::primitives::{B256, Bytes};
+use axum::{
+    response::{IntoResponse, Response},
+    routing::post,
+    {Extension, Json, Router},
+};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::net::Ipv4Addr;
-use std::sync::Arc;
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
+use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -17,6 +19,16 @@ use tracing::info;
 
 /// Primary app registry for mockrpc.
 pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
+
+// ============================================================
+// server errors
+
+/// Errors expected from mock-rcp server side module.
+#[derive(Debug, Error)]
+pub enum ServerError {
+    #[error("Unable to startserver: {0}")]
+    SpawnError(String),
+}
 
 // ============================================================
 // JSON-RPC wrappers
@@ -47,6 +59,14 @@ pub struct RpcError {
     pub code: i64,
     pub message: String,
 }
+
+/// eth_sendRawTransaction: ["0x<rlp_encoded_signed_tx>"]
+#[derive(Debug, Deserialize)]
+pub struct SendRawTransactionParams(pub Bytes);
+
+/// eth_getTransactionReceipt: ["0x<tx_hash>"]
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionReceiptParams(pub B256);
 
 impl RpcResponse {
     pub fn success(id: Option<Value>, result: Value) -> Self {
@@ -116,7 +136,7 @@ impl RpcAppState {
 
     /// Spawns isolated Axum servers per chain_id.
     /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
-    pub async fn spawn_mockrpc_servers(&self) -> (HashMap<u64, u16>, CancellationToken) {
+    pub async fn spawn_mockrpc_servers(&self) -> anyhow::Result<(HashMap<u64, u16>, CancellationToken)> {
         let mut port_map = HashMap::with_capacity(self.registry.len());
         let cancellation_token = CancellationToken::new();
 
@@ -128,7 +148,7 @@ impl RpcAppState {
             let listner = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
                 .await
                 .expect("[router] Failed to bind to address");
-            let port = listner.local_addr().unwrap().port();
+            let port = listner.local_addr()?.port();
             port_map.insert(chain_id, port);
 
             let token = cancellation_token.clone();
@@ -143,7 +163,7 @@ impl RpcAppState {
             });
         }
 
-        (port_map, cancellation_token)
+        anyhow::Ok((port_map, cancellation_token))
     }
 }
 
