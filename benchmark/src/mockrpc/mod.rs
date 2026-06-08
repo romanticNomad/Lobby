@@ -1,15 +1,15 @@
 mod router;
 mod state;
 
-use crate::mockrpc::state::StateUpdateOutcome;
+use crate::mockrpc::state::{StateUpdateOutcome, StaticReceipt};
 use async_trait::async_trait;
+use std::sync::Arc;
 
 // ============================================================
 // state contract
 
-#[async_trait]
 /// State contract for any struct that manages the `mockrcp` state system.
-pub trait MockRpcState: Send + Sync + 'static {
+pub trait MockRpcState: Send + Sync {
     /// Validates and updates the stored nonce [`AtomicU64`] in the `NonceState`,
     ///
     /// ## Retruns
@@ -19,14 +19,13 @@ pub trait MockRpcState: Send + Sync + 'static {
     /// ## Note:
     /// for a controled system like benchmark, it is expected that `rlp_nonce` will not be greated than
     /// `registered nonce`.
-    async fn update_nonce(&self, address: String, nonce_rlp: u64) -> StateUpdateOutcome;
+    fn update_nonce(&self, address: String, nonce_rlp: u64) -> StateUpdateOutcome;
 
     /// To reduce client overhead in the benchmarking process, the transction receipts are pre-generated,
     ///
     /// ## Returns
-    /// * `StaticUpdateOutcome::TxReceipt(Arc<StaticReceipt>)`, if the receipt is found
-    /// * `StaticUpdateOutcome::ReceiptNotFound`, in an unlikly case of missing receipt for the given address.
-    async fn fetch_receipt(&self, address: String) -> StateUpdateOutcome;
+    /// * `Arc<StaticReceipt>`, if the receipt is found
+    fn fetch_receipt(&self) -> Arc<StaticReceipt>;
 }
 
 // ============================================================
