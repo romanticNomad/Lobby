@@ -1,4 +1,5 @@
 use crate::loadgen::RECIPIENT_ADDRESS;
+use alloy::primitives::B256;
 use dashmap::DashMap;
 use serde::Serialize;
 use std::sync::{
@@ -12,7 +13,13 @@ use thiserror::Error;
 pub const BLOCK_NUMBER: u64 = 18_000_000;
 
 // ============================================================
-// StateError
+// State structs
+pub enum StateUpdateOutcome {
+    NonceAdvanced(u64),
+    NonceTooLow,
+    TxReceipt(Arc<StaticReceipt>),
+    ReceiptNotFound,
+}
 
 #[derive(Clone, Debug, Error)]
 pub enum StateError {
