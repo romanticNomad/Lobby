@@ -1,7 +1,11 @@
-use crate::mockrpc::state::ChainState;
-use alloy::primitives::{B256, Bytes};
+use crate::mockrpc::MockRpcState;
+use crate::mockrpc::state::{ChainState, StateUpdateOutcome};
+use alloy::{
+    consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
+    primitives::{B256, Bytes},
+    rlp::Decodable,
+};
 use axum::{
-    response::{IntoResponse, Response},
     routing::post,
     {Extension, Json, Router},
 };
@@ -9,11 +13,9 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
-use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-
 // ============================================================
 // type alias
 
@@ -29,7 +31,7 @@ pub struct RpcRequest {
     pub jsonrpc: String,
     pub method: String,
     #[serde(default)]
-    pub params: Option<Vec<Value>>,
+    pub params: Option<Value>,
     #[serde(default)]
     pub id: Option<Value>,
 }
@@ -81,6 +83,20 @@ impl RpcResponse {
     pub fn method_not_found(id: Option<Value>) -> Self {
         Self::error(id, -32601, "Method not found")
     }
+
+    pub fn invalid_params(id: Option<Value>, message: impl Into<String>) -> Self {
+        Self::error(id, -32602, message)
+    }
+}
+
+// ============================================================
+// RpcAppState.
+
+/// Primary AppState for mock rpc servers.
+///
+/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
+pub struct RpcAppState {
+    registry: Arc<ChainRegistry>,
 }
 
 // ============================================================
@@ -103,14 +119,7 @@ impl ChainContext {
 }
 
 // ============================================================
-// RpcAppState.
-
-/// Primary AppState for mock rpc servers.
-///
-/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
-pub struct RpcAppState {
-    registry: Arc<ChainRegistry>,
-}
+// server implimentation for `RpcAppState`
 
 impl RpcAppState {
     pub fn new(chain_ids: Vec<u64>, addresses: Vec<String>) -> Self {
@@ -126,7 +135,9 @@ impl RpcAppState {
 
     /// Spawns isolated Axum servers per chain_id.
     /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
-    pub async fn spawn_mockrpc_servers(&self) -> anyhow::Result<(HashMap<u64, u16>, CancellationToken)> {
+    pub async fn spawn_mockrpc_servers(
+        &self,
+    ) -> anyhow::Result<(HashMap<u64, u16>, CancellationToken)> {
         let mut port_map = HashMap::with_capacity(self.registry.len());
         let cancellation_token = CancellationToken::new();
 
@@ -135,8 +146,7 @@ impl RpcAppState {
             let chain_context = ChainContext::new(chain_id, chain_state);
             let app = build_router(chain_context);
 
-            let listner = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
-                .await?;
+            let listner = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
             let port = listner.local_addr()?.port();
             port_map.insert(chain_id, port);
 
@@ -164,30 +174,82 @@ impl RpcAppState {
 async fn handle_jsonrpc(
     Extension(ctx): Extension<ChainContext>,
     Json(req): Json<RpcRequest>,
-) -> Response {
+) -> Json<RpcResponse> {
     let responce = match req.method.as_str() {
-        "eth_sendRawTransaction" => handle_send_raw_transaction(&ctx, &req.params).await,
-        "eth_getTransactionReceipt" => handle_get_transaction_receipt(&ctx, &req.params).await,
+        "eth_sendRawTransaction" => handle_send_raw_transaction(&ctx, req.params, req.id).await,
+        "eth_getTransactionReceipt" => {
+            handle_get_transaction_receipt(&ctx, req.params, req.id).await
+        }
         _ => RpcResponse::method_not_found(req.id),
     };
 
-    Json(responce).into_response()
+    Json(responce)
 }
 
 async fn handle_send_raw_transaction(
     ctx: &ChainContext,
-    params: &Option<Vec<Value>>,
+    params: Option<Value>,
+    id: Option<Value>,
 ) -> RpcResponse {
-    // dummy response
-    RpcResponse::method_not_found(Some(Value::Null))
+    let payload: SendRawTransactionParams = match serde_json::from_value(params.unwrap_or_default())
+    {
+        Ok(payload) => payload,
+        Err(_) => return RpcResponse::invalid_params(id, "Invalid sendRawTransaction params."),
+    };
+
+    // decode RLP-encoded signed transaction envelope.
+    let envolope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
+        Ok(env) => env,
+        Err(_) => {
+            return RpcResponse::invalid_params(
+                id,
+                "Invalid RLP encoding to eth_sendRawTransaction params",
+            );
+        }
+    };
+
+    // extract nonce, and recover sender's address
+    let rlp_nonce = envolope.nonce();
+    let from_address = match envolope.recover_signer() {
+        Ok(address) => address,
+        Err(_) => return RpcResponse::invalid_params(id, "Failed to recover signature"),
+    };
+
+    // final nonce validation and update.
+    match ctx
+        .chain_state
+        .update_nonce(from_address.to_string(), rlp_nonce)
+    {
+        StateUpdateOutcome::NonceAdvanced(_new_nonce) => {
+            let tx_hash = ctx
+                .chain_state
+                .fetch_receipt()
+                .get_hash();
+            RpcResponse::success(id, Value::String(format!("{}", hex::encode(tx_hash))))
+        }
+        StateUpdateOutcome::NonceTooLow => {
+            warn!("NonceTooLow rejected");
+            RpcResponse::error(id, -32000, "nonce too low")
+        }
+    }
 }
 
 async fn handle_get_transaction_receipt(
     ctx: &ChainContext,
-    params: &Option<Vec<Value>>,
+    params: Option<Value>,
+    id: Option<Value>,
 ) -> RpcResponse {
-    // dummy response
-    RpcResponse::method_not_found(Some(Value::Null))
+    let _payload: GetTransactionReceiptParams =
+        match serde_json::from_value(params.unwrap_or_default()) {
+            Ok(payload) => payload,
+            Err(_) => {
+                return RpcResponse::invalid_params(id, "Invalid GetTransactionReceipt params.");
+            }
+        };
+
+    // zero-copy fetch from mock_receipt
+    let receipt = ctx.chain_state.static_receipt.clone();
+    RpcResponse::success(id, receipt)
 }
 
 // ============================================================
