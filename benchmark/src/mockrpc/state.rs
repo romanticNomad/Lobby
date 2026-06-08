@@ -1,9 +1,10 @@
 use crate::loadgen::RECIPIENT_ADDRESS;
+use crate::mockrpc::MockRpcState;
 use dashmap::DashMap;
 use serde::Serialize;
 use std::sync::{
     Arc,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU64},
 };
 use thiserror::Error;
 // ============================================================
@@ -12,7 +13,11 @@ use thiserror::Error;
 pub const BLOCK_NUMBER: u64 = 18_000_000;
 
 // ============================================================
-// StateError
+// State structs
+pub enum StateUpdateOutcome {
+    NonceAdvanced(u64),
+    NonceTooLow,
+}
 
 #[derive(Clone, Debug, Error)]
 pub enum StateError {
@@ -41,27 +46,27 @@ pub struct StaticReceipt {
 }
 
 impl StaticReceipt {
-    pub fn gen_receipts(addresses: Vec<String>) -> DashMap<String, Arc<StaticReceipt>> {
-        let receipt_collection = DashMap::new();
-        for from in addresses {
-            let receipt = Arc::new(StaticReceipt {
-                transaction_hash: format!("0x{:0>64}", "mocktransactionhash"),
-                status: 1,
-                block_number: BLOCK_NUMBER,
-                block_hash: format!("0x{:0>64}", "mockblockhash"),
-                from: from.clone(),
-                to: Some(RECIPIENT_ADDRESS.to_string()),
-                gas_used: 21_000,
-                cumulative_gas_used: 21_000,
-                effective_gas_price: 1_000_000_000,
-                tx_type: 2,
-                logs: vec![],
-            });
+    pub fn gen_receipt() -> Arc<StaticReceipt> {
+        let receipt = Arc::new(StaticReceipt {
+            transaction_hash: format!("0x{:0>64}", "mocktransactionhash"),
+            status: 1,
+            block_number: BLOCK_NUMBER,
+            block_hash: format!("0x{:0>64}", "mockblockhash"),
+            from: RECIPIENT_ADDRESS.to_string(),
+            to: Some(RECIPIENT_ADDRESS.to_string()),
+            gas_used: 21_000,
+            cumulative_gas_used: 21_000,
+            effective_gas_price: 1_000_000_000,
+            tx_type: 2,
+            logs: vec![],
+        });
 
-            receipt_collection.insert(from, receipt.clone());
-        }
+        receipt
+    }
 
-        receipt_collection
+    #[inline]
+    pub fn get_hash(&self) -> String {
+        self.transaction_hash.clone()
     }
 }
 
@@ -74,8 +79,8 @@ impl StaticReceipt {
 pub struct ChainState {
     /// Address -> Expected Nonce (lock-free atomic advancement)
     pub nonce_collection: DashMap<String, AtomicU64>,
-    /// TxHash -> Deterministic Receipt (zero-copy reads)
-    pub receipt_collection: DashMap<String, Arc<StaticReceipt>>,
+    /// Deterministic Receipt (zero-copy reads)
+    pub static_receipt: Arc<StaticReceipt>,
 }
 
 // ============================================================
@@ -87,28 +92,22 @@ impl ChainState {
         for address in addresses.iter() {
             nonce_collection.insert(address.to_owned(), AtomicU64::new(0));
         }
-        let receipt_collection = StaticReceipt::gen_receipts(addresses);
+        let static_receipt = StaticReceipt::gen_receipt();
         Self {
             nonce_collection,
-            receipt_collection,
+            static_receipt,
         }
     }
+}
 
-    /// Called after successful nonce validation in `eth_sendRawTransaction`.
-    ///
-    /// Demo receipt are already built using `StaticReceipt::gen_receipts`
-    /// therefore only nonce is updated after validation.
-    pub fn update_state(&self, from: String) -> Result<(), StateError> {
-        match self.nonce_collection.get(&from) {
-            Some(nonce) => {
-                nonce.fetch_add(1, Ordering::Relaxed);
-            }
-            None => Err(StateError::UpdateError(format!(
-                "address not found: {from}"
-            )))?,
-        }
-
-        Ok(())
+impl MockRpcState for ChainState {
+    fn update_nonce(&self, address: String, nonce_rlp: u64) -> StateUpdateOutcome {
+        // dummy reponse
+        StateUpdateOutcome::NonceTooLow
+    }
+    fn fetch_receipt(&self) -> Arc<StaticReceipt> {
+        let receipt = self.static_receipt.clone();
+        receipt
     }
 }
 
