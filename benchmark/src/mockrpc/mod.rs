@@ -1,7 +1,7 @@
 mod router;
 mod state;
 
-use crate::mockrpc::state::{StateUpdateOutcome, StaticReceipt};
+use crate::mockrpc::state::{NonceUpdateOutcome, StaticReceipt};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ pub trait MockRpcState: Send + Sync {
     /// ## Note:
     /// for a controled system like benchmark, it is expected that `rlp_nonce` will not be greated than
     /// `registered nonce`.
-    fn update_nonce(&self, address: String, nonce_rlp: u64) -> StateUpdateOutcome;
+    fn update_nonce(&self, address: String, nonce_rlp: u64) -> NonceUpdateOutcome;
 
     /// To reduce client overhead in the benchmarking process, the transction receipts are pre-generated,
     ///

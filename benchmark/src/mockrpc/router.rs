@@ -1,6 +1,6 @@
 use crate::mockrpc::{
     MockRpcState,
-    state::{ChainState, StateUpdateOutcome},
+    state::{ChainState, NonceUpdateOutcome},
 };
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
@@ -235,12 +235,12 @@ async fn handle_send_raw_transaction(
         .chain_state
         .update_nonce(from_address.to_string(), rlp_nonce)
     {
-        StateUpdateOutcome::NonceAdvanced(_new_nonce) => {
+        NonceUpdateOutcome::NonceAdvanced(_new_nonce) => {
             let tx_hash = ctx.chain_state.fetch_receipt().get_hash();
 
             RpcResponse::success(id, RpcResult::TxHash(tx_hash))
         }
-        StateUpdateOutcome::NonceTooLow => {
+        NonceUpdateOutcome::NonceTooLow => {
             warn!("NonceTooLow rejected");
             RpcResponse::error(id, -32000, "nonce too low")
         }
@@ -260,7 +260,12 @@ async fn handle_get_transaction_receipt(
             }
         };
 
-    let receipt = ctx.chain_state.static_receipt.clone().fetch_reciept();
+    let receipt = ctx
+        .chain_state
+        .static_receipt
+        .clone()
+        .fetch_reciept()
+        .clone();
     RpcResponse::success(id, RpcResult::Reciept(receipt))
 }
 
