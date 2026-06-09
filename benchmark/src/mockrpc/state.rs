@@ -1,9 +1,8 @@
 use crate::loadgen::RECIPIENT_ADDRESS;
 use crate::mockrpc::MockRpcState;
-use alloy::primitives::{B256, Bloom, U64, U256};
 use alloy::{
     consensus::{Eip658Value, Receipt, ReceiptEnvelope, ReceiptWithBloom},
-    primitives::{Address, TxHash},
+    primitives::{Address, B256, Bloom, TxHash},
     rpc::types::TransactionReceipt,
 };
 use dashmap::DashMap;
@@ -71,7 +70,7 @@ impl StaticReceipt {
                     effective_gas_price: 1_000_000_000, // 1 Gwei mock price
                     blob_gas_used: None,
                     blob_gas_price: None,
-                    from: Address::ZERO,
+                    from: RECIPIENT_ADDRESS.parse::<Address>().unwrap(),
                     to: Some(Address::ZERO),
                     contract_address: None,
                 }
@@ -105,36 +104,49 @@ impl StaticReceipt {
 #[derive(Debug)]
 pub struct ChainState {
     /// Address -> Expected Nonce (lock-free atomic advancement)
-    pub nonce_collection: DashMap<String, AtomicU64>,
-    /// Deterministic Receipt (zero-copy reads)
-    pub static_receipt: Arc<StaticReceipt>,
+    pub nonce_collection: DashMap<Address, AtomicU64>,
+    /// TxHash -> StaticReceipt map (appends on `BASE_RECEIPT`)
+    pub receipt_collection: DashMap<TxHash, Arc<StaticReceipt>>,
 }
 
 // ============================================================
 // implementations for ChainState
 
 impl ChainState {
-    pub fn new(addresses: Vec<String>) -> Self {
+    pub fn new(addresses: Vec<Address>) -> Self {
         let nonce_collection = DashMap::new();
         for address in addresses.iter() {
             nonce_collection.insert(address.to_owned(), AtomicU64::new(0));
         }
-        let static_receipt = Arc::new(StaticReceipt::gen_receipt());
+        let receipt_collection = DashMap::new();
         Self {
             nonce_collection,
-            static_receipt,
+            receipt_collection,
         }
+    }
+
+    /// appends the `TxHash` to the `BASE_RECEIPT` and inserts the
+    /// `(TxHash, StaticReceipt)` pain to the Dashmap.
+    pub fn update_receipt(&self, tx_hash: TxHash) {
+        let receipt_collection = StaticReceipt::gen_receipt(tx_hash);
+        self.receipt_collection
+            .insert(tx_hash, Arc::new(receipt_collection));
     }
 }
 
+// TODO: compelete update_nonce function;.
 impl MockRpcState for ChainState {
     fn update_nonce(&self, address: String, nonce_rlp: u64) -> NonceUpdateOutcome {
         // dummy reponse
         NonceUpdateOutcome::NonceTooLow
     }
-    fn fetch_receipt(&self) -> Arc<StaticReceipt> {
-        let receipt = self.static_receipt.clone();
-        receipt
+    fn fetch_receipt(&self, tx_hash: TxHash) -> TransactionReceipt {
+        self.receipt_collection
+            .get(&tx_hash)
+            .unwrap()
+            .value()
+            .fetch_reciept()
+            .clone()
     }
 }
 

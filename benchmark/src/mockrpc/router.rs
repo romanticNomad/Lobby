@@ -2,6 +2,7 @@ use crate::mockrpc::{
     MockRpcState,
     state::{ChainState, NonceUpdateOutcome},
 };
+use alloy::primitives::Address;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     primitives::TxHash,
@@ -73,7 +74,7 @@ pub struct SendRawTransactionParams(pub Bytes);
 
 /// eth_getTransactionReceipt: ["0x<tx_hash>"]
 #[derive(Debug, Deserialize)]
-pub struct GetTransactionReceiptParams(pub B256);
+pub struct GetTransactionReceiptParams(pub TxHash);
 
 impl RpcResponse {
     pub fn success(id: Option<Value>, result: RpcResult) -> Self {
@@ -137,7 +138,7 @@ impl ChainContext {
 // server implimentation for `RpcAppState`
 
 impl RpcAppState {
-    pub fn new(chain_ids: Vec<u64>, addresses: Vec<String>) -> Self {
+    pub fn new(chain_ids: Vec<u64>, addresses: Vec<Address>) -> Self {
         let chain_registry = DashMap::new();
         for chain_id in chain_ids {
             chain_registry.insert(chain_id, Arc::new(ChainState::new(addresses.clone())));
@@ -185,7 +186,6 @@ impl RpcAppState {
 // ============================================================
 // handler function
 
-// TODO: programme the handlers to accomodate nonce validation and RpcResponse generation.
 async fn handle_jsonrpc(
     Extension(ctx): Extension<ChainContext>,
     Json(req): Json<RpcRequest>,
@@ -213,7 +213,7 @@ async fn handle_send_raw_transaction(
     };
 
     // decode RLP-encoded signed transaction envelope.
-    let envolope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
+    let envelope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
         Ok(env) => env,
         Err(_) => {
             return RpcResponse::invalid_params(
@@ -224,11 +224,14 @@ async fn handle_send_raw_transaction(
     };
 
     // extract nonce, and recover sender's address
-    let rlp_nonce = envolope.nonce();
-    let from_address = match envolope.recover_signer() {
+    let rlp_nonce = envelope.nonce();
+    let from_address = match envelope.recover_signer() {
         Ok(address) => address,
         Err(_) => return RpcResponse::invalid_params(id, "Failed to recover signature"),
     };
+
+    // generate tx_hash
+    let tx_hash = envelope.hash().clone();
 
     // final nonce validation and update.
     match ctx
@@ -236,7 +239,8 @@ async fn handle_send_raw_transaction(
         .update_nonce(from_address.to_string(), rlp_nonce)
     {
         NonceUpdateOutcome::NonceAdvanced(_new_nonce) => {
-            let tx_hash = ctx.chain_state.fetch_receipt().get_hash();
+            // update the receipt_collection with the new txhash
+            ctx.chain_state.update_receipt(tx_hash);
 
             RpcResponse::success(id, RpcResult::TxHash(tx_hash))
         }
@@ -252,20 +256,16 @@ async fn handle_get_transaction_receipt(
     params: Option<Value>,
     id: Option<Value>,
 ) -> RpcResponse {
-    let _payload: GetTransactionReceiptParams =
+    let payload: GetTransactionReceiptParams =
         match serde_json::from_value(params.unwrap_or_default()) {
             Ok(payload) => payload,
             Err(_) => {
                 return RpcResponse::invalid_params(id, "Invalid GetTransactionReceipt params.");
             }
         };
+    let tx_hash = payload.0;
+    let receipt = ctx.chain_state.fetch_receipt(tx_hash);
 
-    let receipt = ctx
-        .chain_state
-        .static_receipt
-        .clone()
-        .fetch_reciept()
-        .clone();
     RpcResponse::success(id, RpcResult::Reciept(receipt))
 }
 

@@ -2,9 +2,10 @@ mod router;
 mod state;
 
 use crate::mockrpc::state::{NonceUpdateOutcome, StaticReceipt};
+use alloy::primitives::TxHash;
+use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use std::sync::Arc;
-
 // ============================================================
 // state contract
 
@@ -24,8 +25,9 @@ pub trait MockRpcState: Send + Sync {
     /// To reduce client overhead in the benchmarking process, the transction receipts are pre-generated,
     ///
     /// ## Returns
-    /// * `Arc<StaticReceipt>`, if the receipt is found
-    fn fetch_receipt(&self) -> Arc<StaticReceipt>;
+    /// * `TransactionReceipt`, if the receipt is found
+    /// * panics if the `tx_hash` is not already registere.
+    fn fetch_receipt(&self, tx_hash: TxHash) -> TransactionReceipt;
 }
 
 // ============================================================
