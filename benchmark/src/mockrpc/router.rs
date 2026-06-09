@@ -1,9 +1,13 @@
-use crate::mockrpc::MockRpcState;
-use crate::mockrpc::state::{ChainState, StateUpdateOutcome};
+use crate::mockrpc::{
+    MockRpcState,
+    state::{ChainState, StateUpdateOutcome},
+};
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
+    primitives::TxHash,
     primitives::{B256, Bytes},
     rlp::Decodable,
+    rpc::types::TransactionReceipt,
 };
 use axum::{
     routing::post,
@@ -16,6 +20,7 @@ use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+
 // ============================================================
 // type alias
 
@@ -36,11 +41,21 @@ pub struct RpcRequest {
     pub id: Option<Value>,
 }
 
+/// Enum constituting possible result from mockrpc handlers
+/// * `TxHash` for `eth_sentRawTrasnsaction` request.
+/// * `TransactionReipt` for `eth_getTransactionReciept` request.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum RpcResult {
+    TxHash(TxHash),
+    Reciept(TransactionReceipt),
+}
+
 #[derive(Debug, Serialize)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
+    pub result: Option<RpcResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<RpcError>,
     pub id: Option<Value>,
@@ -61,7 +76,7 @@ pub struct SendRawTransactionParams(pub Bytes);
 pub struct GetTransactionReceiptParams(pub B256);
 
 impl RpcResponse {
-    pub fn success(id: Option<Value>, result: Value) -> Self {
+    pub fn success(id: Option<Value>, result: RpcResult) -> Self {
         Self {
             jsonrpc: "2.0".into(),
             result: Some(result),
@@ -221,11 +236,9 @@ async fn handle_send_raw_transaction(
         .update_nonce(from_address.to_string(), rlp_nonce)
     {
         StateUpdateOutcome::NonceAdvanced(_new_nonce) => {
-            let tx_hash = ctx
-                .chain_state
-                .fetch_receipt()
-                .get_hash();
-            RpcResponse::success(id, Value::String(format!("{}", hex::encode(tx_hash))))
+            let tx_hash = ctx.chain_state.fetch_receipt().get_hash();
+
+            RpcResponse::success(id, RpcResult::TxHash(tx_hash))
         }
         StateUpdateOutcome::NonceTooLow => {
             warn!("NonceTooLow rejected");
@@ -247,9 +260,8 @@ async fn handle_get_transaction_receipt(
             }
         };
 
-    // zero-copy fetch from mock_receipt
-    let receipt = ctx.chain_state.static_receipt.clone();
-    RpcResponse::success(id, receipt)
+    let receipt = ctx.chain_state.static_receipt.clone().fetch_reciept();
+    RpcResponse::success(id, RpcResult::Reciept(receipt))
 }
 
 // ============================================================
