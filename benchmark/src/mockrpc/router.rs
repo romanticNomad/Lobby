@@ -1,21 +1,27 @@
-use crate::mockrpc::MockRpcState;
-use crate::mockrpc::state::{ChainState, StateUpdateOutcome};
+use crate::mockrpc::{
+    MockRpcState,
+    state::{ChainState, NonceUpdateOutcome},
+};
+use alloy::primitives::Address;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
-    primitives::{B256, Bytes},
+    primitives::TxHash,
     rlp::Decodable,
 };
 use axum::{
     routing::post,
     {Extension, Json, Router},
 };
+use bytes::Bytes;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_json::value::RawValue;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+
 // ============================================================
 // type alias
 
@@ -36,11 +42,22 @@ pub struct RpcRequest {
     pub id: Option<Value>,
 }
 
+/// Enum constituting possible result from mockrpc handlers
+/// * `TxHash` for `eth_sentRawTrasnsaction` request.
+/// * `TransactionReipt` for `eth_getTransactionReciept` request.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum RpcResult {
+    TxHash(TxHash),
+    RecieptFound(Arc<Box<RawValue>>),
+    RecieptNotFound(Value),
+}
+
 #[derive(Debug, Serialize)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
+    pub result: Option<RpcResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<RpcError>,
     pub id: Option<Value>,
@@ -58,10 +75,10 @@ pub struct SendRawTransactionParams(pub Bytes);
 
 /// eth_getTransactionReceipt: ["0x<tx_hash>"]
 #[derive(Debug, Deserialize)]
-pub struct GetTransactionReceiptParams(pub B256);
+pub struct GetTransactionReceiptParams(pub TxHash);
 
 impl RpcResponse {
-    pub fn success(id: Option<Value>, result: Value) -> Self {
+    pub fn success(id: Option<Value>, result: RpcResult) -> Self {
         Self {
             jsonrpc: "2.0".into(),
             result: Some(result),
@@ -122,7 +139,7 @@ impl ChainContext {
 // server implimentation for `RpcAppState`
 
 impl RpcAppState {
-    pub fn new(chain_ids: Vec<u64>, addresses: Vec<String>) -> Self {
+    pub fn new(chain_ids: Vec<u64>, addresses: Vec<Address>) -> Self {
         let chain_registry = DashMap::new();
         for chain_id in chain_ids {
             chain_registry.insert(chain_id, Arc::new(ChainState::new(addresses.clone())));
@@ -170,7 +187,6 @@ impl RpcAppState {
 // ============================================================
 // handler function
 
-// TODO: programme the handlers to accomodate nonce validation and RpcResponse generation.
 async fn handle_jsonrpc(
     Extension(ctx): Extension<ChainContext>,
     Json(req): Json<RpcRequest>,
@@ -198,7 +214,7 @@ async fn handle_send_raw_transaction(
     };
 
     // decode RLP-encoded signed transaction envelope.
-    let envolope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
+    let envelope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
         Ok(env) => env,
         Err(_) => {
             return RpcResponse::invalid_params(
@@ -209,25 +225,24 @@ async fn handle_send_raw_transaction(
     };
 
     // extract nonce, and recover sender's address
-    let rlp_nonce = envolope.nonce();
-    let from_address = match envolope.recover_signer() {
+    let rlp_nonce = envelope.nonce();
+    let from_address = match envelope.recover_signer() {
         Ok(address) => address,
         Err(_) => return RpcResponse::invalid_params(id, "Failed to recover signature"),
     };
 
+    // generate tx_hash
+    let tx_hash = envelope.hash().clone();
+
     // final nonce validation and update.
-    match ctx
-        .chain_state
-        .update_nonce(from_address.to_string(), rlp_nonce)
-    {
-        StateUpdateOutcome::NonceAdvanced(_new_nonce) => {
-            let tx_hash = ctx
-                .chain_state
-                .fetch_receipt()
-                .get_hash();
-            RpcResponse::success(id, Value::String(format!("{}", hex::encode(tx_hash))))
+    match ctx.chain_state.update_nonce(from_address, rlp_nonce) {
+        NonceUpdateOutcome::NonceAdvanced(_new_nonce) => {
+            // update the receipt_collection with the new txhash
+            ctx.chain_state.update_receipt(tx_hash);
+
+            RpcResponse::success(id, RpcResult::TxHash(tx_hash))
         }
-        StateUpdateOutcome::NonceTooLow => {
+        NonceUpdateOutcome::NonceTooLow => {
             warn!("NonceTooLow rejected");
             RpcResponse::error(id, -32000, "nonce too low")
         }
@@ -239,7 +254,7 @@ async fn handle_get_transaction_receipt(
     params: Option<Value>,
     id: Option<Value>,
 ) -> RpcResponse {
-    let _payload: GetTransactionReceiptParams =
+    let payload: GetTransactionReceiptParams =
         match serde_json::from_value(params.unwrap_or_default()) {
             Ok(payload) => payload,
             Err(_) => {
@@ -247,9 +262,13 @@ async fn handle_get_transaction_receipt(
             }
         };
 
-    // zero-copy fetch from mock_receipt
-    let receipt = ctx.chain_state.static_receipt.clone();
-    RpcResponse::success(id, receipt)
+    match ctx.chain_state.fetch_receipt(&payload.0) {
+        // receipt found, returns boxed RawValue
+        Some(receipt) => RpcResponse::success(id, RpcResult::RecieptFound(receipt)),
+
+        // Standard: null for unmined/unknown txs
+        None => RpcResponse::success(id, RpcResult::RecieptNotFound(Value::Null)),
+    }
 }
 
 // ============================================================
