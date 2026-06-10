@@ -6,17 +6,17 @@ use alloy::primitives::Address;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     primitives::TxHash,
-    primitives::{B256, Bytes},
     rlp::Decodable,
-    rpc::types::TransactionReceipt,
 };
 use axum::{
     routing::post,
     {Extension, Json, Router},
 };
+use bytes::Bytes;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_json::value::RawValue;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -49,7 +49,8 @@ pub struct RpcRequest {
 #[serde(untagged)]
 pub enum RpcResult {
     TxHash(TxHash),
-    Reciept(TransactionReceipt),
+    RecieptFound(Arc<Box<RawValue>>),
+    RecieptNotFound(Value),
 }
 
 #[derive(Debug, Serialize)]
@@ -234,10 +235,7 @@ async fn handle_send_raw_transaction(
     let tx_hash = envelope.hash().clone();
 
     // final nonce validation and update.
-    match ctx
-        .chain_state
-        .update_nonce(from_address.to_string(), rlp_nonce)
-    {
+    match ctx.chain_state.update_nonce(from_address, rlp_nonce) {
         NonceUpdateOutcome::NonceAdvanced(_new_nonce) => {
             // update the receipt_collection with the new txhash
             ctx.chain_state.update_receipt(tx_hash);
@@ -263,10 +261,14 @@ async fn handle_get_transaction_receipt(
                 return RpcResponse::invalid_params(id, "Invalid GetTransactionReceipt params.");
             }
         };
-    let tx_hash = payload.0;
-    let receipt = ctx.chain_state.fetch_receipt(tx_hash);
 
-    RpcResponse::success(id, RpcResult::Reciept(receipt))
+    match ctx.chain_state.fetch_receipt(&payload.0) {
+        // receipt found, returns boxed RawValue
+        Some(receipt) => RpcResponse::success(id, RpcResult::RecieptFound(receipt)),
+
+        // Standard: null for unmined/unknown txs
+        None => RpcResponse::success(id, RpcResult::RecieptNotFound(Value::Null)),
+    }
 }
 
 // ============================================================
