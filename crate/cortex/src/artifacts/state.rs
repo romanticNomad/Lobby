@@ -178,7 +178,7 @@ impl StateStore for StatusRegistry {
         // remove from memory DashMap
         self.status_book.remove(execution_id);
 
-        // remove from Redis (non - blocking)
+        // remove from Redis (non-blocking)
         let mut redis = self.redis.clone();
         let id = *execution_id;
 

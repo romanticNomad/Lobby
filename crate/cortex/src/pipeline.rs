@@ -234,7 +234,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // broadcast (with nonce mismatch retry)
 
-        // getting the broadcast handle from shard pool (sequenced by chain_id))
+        // getting the broadcast handle from shard pool (sequenced by chain_id)
         let broadcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
         let mut nonce_retry_attempted = false;
 

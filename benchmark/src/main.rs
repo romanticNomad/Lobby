@@ -6,9 +6,9 @@ mod metrics;
 #[allow(dead_code)]
 mod mockrpc;
 
-use anyhow::Ok;
+use anyhow::{Ok, Result};
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+async fn main() -> Result<()> {
     Ok(())
 }

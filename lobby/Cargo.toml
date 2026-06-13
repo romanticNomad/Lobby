@@ -4,10 +4,13 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
+[features]
+default = []
+benchmark-telemetry = ["dep:quanta", "dep:tokio-util", "dep:dashmap"]
+
 [dependencies]
 primitives = { path = "../crate/primitives" }
 utils = { path = "../crate/utils" }
-actors = { path = "../crate/actors" }
 cortex = { path = "../crate/cortex" }
 tokio = { version = "1", features = ["full"] }
 alloy = { version = "1.6.0", features = ["full"] }
@@ -18,3 +21,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres",] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"
 axum = "0.8.8"
+quanta = { version = "0.12", optional = true }
+tokio-util = { version =  "0.7.18", features = ["codec"], optional = true}
+dashmap = {  version = "6.1.0", optional = true }

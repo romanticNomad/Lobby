@@ -94,7 +94,7 @@ impl Payloads {
                     }],
                     "id": 1
                 });
-                let payload: bytes::Bytes = serde_json::to_vec(&rpc_payload)
+                let payload: Bytes = serde_json::to_vec(&rpc_payload)
                     .expect("Pre-sirealization failed.")
                     .into();
 

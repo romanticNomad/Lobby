@@ -29,6 +29,27 @@ use tracing::{info, warn};
 pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
 
 // ============================================================
+// port_map
+
+/// std Hasmap for mapping `chain_id` to respective `ports`
+#[derive(Debug)]
+pub struct PortMap {
+    port_map: HashMap<u64, u16>,
+}
+
+impl PortMap {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            port_map: HashMap::with_capacity(capacity),
+        }
+    }
+
+    pub fn insert(&mut self, chain_id: u64, port: u16) {
+        self.port_map.insert(chain_id, port);
+    }
+}
+
+// ============================================================
 // JSON-RPC wrappers
 
 /// Standard JSON-RPC 2.0 envelope
@@ -152,10 +173,8 @@ impl RpcAppState {
 
     /// Spawns isolated Axum servers per chain_id.
     /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
-    pub async fn spawn_mockrpc_servers(
-        &self,
-    ) -> anyhow::Result<(HashMap<u64, u16>, CancellationToken)> {
-        let mut port_map = HashMap::with_capacity(self.registry.len());
+    pub async fn spawn_mockrpc_servers(&self) -> anyhow::Result<(PortMap, CancellationToken)> {
+        let mut port_map = PortMap::with_capacity(self.registry.len());
         let cancellation_token = CancellationToken::new();
 
         for map_ref in self.registry.iter() {
