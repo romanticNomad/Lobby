@@ -3026,6 +3026,7 @@ dependencies = [
  "alloy",
  "axum",
  "cortex",
+ "dashmap",
  "primitives",
  "quanta",
  "serde_json",

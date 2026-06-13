@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [features]
 default = []
-benchmark-telemetry = ["dep:quanta", "dep:tokio-util"]
+benchmark-telemetry = ["dep:quanta", "dep:tokio-util", "dep:dashmap"]
 
 [dependencies]
 primitives = { path = "../crate/primitives" }
@@ -23,3 +23,4 @@ tracing = "0.1"
 axum = "0.8.8"
 quanta = { version = "0.12", optional = true }
 tokio-util = { version =  "0.7.18", features = ["codec"], optional = true}
+dashmap = {  version = "6.1.0", optional = true }
