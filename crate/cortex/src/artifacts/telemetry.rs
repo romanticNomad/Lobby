@@ -1,4 +1,4 @@
-//! This module provides a lock-free registry for actors to update,
+//! This module provides a lock-free registry for actors to update stage timestamps,
 //! and a background exporter that streams deltas to a Unix Domain Socket (UDS).
 
 use dashmap::DashMap;
@@ -117,7 +117,8 @@ impl TelemetryContext {
 // ===========================================================
 // reponse time calculation and UDS streaming
 
-/// Background task that calculates deltas and streams NDJSON to the benchmark harness via UDS.
+/// Background task that calculates deltas and
+/// streams NDJSON to the benchmark harness via UDS.
 pub async fn run_telemetry_exporter(
     mut rx: mpsc::UnboundedReceiver<TelemetryEvent>,
     socket_path: &str,
@@ -146,6 +147,7 @@ pub async fn run_telemetry_exporter(
     while let Some(event) = rx.recv().await {
         if let TelemetryEvent::PipelineComplete { execution_id } = event {
             if let Some((_, telemetry)) = registry.remove(&execution_id) {
+                // calculate delats with overflow handling
                 let relayhost_duration =
                     (telemetry.relayhost_ns.saturating_sub(telemetry.start_ns)) / 1_000;
                 let nonce_duration =
@@ -166,28 +168,6 @@ pub async fn run_telemetry_exporter(
                 };
             }
         }
-    }
-}
-
-// ============================================================
-// NO-OP FALLBACK FOR PRODUCTION
-
-#[cfg(not(feature = "benchmark-telemetry"))]
-pub mod benchmark {
-    use super::*;
-
-    #[derive(Clone)]
-    pub struct TelemetryRecorder;
-    impl TelemetryRecorder {
-        pub fn new() -> Self {
-            Self
-        }
-        #[inline(always)]
-        pub fn record_start(&self, _execution_id: ExecutionId) {}
-        #[inline(always)]
-        pub fn record_stage(&self, _execution_id: ExecutionId, _stage: &'static str) {}
-        #[inline(always)]
-        pub fn finalize(&self, _execution_id: ExecutionId) {}
     }
 }
 

@@ -1,7 +1,5 @@
 pub mod bots;
 pub mod server;
-#[cfg(feature = "benchmark-telemetry")]
-pub mod telemetry;
 
 use crate::{
     bots::sweeper::spawn_sweeper_bot,

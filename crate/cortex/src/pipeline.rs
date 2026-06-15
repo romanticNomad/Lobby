@@ -44,6 +44,7 @@ pub(crate) struct PipelineContext {
     // pipeline state artifacts
     pub status: StatusRegistry,
     pub rpc_client: Arc<RpcClient>,
+    // pub telemetry: Telemetry,
 }
 
 // ============================================================
