@@ -4,6 +4,7 @@
 use dashmap::DashMap;
 use primitives::types::ExecutionId;
 use quanta::Clock;
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::codec::{FramedWrite, LinesCodec};
@@ -112,6 +113,12 @@ impl TelemetryContext {
             .send(TelemetryEvent::PipelineComplete { execution_id });
         self.registry.remove(&execution_id);
     }
+
+    /// get a registry clone for realtime metric export.
+    #[inline(always)]
+    pub fn get_registry(&self) -> TelemetryRegistry {
+        Arc::clone(&self.registry)
+    }
 }
 
 // ===========================================================
@@ -166,6 +173,10 @@ pub async fn run_telemetry_exporter(
                     broadcast_duration_us: broadcast_duration,
                     total_pipeline_us: total_pipeline,
                 };
+
+                if let Ok(json_payload) = serde_json::to_string(&record) {
+                    let _ = framed.send(json_payload).await;
+                }
             }
         }
     }

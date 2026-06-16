@@ -65,7 +65,8 @@ pub struct RpcRequest {
 
 /// Enum constituting possible result from mockrpc handlers
 /// * `TxHash` for `eth_sentRawTrasnsaction` request.
-/// * `TransactionReipt` for `eth_getTransactionReciept` request.
+/// * `Arc<Box<RawValue>>` when `eth_getTransactionReciept` returns a receipt.
+/// * `Value::None` when `eth_getTransactionReciept` does not return a receipt.
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum RpcResult {

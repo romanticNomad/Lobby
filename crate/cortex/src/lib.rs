@@ -42,7 +42,6 @@ use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
 use utils::rpc::RpcClient;
-
 // ============================================================
 // Cortex (orchestrator) struct.
 
@@ -51,6 +50,8 @@ struct Cortex {
     cortex_config: CortexConfig,
     status_registry: StatusRegistry,
     rpc_client: Arc<RpcClient>,
+    #[cfg(feature = "benchmark-telemetry")]
+    telemetry: Arc<artifacts::telemetry::TelemetryContext>,
 
     // actor handles
     relayhost: Arc<dyn IntentRelay>,
@@ -130,6 +131,8 @@ impl CortextHandle {
             retry_config: orch.cortex_config.retry.clone(),
             status: orch.status_registry.clone(),
             rpc_client: Arc::clone(&orch.rpc_client),
+            #[cfg(feature = "benchmark-telemetry")]
+            telemetry: orch.telemetry.clone(),
         };
 
         // ===========================================================
@@ -157,12 +160,14 @@ impl CortextHandle {
 // ============================================================
 // Cortex (orchestrator) boot function
 
-/// Spawn all actor shards and assemble the `OrchestratorHandle`.
-/// panics if number of shards in config = 0.
+/// Spawn all actor shards and assemble the `OrchestratorHandle`. panics if number of shards in config = 0.
 pub async fn spawn_cortex(
     db: PgPool,
     provider_client: Arc<RpcClient>,
     config: CortexConfig,
+    #[cfg(feature = "benchmark-telemetry")] telemetry_tx: mpsc::UnboundedSender<
+        crate::artifacts::telemetry::TelemetryEvent,
+    >,
 ) -> CortextHandle {
     tracing::debug!(
         nonce_shards = config.nonce_shards,
@@ -266,11 +271,19 @@ pub async fn spawn_cortex(
         .expect("StatusRegistry: failed to connect to Redis server");
 
     // ============================================================
+    // telemetry context
+
+    #[cfg(feature = "benchmark-telemetry")]
+    let telemetry = Arc::new(artifacts::telemetry::TelemetryContext::new(telemetry_tx));
+
+    // ============================================================
     // returning final cortex handle.
 
     let inner = Arc::new(Cortex {
         cortex_config: config,
         status_registry,
+        #[cfg(feature = "benchmark-telemetry")]
+        telemetry,
         rpc_client: provider_client,
         semaphore: pipeline_semaphore,
         relayhost: relayhost_handle,

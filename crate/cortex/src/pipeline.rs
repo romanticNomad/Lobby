@@ -44,7 +44,8 @@ pub(crate) struct PipelineContext {
     // pipeline state artifacts
     pub status: StatusRegistry,
     pub rpc_client: Arc<RpcClient>,
-    // pub telemetry: Telemetry,
+    #[cfg(feature = "benchmark-telemetry")]
+    pub telemetry: Arc<crate::artifacts::telemetry::TelemetryContext>,
 }
 
 // ============================================================
