@@ -1,7 +1,5 @@
 pub mod bots;
 pub mod server;
-#[cfg(feature = "benchmark-telemetry")]
-pub mod telemetry;
 
 use crate::{
     bots::sweeper::spawn_sweeper_bot,
@@ -98,9 +96,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let endpoint_hashmap = get_client_endpoint_hashmap(&rcp_client).await?;
     tracing::info!("rpc_endpoints loaded: {endpoint_hashmap:?}");
 
+    // telemetry channel
+    #[cfg(feature = "benchmark_telemetry")]
+    let (telemetry_tx, telemetry_rx) = tokio::sync::mpsc::unbounded_channel();
+    #[cfg(feature = "benchmark_telemetry")]
+    let telemetry_context = cortex::artifacts::telemetry::TelemetryContext::new(telemetry_tx);
+    #[cfg(feature = "benchmark_telemetry")]
+    {
+        let registry = telemetry_context.get_registry();
+        tokio::spawn(async move {
+            cortex::artifacts::telemetry::run_telemetry_exporter(
+                telemetry_rx,
+                "/tmp/lobby_benchmark_telemetry.sock", // Standardized UDS path
+                registry,
+            )
+            .await;
+        });
+    }
+
     // cortex handler
     let config = CortexConfig::from_env()?;
-    let cortex_handler = spawn_cortex(db_pool.clone(), Arc::new(rcp_client), config).await;
+    let cortex_handler = spawn_cortex(
+        db_pool.clone(),
+        Arc::new(rcp_client),
+        config,
+        #[cfg(feature = "benchmark_telemetry")]
+        telemetry_context,
+    )
+    .await;
 
     // status registry
     let status_registry = cortex_handler.status_registry();
