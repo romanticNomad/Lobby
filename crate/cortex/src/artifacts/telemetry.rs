@@ -2,8 +2,9 @@
 //! and a background exporter that streams deltas to a Unix Domain Socket (UDS).
 
 use dashmap::DashMap;
+use futures_util::sink::SinkExt;
 use primitives::types::ExecutionId;
-use quanta::Clock;
+use quanta::{Clock, Instant};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -15,11 +16,11 @@ use tokio_util::codec::{FramedWrite, LinesCodec};
 /// Nanosecond-precision timestamps for pipeline stages.
 #[derive(Debug, Clone, Default)]
 pub struct PipelineTelemetry {
-    pub start_ns: u64,
-    pub relayhost_ns: u64,
-    pub nonce_ns: u64,
-    pub sign_ns: u64,
-    pub broadcast_ns: u64,
+    pub start: Option<Instant>,
+    pub relayhost: Option<Instant>,
+    pub nonce: Option<Instant>,
+    pub sign: Option<Instant>,
+    pub broadcast: Option<Instant>,
 }
 
 /// Lock-free registry mapping ExecutionId to its telemetry state.
@@ -31,7 +32,7 @@ pub enum TelemetryEvent {
     StateComplete {
         execution_id: ExecutionId,
         stage: &'static str,
-        timestamp_ns: u64,
+        timestamp: Option<Instant>,
     },
     PipelineComplete {
         execution_id: ExecutionId,
@@ -72,36 +73,36 @@ impl TelemetryContext {
     /// record the starting instant, to use as a reference.
     #[inline(always)]
     pub fn record_start(&self, execution_id: ExecutionId) {
-        let now_ns = self.clock.now_ns() as u64;
+        let now = self.clock.recent();
         let mut entry = self
             .registry
             .entry(execution_id)
             .or_insert_with(PipelineTelemetry::default);
 
-        entry.start_ns = now_ns;
+        entry.start = Some(now);
     }
 
     /// Called by actors upon successful stage completion. O(1) lock-free operation, non-blocking.
     #[inline(always)]
     pub fn stage_update(&self, stage: &'static str, execution_id: ExecutionId) {
-        let now_ns = self.clock.now() as u64;
+        let now = self.clock.recent();
         let mut entry = self
             .registry
             .entry(execution_id)
             .or_insert_with(PipelineTelemetry::default);
 
         match stage {
-            "relayhost" => entry.relayhost_ns = now_ns,
-            "nonce" => entry.nonce_ns = now_ns,
-            "sign" => entry.sign_ns = now_ns,
-            "broadcast" => entry.broadcast_ns = now_ns,
+            "relayhost" => entry.relayhost = Some(now),
+            "nonce" => entry.nonce = Some(now),
+            "sign" => entry.sign = Some(now),
+            "broadcast" => entry.broadcast = Some(now),
             _ => {}
         }
 
         let _ = self.tx.send(TelemetryEvent::StateComplete {
             execution_id,
             stage,
-            timestamp_ns: now_ns,
+            timestamp: Some(now),
         });
     }
 
@@ -111,7 +112,6 @@ impl TelemetryContext {
         let _ = self
             .tx
             .send(TelemetryEvent::PipelineComplete { execution_id });
-        self.registry.remove(&execution_id);
     }
 
     /// get a registry clone for realtime metric export.
@@ -154,31 +154,40 @@ pub async fn run_telemetry_exporter(
     while let Some(event) = rx.recv().await {
         if let TelemetryEvent::PipelineComplete { execution_id } = event {
             if let Some((_, telemetry)) = registry.remove(&execution_id) {
-                // calculate delats with overflow handling
-                let relayhost_duration =
-                    (telemetry.relayhost_ns.saturating_sub(telemetry.start_ns)) / 1_000;
-                let nonce_duration =
-                    (telemetry.nonce_ns.saturating_sub(telemetry.relayhost_ns)) / 1_000;
-                let sign_duration = (telemetry.sign_ns.saturating_sub(telemetry.nonce_ns)) / 1_000;
-                let broadcast_duration =
-                    (telemetry.broadcast_ns.saturating_sub(telemetry.sign_ns)) / 1_000;
-                let total_pipeline =
-                    (telemetry.broadcast_ns.saturating_sub(telemetry.start_ns)) / 1_000;
-
                 let record = LatencyRecord {
                     execution_id: execution_id.0.to_string(),
-                    relayhost_duration_us: relayhost_duration,
-                    nonce_duration_us: nonce_duration,
-                    sign_duration_us: sign_duration,
-                    broadcast_duration_us: broadcast_duration,
-                    total_pipeline_us: total_pipeline,
+                    relayhost_duration_us: get_duration_us(telemetry.start, telemetry.relayhost),
+                    nonce_duration_us: get_duration_us(telemetry.relayhost, telemetry.nonce),
+                    sign_duration_us: get_duration_us(telemetry.nonce, telemetry.sign),
+                    broadcast_duration_us: get_duration_us(telemetry.sign, telemetry.broadcast),
+                    total_pipeline_us: get_duration_us(telemetry.start, telemetry.broadcast),
                 };
 
-                if let Ok(json_payload) = serde_json::to_string(&record) {
-                    let _ = framed.send(json_payload).await;
+                match serde_json::to_string(&record) {
+                    Ok(json_payload) => {
+                        if let Err(err) = framed.send(json_payload).await {
+                            tracing::error!(%execution_id, %err, "Failed to send telemetry data to socket.");
+                            break;
+                        }
+                    }
+
+                    Err(err) => {
+                        tracing::error!(%execution_id, %err, "Failed to serialize telemetry data.");
+                    }
                 }
             }
         }
+    }
+}
+
+// ============================================================
+// helper function
+
+/// Calculate `Duration` betweeen 2 subsequent stages in `micro_second`
+pub fn get_duration_us(stage_a: Option<Instant>, stage_b: Option<Instant>) -> u64 {
+    match (stage_a, stage_b) {
+        (Some(a), Some(b)) => b.duration_since(a).as_micros() as u64,
+        _ => 0,
     }
 }
 
