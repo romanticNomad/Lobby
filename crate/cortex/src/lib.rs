@@ -137,8 +137,7 @@ impl CortextHandle {
 
         // ===========================================================
 
-        // The semaphore permit is moved into the spawned tokio task and
-        // dropped when the task completes, automatically freeing a slot.
+        // The semaphore permit is dropped when the task completes, automatically freeing a slot.
         tokio::spawn(async move {
             let _permit = permit;
             run_pipeline(ctx).await;
@@ -165,9 +164,8 @@ pub async fn spawn_cortex(
     db: PgPool,
     provider_client: Arc<RpcClient>,
     config: CortexConfig,
-    #[cfg(feature = "benchmark-telemetry")] telemetry_tx: mpsc::UnboundedSender<
-        crate::artifacts::telemetry::TelemetryEvent,
-    >,
+    #[cfg(feature = "benchmark-telemetry")]
+    teletmetry_context: Arc<artifacts::telemetry::TelemetryContext>
 ) -> CortextHandle {
     tracing::debug!(
         nonce_shards = config.nonce_shards,
@@ -271,19 +269,13 @@ pub async fn spawn_cortex(
         .expect("StatusRegistry: failed to connect to Redis server");
 
     // ============================================================
-    // telemetry context
-
-    #[cfg(feature = "benchmark-telemetry")]
-    let telemetry = Arc::new(artifacts::telemetry::TelemetryContext::new(telemetry_tx));
-
-    // ============================================================
     // returning final cortex handle.
 
     let inner = Arc::new(Cortex {
         cortex_config: config,
         status_registry,
         #[cfg(feature = "benchmark-telemetry")]
-        telemetry,
+        telemetry: teletmetry_context,
         rpc_client: provider_client,
         semaphore: pipeline_semaphore,
         relayhost: relayhost_handle,

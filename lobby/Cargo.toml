@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 
+[features]
+default = []
+benchmark_telemetry = ["cortex/benchmark-telemetry"]
+
 [dependencies]
 primitives = { path = "../crate/primitives" }
 utils = { path = "../crate/utils" }
