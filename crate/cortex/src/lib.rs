@@ -51,7 +51,7 @@ struct Cortex {
     status_registry: StatusRegistry,
     rpc_client: Arc<RpcClient>,
     #[cfg(feature = "benchmark-telemetry")]
-    telemetry: Arc<artifacts::telemetry::TelemetryContext>,
+    telemetry: artifacts::telemetry::TelemetryContext,
 
     // actor handles
     relayhost: Arc<dyn IntentRelay>,
@@ -165,7 +165,7 @@ pub async fn spawn_cortex(
     provider_client: Arc<RpcClient>,
     config: CortexConfig,
     #[cfg(feature = "benchmark-telemetry")]
-    teletmetry_context: Arc<artifacts::telemetry::TelemetryContext>
+    teletmetry_context: artifacts::telemetry::TelemetryContext,
 ) -> CortextHandle {
     tracing::debug!(
         nonce_shards = config.nonce_shards,

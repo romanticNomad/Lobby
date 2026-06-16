@@ -97,22 +97,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("rpc_endpoints loaded: {endpoint_hashmap:?}");
 
     // telemetry channel
-    #[cfg(feature = "benchmark_telemetry")] {
-        let (telemetry_tx, telemetry_rx) = tokio::sync::mpsc::unbounded_channel();
-        let teletery_context = std::sync::Arc::new(cortex::artifacts::telemetry::TelemetryContext::new(telemetry_tx));
-        let registry = teletery_context.get_registry();
+    #[cfg(feature = "benchmark_telemetry")]
+    let (telemetry_tx, telemetry_rx) = tokio::sync::mpsc::unbounded_channel();
+    #[cfg(feature = "benchmark_telemetry")]
+    let telemetry_context = cortex::artifacts::telemetry::TelemetryContext::new(telemetry_tx);
+    #[cfg(feature = "benchmark_telemetry")]
+    {
+        let registry = telemetry_context.get_registry();
         tokio::spawn(async move {
-            run_telemetry_exporter(
+            cortex::artifacts::telemetry::run_telemetry_exporter(
                 telemetry_rx,
                 "/tmp/lobby_benchmark_telemetry.sock", // Standardized UDS path
                 registry,
-            ).await;
+            )
+            .await;
         });
     }
 
     // cortex handler
     let config = CortexConfig::from_env()?;
-    let cortex_handler = spawn_cortex(db_pool.clone(), Arc::new(rcp_client), config).await;
+    let cortex_handler = spawn_cortex(
+        db_pool.clone(),
+        Arc::new(rcp_client),
+        config,
+        #[cfg(feature = "benchmark_telemetry")]
+        telemetry_context,
+    )
+    .await;
 
     // status registry
     let status_registry = cortex_handler.status_registry();
