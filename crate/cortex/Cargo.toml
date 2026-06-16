@@ -25,3 +25,4 @@ thiserror = "2.0.18"
 tracing = "0.1"
 quanta = { version = "0.12", optional = true }
 tokio-util = { version =  "0.7.18", features = ["codec"], optional = true}
+futures-util = "0.3.32"
