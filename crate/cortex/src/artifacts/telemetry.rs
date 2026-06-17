@@ -13,6 +13,15 @@ use tokio_util::codec::{FramedWrite, LinesCodec};
 // ===========================================================
 // primary struct and types
 
+/// Enum to identify pipeline stage
+#[derive(Debug, Clone)]
+pub enum TelemetryStage {
+    RelayHost,
+    Nonce,
+    Sign,
+    Broadcast,
+}
+
 /// Nanosecond-precision timestamps for pipeline stages.
 #[derive(Debug, Clone, Default)]
 pub struct PipelineTelemetry {
@@ -31,7 +40,7 @@ pub type TelemetryRegistry = Arc<DashMap<ExecutionId, PipelineTelemetry>>;
 pub enum TelemetryEvent {
     StateComplete {
         execution_id: ExecutionId,
-        stage: &'static str,
+        stage: TelemetryStage,
         timestamp: Option<Instant>,
     },
     PipelineComplete {
@@ -92,9 +101,9 @@ impl TelemetryContext {
         entry.start = Some(now);
     }
 
-    /// Called by actors upon successful stage completion. O(1) lock-free operation, non-blocking.
+    /// Called by pipeline, upon successful stage completion. O(1) lock-free operation, non-blocking.
     #[inline(always)]
-    pub fn stage_update(&self, stage: &'static str, execution_id: ExecutionId) {
+    pub fn stage_update(&self, stage: TelemetryStage, execution_id: ExecutionId) {
         let now = self.clock.recent();
         let mut entry = self
             .registry
@@ -102,11 +111,10 @@ impl TelemetryContext {
             .or_insert_with(PipelineTelemetry::default);
 
         match stage {
-            "relayhost" => entry.relayhost = Some(now),
-            "nonce" => entry.nonce = Some(now),
-            "sign" => entry.sign = Some(now),
-            "broadcast" => entry.broadcast = Some(now),
-            _ => {}
+            TelemetryStage::RelayHost => entry.relayhost = Some(now),
+            TelemetryStage::Nonce => entry.nonce = Some(now),
+            TelemetryStage::Sign => entry.sign = Some(now),
+            TelemetryStage::Broadcast => entry.broadcast = Some(now),
         }
 
         let _ = self.tx.send(TelemetryEvent::StateComplete {

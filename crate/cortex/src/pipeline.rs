@@ -99,6 +99,9 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         let start = Instant::now();
         tracing::info!(elapsed_ms = start.elapsed().as_millis(), "Pipeline started");
 
+        #[cfg(feature = "benchmark-telemetry")]
+        ctx.telemetry.record_start(execution_id);
+
         // ============================================================
         // relay host
 
@@ -125,6 +128,12 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         tracing::debug!(
             elapsed_ms = start.elapsed().as_millis(),
             "relay_host: recorded"
+        );
+
+        #[cfg(feature = "benchmark-telemetry")]
+        ctx.telemetry.stage_update(
+            crate::artifacts::telemetry::TelemetryStage::RelayHost,
+            execution_id,
         );
 
         // ============================================================
@@ -156,6 +165,12 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             elapsed_ms = start.elapsed().as_millis(),
             nonce = %nonce,
             "nonce reserved"
+        );
+
+        #[cfg(feature = "benchmark-telemetry")]
+        ctx.telemetry.stage_update(
+            crate::artifacts::telemetry::TelemetryStage::Nonce,
+            execution_id,
         );
 
         // updating the nonce onto txn payload
@@ -194,6 +209,12 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         tracing::info!(
             elapsed_ms = start.elapsed().as_millis(),
             "transaction signed"
+        );
+
+        #[cfg(feature = "benchmark-telemetry")]
+        ctx.telemetry.stage_update(
+            crate::artifacts::telemetry::TelemetryStage::Sign,
+            execution_id,
         );
 
         // ============================================================
@@ -448,6 +469,14 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             "transaction broadcasted:"
         );
 
+        #[cfg(feature = "benchmark-telemetry")]
+        ctx.telemetry.stage_update(
+            crate::artifacts::telemetry::TelemetryStage::Broadcast,
+            execution_id,
+        );
+        #[cfg(feature = "benchmark-telemetry")]
+        ctx.telemetry.finalize(execution_id);
+
         // ============================================================
         // validator
 
@@ -625,9 +654,8 @@ async fn finalise_nonce(
     }
 }
 
-/// Consume a 'reserved' nonce, in case a nonce gap is created on-chain
-/// and the nonce overflows, the validator will not be able
-/// to confirm inclusion of nonce on chain, until gap is covered.
+/// Consumes the 'reserved' nonce, in case a nonce gap is created on-chain  and the nonce over-flows,
+/// the validator will not be able to confirm inclusion of nonce on chain, until gap is covered.
 async fn consume_nonce(
     handle: &Arc<dyn NonceManager>,
     execution_id: ExecutionId,
