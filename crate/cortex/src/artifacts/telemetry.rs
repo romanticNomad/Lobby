@@ -40,11 +40,21 @@ pub enum TelemetryEvent {
 }
 
 /// Lobby `telemetry-context` holder.
-#[derive(Clone)]
 pub struct TelemetryContext {
     registry: TelemetryRegistry,
     clock: Clock,
     tx: mpsc::UnboundedSender<TelemetryEvent>,
+}
+
+impl Clone for TelemetryContext {
+    fn clone(&self) -> Self {
+        let tx2 = self.tx.clone();
+        Self {
+            registry: Arc::clone(&self.registry),
+            clock: self.clock.clone(),
+            tx: tx2,
+        }
+    }
 }
 
 /// The NDJSON payload streamed to the benchmark harness via UDS.
