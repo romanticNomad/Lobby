@@ -1,6 +1,6 @@
 # Lobby
 
-> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviours described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.
+> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.
 >
 > **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.
 >
@@ -9,7 +9,7 @@
 ---
 
 **Version:** 0.1.0 (Prototype)  
-**Last Updated:** April 21 2026  
+**Last Updated:** April 21, 2026  
 **Target Audience:** Contributors, Devs intrested in learning EVM transaction mechanics and LLMs.
 
 ---
@@ -20,13 +20,13 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 
 ### What Makes Lobby Special
 
-**Sub-second internal processing** — Nonce assignment and signing are typically complete in under one second through optimised actor-based concurrency.
+**Sub-second internal processing** — Nonce assignment and signing are typically complete in under one second through optimized actor-based concurrency.
 
 **Concurrent pipeline architecture** — Process thousands of transactions simultaneously via actor-based sharding, with deterministic routing ensuring sequential nonce assignment per address while maintaining parallelism across different accounts.
 
 **Automatic recovery** — Built-in retry logic for transient failures, nonce mismatch detection with automatic sync and re-sign, and stale nonce cleanup via background processes.
 
-**Multi-chain support** — Single API for Ethereum mainnet, Polygon, Arbitrum, Hoodi testnet, and other EVM-compatible networks.
+**Multichain support** — Single API for Ethereum mainnet, Polygon, Arbitrum, Hoodi testnet, and other EVM-compatible networks.
 
 **Real-time status tracking** — Poll transaction progress from submission through on-chain confirmation with detailed status at every pipeline stage.
 
@@ -134,7 +134,7 @@ mv ../Locket/accounts.json test_keys.json
   "account_N": {
     "pvt_key": "0x<64_hex_characters>",
     "pub_key": "0x<128_hex_characters>",
-    "address": "0x<40_hex_characters>",
+    "address": "0x<40_hex_characters>"
   }
 }
 ```
@@ -300,14 +300,15 @@ pub fn spawn_nonce_actor(db: PgPool, buffer_size: usize) -> NonceHandle {
 **`engine.rs`** — Event loop processing commands serially:
 
 ```rust
+//noinspection RsFunctionCannotHaveSelf
 pub async fn run(mut self) {
     while let Some(cmd) = self.rx.recv().await {
-   match cmd {
-  NonceCommand::Reserve { reply, .. } => {
- let result = self.handle_reserve(...).await;
- let _ = reply.send(result);
-  }
-   }
+        match cmd {
+            NonceCommand::Reserve { reply, .. } => {
+                let result = self.handle_reserve(...).await;
+                let _ = reply.send(result);
+            }
+        }
     }
 }
 ```
@@ -338,12 +339,12 @@ A `tokio::sync::Semaphore` bounds concurrent pipeline executions (default: 17). 
 
 Rather than single-actor bottlenecks or fully concurrent access, Lobby runs N sharded actor instances with deterministic routing:
 
-| Actor | Sharding Key | Purpose |
-|-------|--------------|---------|
-| Nonce | `ByAddress(&from_address)` | Sequential nonce assignment per address |
-| Sign | `ByExecutionId(&execution_id)` | Stateless load balancing for ECDSA operations |
-| Broadcast | `ByChainId(&chain_id)` | Per-chain RPC state isolation |
-| Validator | `ByChainId(&chain_id)` | Per-chain validation isolation |
+| Actor     | Sharding Key                   | Purpose                                       |
+|-----------|--------------------------------|-----------------------------------------------|
+| Nonce     | `ByAddress(&from_address)`     | Sequential nonce assignment per address       |
+| Sign      | `ByExecutionId(&execution_id)` | Stateless load balancing for ECDSA operations |
+| Broadcast | `ByChainId(&chain_id)`         | Per-chain RPC state isolation                 |
+| Validator | `ByChainId(&chain_id)`         | Per-chain validation isolation                |
 
 Routing uses `DefaultHasher`: `shard_index = hash(key) % N`. Same key maps to same actor ensuring sequential ordering; different keys run in true parallel.
 
@@ -520,7 +521,7 @@ pub async fn acquire_healthy_endpoint(
     &self,
     chain_id: ChainId,
     timeout: Duration,
-) -> Result<Option<usize>, LobbyRpcError>
+) -> Result<Option<usize>, LobbyRpcError> {...}
 ```
 
 ### High-Level Helper Functions
@@ -543,13 +544,13 @@ Lobby categorizes errors as terminating (fatal, abort immediately) or non-termin
 
 Terminating errors indicate deterministic failures that will not succeed on retry:
 
-| Error | Cause | Action |
-|-------|-------|--------|
-| `MissingProvider` | Chain not configured in RPC endpoints | Operator must add configuration |
-| `FromAddressMismatch` | Transaction `from` does not match API key bound address | Client must use correct key |
-| `ValidationFailure` | Gas limit zero, excessive fees, unsupported chain | Client must fix parameters |
-| `InsufficientFunds` | Account balance below transaction value + gas | Fund the account |
-| `NonceTooLow` (after recovery) | On-chain nonce permanently ahead after sync attempt | Manual intervention required |
+| Error                          | Cause                                                   | Action                          |
+|--------------------------------|---------------------------------------------------------|---------------------------------|
+| `MissingProvider`              | Chain not configured in RPC endpoints                   | Operator must add configuration |
+| `FromAddressMismatch`          | Transaction `from` does not match API key bound address | Client must use correct key     |
+| `ValidationFailure`            | Gas limit zero, excessive fees, unsupported chain       | Client must fix parameters      |
+| `InsufficientFunds`            | Account balance below transaction value + gas           | Fund the account                |
+| `NonceTooLow` (after recovery) | On-chain nonce permanently ahead after sync attempt     | Manual intervention required    |
 
 All terminating errors immediately abort the pipeline without further retry attempts.
 
@@ -595,14 +596,14 @@ Ethereum processes transactions strictly in nonce order. Missing nonces block al
 
 Nonce cleanup rules by failure stage:
 
-| Failure Stage | Nonce Action |
-|---------------|--------------|
-| RelayHost or Nonce Reserve | None (never reserved) |
-| Sign | `resolve(Released)` |
-| Broadcast (hard fail) | `resolve(Released)` |
-| Validator NotIncluded | `resolve(Released)` |
-| Validator Timeout | `resolve(Consumed)` (not reusable, may still confirm) |
-| Validator Included | `resolve(Finalized)` |
+| Failure Stage              | Nonce Action                                          |
+|----------------------------|-------------------------------------------------------|
+| RelayHost or Nonce Reserve | None (never reserved)                                 |
+| Sign                       | `resolve(Released)`                                   |
+| Broadcast (hard fail)      | `resolve(Released)`                                   |
+| Validator NotIncluded      | `resolve(Released)`                                   |
+| Validator Timeout          | `resolve(Consumed)` (not reusable, may still confirm) |
+| Validator Included         | `resolve(Finalized)`                                  |
 
 ---
 
