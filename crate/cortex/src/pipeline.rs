@@ -41,7 +41,7 @@ pub(crate) struct PipelineContext {
     // retry
     pub retry_config: RetryConfig,
 
-    // pipeline state artifacts
+    // pipeline state artifacts and telemetry (feature flagged)
     pub status: StatusRegistry,
     pub rpc_client: Arc<RpcClient>,
     #[cfg(feature = "benchmark-telemetry")]
@@ -131,7 +131,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.stage_update(
+        ctx.telemetry.record_stage(
             crate::artifacts::telemetry::TelemetryStage::RelayHost,
             execution_id,
         );
@@ -168,7 +168,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.stage_update(
+        ctx.telemetry.record_stage(
             crate::artifacts::telemetry::TelemetryStage::Nonce,
             execution_id,
         );
@@ -212,7 +212,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.stage_update(
+        ctx.telemetry.record_stage(
             crate::artifacts::telemetry::TelemetryStage::Sign,
             execution_id,
         );
@@ -470,7 +470,7 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.stage_update(
+        ctx.telemetry.record_stage(
             crate::artifacts::telemetry::TelemetryStage::Broadcast,
             execution_id,
         );

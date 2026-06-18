@@ -97,13 +97,12 @@ impl TelemetryContext {
             .registry
             .entry(execution_id)
             .or_insert_with(PipelineTelemetry::default);
-
         entry.start = Some(now);
     }
 
     /// Called by pipeline, upon successful stage completion. O(1) lock-free operation, non-blocking.
     #[inline(always)]
-    pub fn stage_update(&self, stage: TelemetryStage, execution_id: ExecutionId) {
+    pub fn record_stage(&self, stage: TelemetryStage, execution_id: ExecutionId) {
         let now = self.clock.recent();
         let mut entry = self
             .registry
@@ -142,8 +141,7 @@ impl TelemetryContext {
 // ===========================================================
 // reponse time calculation and UDS streaming
 
-/// Background task that calculates deltas and
-/// streams NDJSON to the benchmark harness via UDS.
+/// Background task that calculates deltas and streams NDJSON to the benchmark harness via UDS.
 pub async fn run_telemetry_exporter(
     mut rx: mpsc::UnboundedReceiver<TelemetryEvent>,
     socket_path: &str,
@@ -151,7 +149,6 @@ pub async fn run_telemetry_exporter(
 ) {
     // clean socket
     let _ = std::fs::remove_file(socket_path);
-
     let listener = match tokio::net::UnixListener::bind(socket_path) {
         Ok(l) => l,
         Err(e) => {
