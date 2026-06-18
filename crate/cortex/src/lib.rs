@@ -13,8 +13,7 @@
 //!              └─ Validator.validate()             [retried; releases nonce on hard-fail]
 //! ```
 //!
-//! The `OrchestratorHandle` is a cheap `Arc`-backed clone that can be placed
-//! in Axum's `AppState`.
+//! The `OrchestratorHandle` is a cheap `Arc`-backed clone that can be placed  in Axum's `AppState`.
 
 pub mod artifacts;
 pub mod pipeline;
@@ -42,6 +41,7 @@ use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Semaphore;
 use utils::rpc::RpcClient;
+
 // ============================================================
 // Cortex (orchestrator) struct.
 
@@ -50,6 +50,8 @@ struct Cortex {
     cortex_config: CortexConfig,
     status_registry: StatusRegistry,
     rpc_client: Arc<RpcClient>,
+
+    // telemetry (feature flaged)
     #[cfg(feature = "benchmark-telemetry")]
     telemetry: artifacts::telemetry::TelemetryContext,
 

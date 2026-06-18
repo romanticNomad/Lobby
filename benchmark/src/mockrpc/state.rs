@@ -148,7 +148,6 @@ impl ChainState {
     }
 }
 
-// TODO: compelete update_nonce function;.
 impl MockRpcState for ChainState {
     /// Validates and updates the stored nonce [`AtomicU64`] in the `NonceState`.
     ///
