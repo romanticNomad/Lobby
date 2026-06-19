@@ -2,6 +2,7 @@
 mod infra;
 #[allow(dead_code, unused_imports)]
 mod loadgen;
+#[allow(dead_code)]
 mod metrics;
 #[allow(dead_code)]
 mod mockrpc;
