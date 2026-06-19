@@ -134,6 +134,23 @@ pub struct DispatchRecord {
     pub api_key_index: usize,
 }
 
+impl DispatchRecord {
+    #[inline]
+    pub fn get_execution_id(&self) -> String {
+        self.execution_id.clone()
+    }
+
+    #[inline]
+    pub fn get_round_trip_latency(&self) -> u64 {
+        self.t_accept.duration_since(self.t_send).as_micros() as u64
+    }
+
+    #[inline]
+    pub fn get_api_key_index(&self) -> usize {
+        self.api_key_index
+    }
+}
+
 // =============================================================================
 // Rate Controller
 
