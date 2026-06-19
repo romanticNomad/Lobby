@@ -1230,6 +1230,7 @@ dependencies = [
  "axum",
  "bytes",
  "dashmap",
+ "futures-util",
  "hdrhistogram",
  "hex",
  "k256",
