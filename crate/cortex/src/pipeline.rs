@@ -45,7 +45,7 @@ pub(crate) struct PipelineContext {
     pub status: StatusRegistry,
     pub rpc_client: Arc<RpcClient>,
     #[cfg(feature = "benchmark-telemetry")]
-    pub telemetry: crate::artifacts::telemetry::TelemetryContext,
+    pub telemetry: crate::telemetry::TelemetryContext,
 }
 
 // ============================================================
@@ -131,10 +131,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.record_stage(
-            crate::artifacts::telemetry::TelemetryStage::RelayHost,
-            execution_id,
-        );
+        ctx.telemetry
+            .record_stage(crate::telemetry::TelemetryStage::RelayHost, execution_id);
 
         // ============================================================
         // nonce reserve
@@ -168,10 +166,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.record_stage(
-            crate::artifacts::telemetry::TelemetryStage::Nonce,
-            execution_id,
-        );
+        ctx.telemetry
+            .record_stage(crate::telemetry::TelemetryStage::Nonce, execution_id);
 
         // updating the nonce onto txn payload
         let mut txn = ctx.txn;
@@ -212,10 +208,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.record_stage(
-            crate::artifacts::telemetry::TelemetryStage::Sign,
-            execution_id,
-        );
+        ctx.telemetry
+            .record_stage(crate::telemetry::TelemetryStage::Sign, execution_id);
 
         // ============================================================
         // fetching the healthy endpoint index
@@ -470,10 +464,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         );
 
         #[cfg(feature = "benchmark-telemetry")]
-        ctx.telemetry.record_stage(
-            crate::artifacts::telemetry::TelemetryStage::Broadcast,
-            execution_id,
-        );
+        ctx.telemetry
+            .record_stage(crate::telemetry::TelemetryStage::Broadcast, execution_id);
         #[cfg(feature = "benchmark-telemetry")]
         ctx.telemetry.finalize(execution_id);
 

@@ -47,7 +47,7 @@ impl EvmKeyExport {
 pub fn keys_json_gen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>> {
     let mut test_keys_map: HashMap<String, EvmKeyExport> = HashMap::new();
     for i in 0..=sample_size {
-        let (pvt_key, pub_key, address) = key_gen();
+        let (pvt_key, pub_key, address) = test_key_gen();
         let account = EvmKeyExport::new(pvt_key, pub_key, address);
         let entry = format!("account{}", i);
 
@@ -63,7 +63,7 @@ pub fn keys_json_gen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>>
 }
 
 // ============================================================
-// keys generator
+// api-keys generator
 
 /// Helper function that generates EVM compatible keys
 ///
@@ -71,7 +71,7 @@ pub fn keys_json_gen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>>
 /// * `pvt_key`
 /// * `pub_key`
 /// * `evm_address`
-fn key_gen() -> (String, String, String) {
+fn test_key_gen() -> (String, String, String) {
     // pvt_key
     let signing_key = SigningKey::random(&mut OsRng);
     let verify_key = signing_key.verifying_key();

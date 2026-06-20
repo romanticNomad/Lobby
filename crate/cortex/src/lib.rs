@@ -17,6 +17,8 @@
 
 pub mod artifacts;
 pub mod pipeline;
+#[cfg(feature = "benchmark-telemetry")]
+pub mod telemetry;
 
 use crate::{
     artifacts::config::CortexConfig,
@@ -53,7 +55,7 @@ struct Cortex {
 
     // telemetry (feature flaged)
     #[cfg(feature = "benchmark-telemetry")]
-    telemetry: artifacts::telemetry::TelemetryContext,
+    telemetry: telemetry::TelemetryContext,
 
     // actor handles
     relayhost: Arc<dyn IntentRelay>,
@@ -166,8 +168,7 @@ pub async fn spawn_cortex(
     db: PgPool,
     provider_client: Arc<RpcClient>,
     config: CortexConfig,
-    #[cfg(feature = "benchmark-telemetry")]
-    teletmetry_context: artifacts::telemetry::TelemetryContext,
+    #[cfg(feature = "benchmark-telemetry")] teletmetry_context: telemetry::TelemetryContext,
 ) -> CortextHandle {
     tracing::debug!(
         nonce_shards = config.nonce_shards,

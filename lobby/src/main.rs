@@ -100,12 +100,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "benchmark_telemetry")]
     let (telemetry_tx, telemetry_rx) = tokio::sync::mpsc::unbounded_channel();
     #[cfg(feature = "benchmark_telemetry")]
-    let telemetry_context = cortex::artifacts::telemetry::TelemetryContext::new(telemetry_tx);
+    let telemetry_context = cortex::telemetry::TelemetryContext::new(telemetry_tx);
     #[cfg(feature = "benchmark_telemetry")]
     {
         let registry = telemetry_context.get_registry();
         tokio::spawn(async move {
-            cortex::artifacts::telemetry::run_telemetry_exporter(
+            cortex::telemetry::run_telemetry_exporter(
                 telemetry_rx,
                 "/tmp/lobby_benchmark_telemetry.sock", // Standardized UDS path
                 registry,

@@ -121,7 +121,7 @@ impl Payloads {
 // =============================================================================
 // Dispatch Record
 
-/// Structured output from a successful dispatch, consumed by `metrics.rs`.
+/// Structured output from a successful dispatch, consumed by `mod.rs`.
 #[derive(Debug, Clone)]
 pub struct DispatchRecord {
     /// `execution_id` for status retrival
@@ -231,7 +231,7 @@ impl TxTrigger {
     /// and metric emission in a single call. No phase switching required.
     ///
     /// * `start_instant` - Wall-clock benchmark start time (shared across workers).
-    /// * `metrics_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
+    /// * `metrics_tx` - Non-blocking channel to `mod.rs` histogram aggregator.
     pub async fn ramp_dispatch(
         &self,
         start_instant: Instant,
