@@ -5365,7 +5365,6 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
- "tracing",
 ]
 
 [[package]]
@@ -5630,7 +5629,6 @@ dependencies = [
  "sha3",
  "thiserror 2.0.18",
  "tokio",
- "tower-http",
  "tracing",
  "url",
  "uuid",

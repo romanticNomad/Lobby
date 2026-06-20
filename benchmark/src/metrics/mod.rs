@@ -1,4 +1,4 @@
-use crate::metrics::collector::LatencyRecord;
+use crate::metrics::deserialize::LatencyRecord;
 use anyhow::Context;
 use futures_util::StreamExt;
 use std::time::{Duration, Instant};
@@ -6,8 +6,8 @@ use tokio::net::UnixStream;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{error, info, warn};
 
-mod collector;
-pub use collector::MetricsCollector;
+mod deserialize;
+pub use deserialize::MetricsCollector;
 
 // ===========================================================
 // UDS Telemetry Stream Consumer

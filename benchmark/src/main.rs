@@ -11,5 +11,11 @@ use anyhow::{Ok, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // 1. Set up Postgres and Redis
+    // 1.1 check health
+
+    // 2. Build test-keys and api-keys
+
+    // 3.
     Ok(())
 }
