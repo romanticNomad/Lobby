@@ -4,6 +4,7 @@ use futures_util::StreamExt;
 use std::time::{Duration, Instant};
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedRead, LinesCodec};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 mod deserialize;
@@ -19,7 +20,7 @@ pub async fn telemetry_stream_reader(
     test_start: Instant,
     warmup: Duration,
     steady_state: Duration,
-    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    shutdown_token: CancellationToken,
 ) -> anyhow::Result<MetricsCollector> {
     info!("Connecting to Lobby telemetry UDS at: {}", socket_path);
 
@@ -38,11 +39,9 @@ pub async fn telemetry_stream_reader(
             biased;
 
             // 1. Check for shutdown signal from main orchestrator
-            _ = shutdown_rx.changed() => {
-                if *shutdown_rx.borrow() {
-                    info!("Shutdown signal received. Finalizing metrics collection.");
-                    break;
-                }
+            _ = shutdown_token.cancelled() =>  {
+                info!("initiating shutdown");
+                break;
             }
 
             // 2. Read next NDJSON line from UDS
@@ -53,6 +52,7 @@ pub async fn telemetry_stream_reader(
                             Ok(latency_record) => {
                                 collector.submit_metrics(latency_record, Instant::now());
                             }
+
                             Err(e) => {
                                 warn!("Failed to deserialize telemetry record: {}. Line: {}", e, line);
                             }
