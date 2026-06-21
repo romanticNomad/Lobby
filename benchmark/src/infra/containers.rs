@@ -1,30 +1,14 @@
+use crate::infra::PG_CMD;
 use anyhow::{Ok, Result};
 use sqlx::{PgPool, migrate::Migrator};
 use std::path::PathBuf;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 
 // ============================================================
-// Postgres with benchmark-tuned CLI flags (bypasses default health check)
-
-const PG_CMD: [&str; 13] = [
-    "postgres",
-    "-c",
-    "shared_buffer=512MB",
-    "-c",
-    "max_connections=100",
-    "-c",
-    "wal_minimum",
-    "-c",
-    "fsync=off",
-    "-c",
-    "synchronous_commit=off",
-    "-c",
-    "checkpoint_timeout=300s",
-];
-
-// ============================================================
+// data structures
 
 /// Central infrastructure context for the benchmark harness.
+///
 /// Manages container lifecycles, health_check probes, migrations, and dynamic port resolution.
 pub struct InfraStack {
     pub pg_url: String,
@@ -35,8 +19,6 @@ pub struct InfraStack {
 }
 
 impl InfraStack {
-    // ============================================================
-
     /// Initializes Postgres & Redis, waits for health_checks, and applies migrations.
     pub async fn build() -> Result<Self> {
         // 1. Postgres startup
@@ -64,11 +46,13 @@ impl InfraStack {
             "postgresql://lobby:lobby_dev_password@127.0.0.1:{}/lobby-db",
             pg_port
         );
+
         let redis_url = format!("redis://127.0.0.1:{}", redis_port);
 
         // 4. Runitime migration run
         let migration_path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../database/migrations");
+
         let pool = PgPool::connect(&pg_url).await?;
         Migrator::new(migration_path).await?.run(&pool).await?;
 
@@ -81,8 +65,7 @@ impl InfraStack {
         })
     }
 
-    // ============================================================
-
+    #[inline]
     /// Explicit async teardown. Prefer over relying solely on `Drop` for benchmarks.
     pub async fn teardown(self) {
         let _ = self.pg_container.stop().await;
@@ -91,10 +74,8 @@ impl InfraStack {
         let _ = self.redis_container.rm().await;
     }
 
-    // ============================================================
-    // pool_accessor
-
     #[inline]
+    /// helper function to get `PgPool` instance.
     pub fn get_pool(&self) -> &PgPool {
         &self.pool
     }
