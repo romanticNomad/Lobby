@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 /// **Used for lobby benchmarking only, and no real funds are ever sent to this account.**
 pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61";
 
-// structs
+// data structures
 // ============================================================
 // errors
 

@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use dashmap::DashMap;
 use hex::encode;
 use k256::ecdsa::SigningKey;
@@ -44,9 +45,9 @@ impl EvmKeyExport {
 ///    },
 /// }
 /// ```
-pub fn keys_json_gen(sample_size: u64) -> Result<(), Box<dyn std::error::Error>> {
+pub fn write_test_keys_json(sample_size: u64) -> Result<()> {
     let mut test_keys_map: HashMap<String, EvmKeyExport> = HashMap::new();
-    for i in 0..=sample_size {
+    for i in 1..=sample_size {
         let (pvt_key, pub_key, address) = test_key_gen();
         let account = EvmKeyExport::new(pvt_key, pub_key, address);
         let entry = format!("account{}", i);
@@ -91,8 +92,8 @@ fn test_key_gen() -> (String, String, String) {
     (private_key_hex, pub_key_hex, evm_address_hex)
 }
 
-// lobby-api keys elements
 // ============================================================
+// lobby-api keys elements
 
 /// Lobby-Api keys stack, to be set up in the environment along with docker URLs
 ///
@@ -113,7 +114,7 @@ pub type ApiStack = DashMap<u64, String>;
 ///    },
 /// }
 /// ```
-pub fn get_apistack(filepath: &Path) -> Result<ApiStack, Box<dyn std::error::Error>> {
+pub fn build_apistack(filepath: &Path) -> Result<ApiStack> {
     let api_stack: ApiStack = DashMap::new();
 
     let file_contents = fs::read_to_string(filepath)?;
@@ -121,19 +122,19 @@ pub fn get_apistack(filepath: &Path) -> Result<ApiStack, Box<dyn std::error::Err
 
     let object_map = parsed_content
         .as_object()
-        .ok_or("test_keys.json must contain a top-level JSON object")?;
+        .context("test_keys.json must contain a top-level JSON object")?;
     let extracted_accounts: Vec<(&String, &Value)> = object_map.iter().collect();
 
     for (account_name, keys) in extracted_accounts {
         let account_num = account_name
             .strip_prefix("account")
             .and_then(|num_str| num_str.parse::<u64>().ok())
-            .ok_or("invalid account naming")?;
+            .context("invalid account naming")?;
 
         let from_address = keys
             .get("address")
             .and_then(|address| address.as_str())
-            .ok_or("invalid account address")?
+            .context("invalid account address")?
             .to_string();
 
         let client_id = Uuid::new_v4();
@@ -161,6 +162,28 @@ pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
         .collect();
 
     addresses
+}
+
+// ============================================================
+// unit test
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn unit_test_keys_gen() -> Result<()> {
+        // generate 10 sample keys
+        let generate_keys = write_test_keys_json(2);
+        assert!(generate_keys.is_ok());
+
+        // test if the keys generated produce the correct api_keys.
+        let path = Path::new("test_keys.json");
+        let api_stack = build_apistack(path).expect("failed to build API stack");
+        let api_stack_payload = serde_json::to_string_pretty(&api_stack)?;
+        fs::write("test_api_keys.json", api_stack_payload)?;
+
+        Ok(())
+    }
 }
 
 // ============================================================
