@@ -1,5 +1,10 @@
 mod keys;
 mod trigger;
 
-pub use keys::{ApiStack, get_apistack, keys_json_gen};
+// ============================================================
+// re-exports
+
+pub use keys::{ApiStack, build_apistack, write_test_keys_json};
 pub use trigger::{DynamicRateController, Payloads, RECIPIENT_ADDRESS, TxTrigger};
+
+// ============================================================

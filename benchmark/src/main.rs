@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#[allow(dead_code, unused_imports)]
 mod infra;
 #[allow(dead_code, unused_imports)]
 mod loadgen;
@@ -7,14 +7,22 @@ mod metrics;
 #[allow(dead_code)]
 mod mockrpc;
 
+use crate::infra::InfraStack;
+use crate::loadgen::{build_apistack, write_test_keys_json};
 use anyhow::{Ok, Result};
+use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // 1. Set up Postgres and Redis
-    // 1.1 check health
+
+    let infra_stack = InfraStack::build().await?;
+    let _pg_pool = infra_stack.get_pool();
 
     // 2. Build test-keys and api-keys
+    write_test_keys_json(100)?;
+    let path_test_keys = Path::new("test_keys.json");
+    let _api_stack = build_apistack(path_test_keys)?;
 
     // 3. Spawn mockrpc_servers
 
