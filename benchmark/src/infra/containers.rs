@@ -1,7 +1,7 @@
-use crate::infra::PG_CMD;
 use anyhow::{Context, Result};
 use sqlx::{PgPool, migrate::Migrator, postgres::PgPoolOptions};
 use std::path::PathBuf;
+use std::time::Duration;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tracing::{info, warn};
 
@@ -31,7 +31,6 @@ impl InfraStack {
                 .with_env_var("POSTGRES_USER", "lobby")
                 .with_env_var("POSTGRES_PASSWORD", "lobby_dev_password")
                 .with_env_var("POSTGRES_DB", "lobby-db")
-                .with_cmd(PG_CMD)
                 .with_ready_conditions(vec![WaitFor::message_on_stdout(
                     "database system is ready to accept connections",
                 )]);
@@ -54,6 +53,9 @@ impl InfraStack {
         let (pg_container, redis_container) = tokio::try_join!(pg_future, redis_future)?;
         info!("Postgres and Redis containers are running and healthy.");
 
+        // Give Postgres a moment to fully initialize TCP listener
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+
         // 2. Resolve dynamic host ports
         let pg_port = pg_container.get_host_port_ipv4(5432).await?;
         let redis_port = redis_container.get_host_port_ipv4(6379).await?;
@@ -73,7 +75,7 @@ impl InfraStack {
         let pool = PgPoolOptions::new()
             .max_connections(100)
             .min_connections(10)
-            .acquire_timeout(std::time::Duration::from_secs(5))
+            .acquire_timeout(Duration::from_secs(5))
             .connect(&pg_url)
             .await
             .context("Failed to connect to Postgres pool")?;
@@ -122,11 +124,13 @@ impl InfraStack {
     /// Returns a reference to the internal `PgPool`.
     #[inline]
     pub fn get_pool(&self) -> PgPool {
-        self.pool.clone()
+        self.pool.clone() // cheap Arc<> clone
     }
 }
 
 // ============================================================
+// unit tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,31 +142,37 @@ mod tests {
         let infra = InfraStack::build().await?;
 
         // 2. Verify URLs are properly formatted
-        assert!(infra.pg_url.starts_with("postgresql://lobby:lobby_dev_password@127.0.0.1:"));
+        assert!(
+            infra
+                .pg_url
+                .starts_with("postgresql://lobby:lobby_dev_password@127.0.0.1:")
+        );
         assert!(infra.redis_url.starts_with("redis://127.0.0.1:"));
 
         // 3. Verify database pool is functional
         let pool = infra.get_pool();
 
         // Test basic connectivity
-        let result = sqlx::query!(r#"SELECT 1 as num"#)
-            .fetch_one(pool)
-            .await?;
+        let result = sqlx::query(r#"SELECT 1 as num"#).fetch_one(&pool).await?;
         let num: i32 = result.get("num");
         assert_eq!(num, 1);
 
-        // 4. Verify migrations were applied (check for a known table)
-        // Adjust table name based on your actual migrations
-        let table_check = sqlx::query!(
+        // 4. Verify migrations were applied
+        let table_check = sqlx::query(
             r#"SELECT EXISTS (
-                SELECT FROM nonce.nonce_assignments
-            ) as exists"#
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'nonce'
+                AND table_name = 'nonce_assignments'
+            ) as exists"#,
         )
-            .fetch_one(pool)
-            .await?;
+        .fetch_one(&pool)
+        .await?;
 
         let table_exists: bool = table_check.get("exists");
-        assert!(table_exists, "Migration should have created transaction_intents table");
+        assert!(
+            table_exists,
+            "Migration should have created transaction_intents table"
+        );
 
         // 5. Verify containers are running by checking they respond to commands
         // (testcontainers handles this internally, but we verify the stack is usable)
@@ -174,12 +184,12 @@ mod tests {
 
         // 7. After teardown, attempting to use the pool should fail
         // (containers are stopped, so connection should fail)
-        let query_result = sqlx::query!(r#"SELECT 1"#)
-            .fetch_one(pool)
-            .await;
+        let query_result = sqlx::query(r#"SELECT 1"#).fetch_one(&pool).await;
 
-        assert!(query_result.is_err(), "Pool should be unusable after teardown");
-
+        assert!(
+            query_result.is_err(),
+            "Pool should be unusable after teardown"
+        );
         Ok(())
     }
 
@@ -197,13 +207,12 @@ mod tests {
         let pool1 = infra1.get_pool();
         let pool2 = infra2.get_pool();
 
-        sqlx::query!(r#"SELECT 1"#).fetch_one(pool1).await?;
-        sqlx::query!(r#"SELECT 1"#).fetch_one(pool2).await?;
+        sqlx::query(r#"SELECT 1"#).fetch_one(&pool1).await?;
+        sqlx::query(r#"SELECT 1"#).fetch_one(&pool2).await?;
 
         // Cleanup
         infra1.teardown().await;
         infra2.teardown().await;
-
         Ok(())
     }
 
@@ -221,3 +230,5 @@ mod tests {
         Ok(())
     }
 }
+
+// ============================================================
