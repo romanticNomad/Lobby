@@ -63,5 +63,5 @@ tokio-util = "0.7.18"
 * infra (done)
 * loadgen (done)
 * mockrpc (done)
-* metrics → (pending) alongside hdrhistogram integration to lobby pipeline
+* metrics → (done, alongside telemetry module in lobby::cortex)
 * main → (pending) assembling the harness

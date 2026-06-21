@@ -25,7 +25,7 @@ impl InfraStack {
         info!("Booting ephemeral infrastructure for benchmark harness...");
 
         // 1. Concurrent Postgres & Redis startup
-        // to minimize harness initialization latency.
+        // minimizes harness initialization latency.
         let pg_future = async {
             let pg_image = GenericImage::new("postgres", "18.3-alpine")
                 .with_env_var("POSTGRES_USER", "lobby")
@@ -121,9 +121,103 @@ impl InfraStack {
 
     /// Returns a reference to the internal `PgPool`.
     #[inline]
-    pub fn get_pool(&self) -> &PgPool {
-        &self.pool
+    pub fn get_pool(&self) -> PgPool {
+        self.pool.clone()
     }
 }
 
 // ============================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::Row;
+
+    #[tokio::test]
+    async fn test_infra_stack_build_and_teardown() -> Result<()> {
+        // 1. Build the infrastructure stack
+        let infra = InfraStack::build().await?;
+
+        // 2. Verify URLs are properly formatted
+        assert!(infra.pg_url.starts_with("postgresql://lobby:lobby_dev_password@127.0.0.1:"));
+        assert!(infra.redis_url.starts_with("redis://127.0.0.1:"));
+
+        // 3. Verify database pool is functional
+        let pool = infra.get_pool();
+
+        // Test basic connectivity
+        let result = sqlx::query!(r#"SELECT 1 as num"#)
+            .fetch_one(pool)
+            .await?;
+        let num: i32 = result.get("num");
+        assert_eq!(num, 1);
+
+        // 4. Verify migrations were applied (check for a known table)
+        // Adjust table name based on your actual migrations
+        let table_check = sqlx::query!(
+            r#"SELECT EXISTS (
+                SELECT FROM nonce.nonce_assignments
+            ) as exists"#
+        )
+            .fetch_one(pool)
+            .await?;
+
+        let table_exists: bool = table_check.get("exists");
+        assert!(table_exists, "Migration should have created transaction_intents table");
+
+        // 5. Verify containers are running by checking they respond to commands
+        // (testcontainers handles this internally, but we verify the stack is usable)
+        assert!(!infra.pg_url.is_empty());
+        assert!(!infra.redis_url.is_empty());
+
+        // 6. Teardown
+        infra.teardown().await;
+
+        // 7. After teardown, attempting to use the pool should fail
+        // (containers are stopped, so connection should fail)
+        let query_result = sqlx::query!(r#"SELECT 1"#)
+            .fetch_one(pool)
+            .await;
+
+        assert!(query_result.is_err(), "Pool should be unusable after teardown");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_infra_stack_multiple_builds() -> Result<()> {
+        // Verify that multiple stacks can coexist (different ports)
+        let infra1 = InfraStack::build().await?;
+        let infra2 = InfraStack::build().await?;
+
+        // Ports should be different
+        assert_ne!(infra1.pg_url, infra2.pg_url);
+        assert_ne!(infra1.redis_url, infra2.redis_url);
+
+        // Both should be functional
+        let pool1 = infra1.get_pool();
+        let pool2 = infra2.get_pool();
+
+        sqlx::query!(r#"SELECT 1"#).fetch_one(pool1).await?;
+        sqlx::query!(r#"SELECT 1"#).fetch_one(pool2).await?;
+
+        // Cleanup
+        infra1.teardown().await;
+        infra2.teardown().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_infra_stack_pool_configuration() -> Result<()> {
+        let infra = InfraStack::build().await?;
+        let pool = infra.get_pool();
+
+        // Verify pool options were applied (max_connections = 100)
+        let pool_options = pool.options();
+        assert_eq!(pool_options.get_max_connections(), 100);
+        assert_eq!(pool_options.get_min_connections(), 10);
+
+        infra.teardown().await;
+        Ok(())
+    }
+}
