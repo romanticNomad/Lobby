@@ -34,18 +34,18 @@ pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
 /// std Hasmap for mapping `chain_id` to respective `ports`
 #[derive(Debug)]
 pub struct PortMap {
-    port_map: HashMap<u64, u16>,
+    pub inner: HashMap<u64, u16>,
 }
 
 impl PortMap {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            port_map: HashMap::with_capacity(capacity),
+            inner: HashMap::with_capacity(capacity),
         }
     }
 
     pub fn insert(&mut self, chain_id: u64, port: u16) {
-        self.port_map.insert(chain_id, port);
+        self.inner.insert(chain_id, port);
     }
 }
 
@@ -67,15 +67,15 @@ pub struct RpcRequest {
 /// * `TxHash` for `eth_sentRawTrasnsaction` request.
 /// * `Arc<Box<RawValue>>` when `eth_getTransactionReciept` returns a receipt.
 /// * `Value::None` when `eth_getTransactionReciept` does not return a receipt.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RpcResult {
     TxHash(TxHash),
-    RecieptFound(Arc<Box<RawValue>>),
-    RecieptNotFound(Value),
+    ReceiptFound(Arc<Box<RawValue>>),
+    ReceiptNotFound(Value),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,7 +85,7 @@ pub struct RpcResponse {
     pub id: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RpcError {
     pub code: i64,
     pub message: String,
@@ -286,10 +286,10 @@ async fn handle_get_transaction_receipt(
 
     match ctx.chain_state.fetch_receipt(&tx_hash) {
         // receipt found, returns boxed RawValue
-        Some(receipt) => RpcResponse::success(id, RpcResult::RecieptFound(receipt)),
+        Some(receipt) => RpcResponse::success(id, RpcResult::ReceiptFound(receipt)),
 
         // Standard: null for unmined/unknown txs
-        None => RpcResponse::success(id, RpcResult::RecieptNotFound(Value::Null)),
+        None => RpcResponse::success(id, RpcResult::ReceiptNotFound(Value::Null)),
     }
 }
 
@@ -300,6 +300,150 @@ fn build_router(ctx: ChainContext) -> Router {
     Router::new()
         .route("/", post(handle_jsonrpc))
         .layer(Extension(ctx))
+}
+
+// ============================================================
+// unit tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Bytes;
+    use alloy::{
+        consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+        eips::eip2718::Encodable2718,
+        network::TxSignerSync,
+        primitives::{Address, U256},
+        signers::local::PrivateKeySigner,
+    };
+    use reqwest::Client;
+    use serde_json::json;
+
+    /// Helper to spin up 3 mock servers for testing
+    async fn setup_servers() -> (PortMap, CancellationToken) {
+        // Simulating 3 chains: Ethereum (1), Polygon (137), Hoodi (560048)
+        let chain_ids = vec![1, 137, 560048];
+        let addresses = vec![Address::ZERO]; // Mock custody addresses
+        let state = RpcAppState::new(chain_ids, addresses);
+        state.spawn_mockrpc_servers().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_mockrpc_servers_lifecycle_and_routing() {
+        let (port_map, token) = setup_servers().await;
+        let client = Client::new();
+
+        // 1. Verify all 3 servers are listening and routing invalid methods correctly
+        for chain_id in [1, 137, 560048] {
+            let port = port_map.inner.get(&chain_id).unwrap();
+            let url = format!("http://127.0.0.1:{}", port);
+
+            let req = json!({
+                "jsonrpc": "2.0",
+                "method": "eth_invalidMethod",
+                "params": [],
+                "id": 1
+            });
+
+            let res: RpcResponse = client
+                .post(&url)
+                .json(&req)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(
+                res.error.unwrap().code,
+                -32601,
+                "Chain {} should return Method Not Found",
+                chain_id
+            );
+        }
+
+        // 2. Test eth_getTransactionReceipt for an unknown hash (should return null)
+        let port = port_map.inner.get(&1).unwrap();
+        let url = format!("http://127.0.0.1:{}", port);
+        let req = json!({
+            "jsonrpc": "2.0",
+            "method": "eth_getTransactionReceipt",
+            "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+            "id": 2
+        });
+        let res: RpcResponse = client
+            .post(&url)
+            .json(&req)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(res.error.is_none());
+        assert!(matches!(
+            res.result,
+            Some(RpcResult::ReceiptNotFound(Value::Null))
+        ));
+
+        // 3. Test eth_sendRawTransaction with a valid, dynamically signed EIP-1559 transaction
+        // Using Hardhat/Anvil default private key for deterministic testing
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+
+        let mut tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 21000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: alloy::primitives::TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            input: Bytes::new(),
+            access_list: Default::default(),
+        };
+
+        // Sign the transaction synchronously for the test
+        let sig = signer.sign_transaction_sync(&mut tx).unwrap();
+        let signed_tx = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed_tx);
+        let raw_bytes = envelope.encoded_2718();
+        let hex_bytes = format!("0x{}", hex::encode(raw_bytes));
+
+        let req = json!({
+            "jsonrpc": "2.0",
+            "method": "eth_sendRawTransaction",
+            "params": [hex_bytes],
+            "id": 3
+        });
+
+        let res: RpcResponse = client
+            .post(&url)
+            .json(&req)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(
+            res.error.is_none(),
+            "Expected success, got error: {:?}",
+            res.error
+        );
+        assert!(
+            matches!(res.result, Some(RpcResult::TxHash(_))),
+            "Expected TxHash result"
+        );
+
+        // 4. Cleanup: Gracefully shut down all 3 servers
+        token.cancel();
+
+        // Give tokio a moment to process the shutdown signals
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 // ============================================================
