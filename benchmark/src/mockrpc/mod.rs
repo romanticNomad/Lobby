@@ -31,3 +31,6 @@ pub trait MockRpcState: Send + Sync {
 }
 
 // ============================================================
+// re-exports
+
+pub use router::RpcAppState;
