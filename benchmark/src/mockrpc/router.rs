@@ -5,14 +5,13 @@ use crate::mockrpc::{
 use alloy::primitives::Address;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
-    primitives::TxHash,
-    rlp::Decodable,
+    eips::eip2718::Decodable2718, // eip2718::Decodable2718 is used instead of rlp::Decodable trait, to respect EIP-2719 type-flag prefix.
+    primitives::{Bytes, TxHash}, // important to use alloy::primitives::Bytes and not bytes::Bytes, to allow correct ethereum hex ecoding.
 };
 use axum::{
     routing::post,
     {Extension, Json, Router},
 };
-use bytes::Bytes;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -234,13 +233,19 @@ async fn handle_send_raw_transaction(
         };
     let raw_bytes = &payload.0[0];
 
+    // // DEBUG: Log the first few bytes as hex to verify content
+    // println!(
+    //     "Received raw transaction bytes (hex): 0x{}",
+    //     hex::encode(&raw_bytes[..std::cmp::min(10, raw_bytes.len())])
+    // );
+
     // decode RLP-encoded signed transaction envelope.
-    let envelope = match TxEnvelope::decode(&mut raw_bytes.as_ref()) {
+    let envelope = match TxEnvelope::decode_2718(&mut raw_bytes.as_ref()) {
         Ok(env) => env,
         Err(_) => {
             return RpcResponse::invalid_params(
                 id,
-                "Invalid RLP encoding to eth_sendRawTransaction params",
+                "Invalid RLP encoding for eth_sendRawTransaction params",
             );
         }
     };
@@ -308,12 +313,11 @@ fn build_router(ctx: ChainContext) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::Bytes;
     use alloy::{
         consensus::{SignableTransaction, TxEip1559, TxEnvelope},
         eips::eip2718::Encodable2718,
         network::TxSignerSync,
-        primitives::{Address, U256},
+        primitives::{Address, Bytes, U256},
         signers::local::PrivateKeySigner,
     };
     use reqwest::Client;
@@ -381,10 +385,11 @@ mod tests {
             .await
             .unwrap();
         assert!(res.error.is_none());
-        assert!(matches!(
-            res.result,
-            Some(RpcResult::ReceiptNotFound(Value::Null))
-        ));
+        assert!(
+            res.result.is_none(),
+            "Expected result to be None (JSON null), but got: {:?}",
+            res.result
+        );
 
         // 3. Test eth_sendRawTransaction with a valid, dynamically signed EIP-1559 transaction
         // Using Hardhat/Anvil default private key for deterministic testing
