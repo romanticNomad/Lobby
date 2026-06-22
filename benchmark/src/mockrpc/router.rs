@@ -93,11 +93,11 @@ pub struct RpcError {
 
 /// eth_sendRawTransaction: ["0x<rlp_encoded_signed_tx>"]
 #[derive(Debug, Deserialize)]
-pub struct SendRawTransactionParams(pub Bytes);
+pub struct SendRawTransactionParams(pub Vec<Bytes>);
 
 /// eth_getTransactionReceipt: ["0x<tx_hash>"]
 #[derive(Debug, Deserialize)]
-pub struct GetTransactionReceiptParams(pub TxHash);
+pub struct GetTransactionReceiptParams(pub Vec<TxHash>);
 
 impl RpcResponse {
     pub fn success(id: Option<Value>, result: RpcResult) -> Self {
@@ -129,16 +129,6 @@ impl RpcResponse {
 }
 
 // ============================================================
-// RpcAppState.
-
-/// Primary AppState for mock rpc servers.
-///
-/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
-pub struct RpcAppState {
-    registry: Arc<ChainRegistry>,
-}
-
-// ============================================================
 // router contexct
 
 /// `chain` scoped router context for the axum server.
@@ -158,7 +148,14 @@ impl ChainContext {
 }
 
 // ============================================================
-// server implimentation for `RpcAppState`
+// RpcAppState. and server implimentation
+
+/// Primary AppState for mock rpc servers.
+///
+/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
+pub struct RpcAppState {
+    registry: Arc<ChainRegistry>,
+}
 
 impl RpcAppState {
     pub fn new(chain_ids: Vec<u64>, addresses: Vec<Address>) -> Self {
@@ -173,6 +170,7 @@ impl RpcAppState {
     }
 
     /// Spawns isolated Axum servers per chain_id.
+    ///
     /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
     pub async fn spawn_mockrpc_servers(&self) -> anyhow::Result<(PortMap, CancellationToken)> {
         let mut port_map = PortMap::with_capacity(self.registry.len());
@@ -187,6 +185,8 @@ impl RpcAppState {
             let port = listner.local_addr()?.port();
             port_map.insert(chain_id, port);
 
+            info!(chain_id, port, "Mockrpc server online");
+
             let token = cancellation_token.clone();
             tokio::spawn(async move {
                 axum::serve(listner, app)
@@ -194,13 +194,13 @@ impl RpcAppState {
                         token.cancelled().await;
                     })
                     .await
-                    .unwrap_or(warn!(chain_id, port, "Failed to spawn server"));
+                    .unwrap_or_else(|e| warn!(chain_id, port, "Failed to spawn server: {}", e));
 
-                info!(chain_id, port, "Mockrpc server online");
+                info!(chain_id, port, "Mockrpc server shut down");
             });
         }
 
-        anyhow::Ok((port_map, cancellation_token))
+        Ok((port_map, cancellation_token))
     }
 }
 
@@ -227,14 +227,15 @@ async fn handle_send_raw_transaction(
     params: Option<Value>,
     id: Option<Value>,
 ) -> RpcResponse {
-    let payload: SendRawTransactionParams = match serde_json::from_value(params.unwrap_or_default())
-    {
-        Ok(payload) => payload,
-        Err(_) => return RpcResponse::invalid_params(id, "Invalid sendRawTransaction params."),
-    };
+    let payload =
+        match serde_json::from_value::<SendRawTransactionParams>(params.unwrap_or(Value::Null)) {
+            Ok(payload) if !payload.0.is_empty() => payload,
+            _ => return RpcResponse::invalid_params(id, "Invalid sendRawTransaction params."),
+        };
+    let raw_bytes = &payload.0[0];
 
     // decode RLP-encoded signed transaction envelope.
-    let envelope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
+    let envelope = match TxEnvelope::decode(&mut raw_bytes.as_ref()) {
         Ok(env) => env,
         Err(_) => {
             return RpcResponse::invalid_params(
@@ -274,15 +275,16 @@ async fn handle_get_transaction_receipt(
     params: Option<Value>,
     id: Option<Value>,
 ) -> RpcResponse {
-    let payload: GetTransactionReceiptParams =
-        match serde_json::from_value(params.unwrap_or_default()) {
-            Ok(payload) => payload,
-            Err(_) => {
+    let payload =
+        match serde_json::from_value::<GetTransactionReceiptParams>(params.unwrap_or_default()) {
+            Ok(payload) if !payload.0.is_empty() => payload,
+            _ => {
                 return RpcResponse::invalid_params(id, "Invalid GetTransactionReceipt params.");
             }
         };
+    let tx_hash = payload.0[0];
 
-    match ctx.chain_state.fetch_receipt(&payload.0) {
+    match ctx.chain_state.fetch_receipt(&tx_hash) {
         // receipt found, returns boxed RawValue
         Some(receipt) => RpcResponse::success(id, RpcResult::RecieptFound(receipt)),
 
