@@ -8,7 +8,8 @@ mod metrics;
 mod mockrpc;
 
 use crate::infra::InfraStack;
-use crate::loadgen::{build_apistack, write_test_keys_json};
+use crate::loadgen::{build_apistack, get_addresses, write_test_keys_json};
+use crate::mockrpc::RpcAppState;
 use anyhow::{Ok, Result};
 use std::path::Path;
 
@@ -22,9 +23,13 @@ async fn main() -> Result<()> {
     // 2. Build test-keys and api-keys
     write_test_keys_json(100)?;
     let path_test_keys = Path::new("test_keys.json");
-    let _api_stack = build_apistack(path_test_keys)?;
+    let api_stack = build_apistack(path_test_keys)?;
 
     // 3. Spawn mockrpc_servers
+    let chain_ids = vec![1, 137, 560048];
+    let addresses = get_addresses(&api_stack)?;
+    let app_state = RpcAppState::new(chain_ids, addresses);
+    app_state.spawn_mockrpc_servers().await?;
 
     // 4. Inititate tokio::process for lobby
     // 4.1 Inject env variables
