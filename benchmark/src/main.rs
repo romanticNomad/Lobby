@@ -8,7 +8,7 @@ mod metrics;
 mod mockrpc;
 
 use crate::infra::InfraStack;
-use crate::loadgen::{build_apistack, get_addresses, write_test_keys_json};
+use crate::loadgen::{Payloads, build_apistack, get_addresses, write_test_keys_json};
 use crate::mockrpc::RpcAppState;
 use anyhow::{Ok, Result};
 use std::path::Path;
@@ -21,14 +21,16 @@ async fn main() -> Result<()> {
     let _pg_pool = infra_stack.get_pool();
 
     // 2. Build test-keys and api-keys
+
     write_test_keys_json(100)?;
     let path_test_keys = Path::new("test_keys.json");
     let api_stack = build_apistack(path_test_keys)?;
 
     // 3. Spawn mockrpc_servers
+
     let chain_ids = vec![1, 137, 560048];
     let addresses = get_addresses(&api_stack)?;
-    let app_state = RpcAppState::new(chain_ids, addresses);
+    let app_state = RpcAppState::new(chain_ids.clone(), addresses);
     app_state.spawn_mockrpc_servers().await?;
 
     // 4. Inititate tokio::process for lobby
@@ -36,6 +38,7 @@ async fn main() -> Result<()> {
     // 4.2 Launch lobby binary with "benchmark-telemetry" feature flag
 
     // 5. Start benchark with loadgen::TxTrigger
+    let pre_built_payload = Payloads::build_payloads(&api_stack, chain_ids);
 
     // 6. Initiate telemetry_stream_reader task
 
