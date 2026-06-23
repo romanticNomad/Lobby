@@ -8,10 +8,21 @@ mod metrics;
 mod mockrpc;
 
 use crate::infra::InfraStack;
-use crate::loadgen::{Payloads, build_apistack, get_addresses, write_test_keys_json};
+use crate::loadgen::{
+    DynamicRateController, Payloads, TxTrigger, build_apistack, get_addresses, write_test_keys_json,
+};
 use crate::mockrpc::RpcAppState;
 use anyhow::{Ok, Result};
 use std::path::Path;
+
+// =============================================================================
+// constants
+const RAMP_SECS: f64 = 5.0;
+const TARGET_TPS: f64 = 1000.0;
+const INITIAL_DELAY_US: f64 = 10_000.0;
+
+// =============================================================================
+// bench boot sequence
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,7 +49,8 @@ async fn main() -> Result<()> {
     // 4.2 Launch lobby binary with "benchmark-telemetry" feature flag
 
     // 5. Start benchark with loadgen::TxTrigger
-    let pre_built_payload = Payloads::build_payloads(&api_stack, chain_ids);
+    let _rate_controller = DynamicRateController::new(RAMP_SECS, TARGET_TPS, INITIAL_DELAY_US);
+    let _payloads = Payloads::build_payloads(&api_stack, &chain_ids);
 
     // 6. Initiate telemetry_stream_reader task
 

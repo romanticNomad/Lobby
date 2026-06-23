@@ -11,7 +11,6 @@ use tokio::sync::mpsc;
 
 // =============================================================================
 // Constants
-// =============================================================================
 
 /// A dummy EVM address used for receiving transactions.
 ///
@@ -20,7 +19,6 @@ pub const RECIPIENT_ADDRESS: &str = "0x430b3af2c718497fe0add817c8ead48c8bd2ef61"
 
 // =============================================================================
 // Errors
-// =============================================================================
 
 /// Errors involved in trigger action to Lobby server
 #[derive(Debug, Error)]
@@ -40,7 +38,6 @@ pub enum TriggerError {
 
 // =============================================================================
 // Payload Structures
-// =============================================================================
 
 /// Thread-safe, pre-serialized transaction payload with associated API key.
 ///
@@ -85,11 +82,10 @@ impl Payloads {
                 let chain_id_hex = format!("0x{:x}", chain_id);
 
                 // Robust parsing of the Lobby API key format: <token>:<client_id>:<from_address>
-                let from_address = elements
-                    .value()
-                    .split(':')
-                    .nth(2)
-                    .expect("Invalid API key format: expected <token>:<client_id>:<from_address>");
+                let from_address =
+                    elements.value().split(':').nth(2).expect(
+                        "Invalid API key format: expected <token>:<client_id>:<from_address>",
+                    );
 
                 let rpc_payload = serde_json::json!({
                     "jsonrpc": "2.0",
@@ -131,7 +127,6 @@ impl Payloads {
 
 // =============================================================================
 // Dispatch Record
-// =============================================================================
 
 /// Structured output from a successful dispatch, consumed by `metrics.rs`.
 #[derive(Debug, Clone)]
@@ -165,7 +160,6 @@ impl DispatchRecord {
 
 // =============================================================================
 // Rate Controller (Virtual Clock Pacer)
-// =============================================================================
 
 /// Deterministic inter-arrival scheduler using a Virtual Clock Pacer.
 ///
@@ -198,7 +192,7 @@ impl DynamicRateController {
     /// Guarantees deterministic spacing even across 1000+ concurrent Tokio workers.
     pub async fn wait_for_next_slot(&self, start_instant: Instant) {
         // 1. Lock virtual clock, claim timestamp, calculate next delay, drop lock immediately
-        let (target_virtual_time, delay_us) = {
+        let target_virtual_time = {
             let mut next_time = self.next_virtual_time_us.lock().unwrap();
             let current_virtual = *next_time;
 
@@ -211,7 +205,7 @@ impl DynamicRateController {
             };
 
             *next_time = current_virtual + current_delay;
-            (current_virtual, current_delay)
+            current_virtual
         };
 
         // 2. Calculate wall-clock deadline
@@ -222,21 +216,15 @@ impl DynamicRateController {
         if target_instant > now {
             tokio::time::sleep(target_instant - now).await;
         }
-
-        // Note: `delay_us` is calculated but not directly used for sleep here,
-        // as we sleep until the absolute `target_instant` to prevent drift accumulation.
-        let _ = delay_us;
     }
 }
 
 // =============================================================================
 // Main Struct: `TxTrigger`
-// =============================================================================
 
 /// High-throughput transaction dispatcher with deterministic rate control.
 ///
-/// Designed to be cloned across multiple Tokio worker tasks. Internally shares
-/// `Arc`-backed state for payloads and rate limiting to avoid lock contention
+/// Internally shares`Arc`-backed state for payloads and rate limiting to avoid lock contention
 /// and heap allocations during the hot dispatch path.
 #[derive(Clone)]
 pub struct TxTrigger {
@@ -319,7 +307,8 @@ impl TxTrigger {
 
         // Use try_send to avoid blocking the hot path if the metrics aggregator lags
         let _ = metrics_tx.try_send(record);
-
         Ok(())
     }
 }
+
+// =============================================================================
