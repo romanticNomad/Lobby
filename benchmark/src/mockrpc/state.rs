@@ -7,7 +7,10 @@ use alloy::{
 };
 use dashmap::DashMap;
 use serde_json::value::RawValue;
-use std::sync::{Arc, OnceLock, atomic::AtomicU64, atomic::Ordering};
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 use thiserror::Error;
 
 // ============================================================

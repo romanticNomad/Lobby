@@ -5,6 +5,7 @@ use crate::mockrpc::state::NonceUpdateOutcome;
 use alloy::primitives::{Address, TxHash};
 use serde_json::value::RawValue;
 use std::sync::Arc;
+
 // ============================================================
 // state contract
 
@@ -30,3 +31,6 @@ pub trait MockRpcState: Send + Sync {
 }
 
 // ============================================================
+// re-exports
+
+pub use router::RpcAppState;

@@ -5,14 +5,13 @@ use crate::mockrpc::{
 use alloy::primitives::Address;
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
-    primitives::TxHash,
-    rlp::Decodable,
+    eips::eip2718::Decodable2718, // eip2718::Decodable2718 is used instead of rlp::Decodable trait, to respect EIP-2719 type-flag prefix.
+    primitives::{Bytes, TxHash}, // important to use alloy::primitives::Bytes and not bytes::Bytes, to allow correct ethereum hex ecoding.
 };
 use axum::{
     routing::post,
     {Extension, Json, Router},
 };
-use bytes::Bytes;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -34,18 +33,18 @@ pub type ChainRegistry = DashMap<u64, Arc<ChainState>>;
 /// std Hasmap for mapping `chain_id` to respective `ports`
 #[derive(Debug)]
 pub struct PortMap {
-    port_map: HashMap<u64, u16>,
+    pub inner: HashMap<u64, u16>,
 }
 
 impl PortMap {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            port_map: HashMap::with_capacity(capacity),
+            inner: HashMap::with_capacity(capacity),
         }
     }
 
     pub fn insert(&mut self, chain_id: u64, port: u16) {
-        self.port_map.insert(chain_id, port);
+        self.inner.insert(chain_id, port);
     }
 }
 
@@ -67,15 +66,15 @@ pub struct RpcRequest {
 /// * `TxHash` for `eth_sentRawTrasnsaction` request.
 /// * `Arc<Box<RawValue>>` when `eth_getTransactionReciept` returns a receipt.
 /// * `Value::None` when `eth_getTransactionReciept` does not return a receipt.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RpcResult {
     TxHash(TxHash),
-    RecieptFound(Arc<Box<RawValue>>),
-    RecieptNotFound(Value),
+    ReceiptFound(Arc<Box<RawValue>>),
+    ReceiptNotFound(Value),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,7 +84,7 @@ pub struct RpcResponse {
     pub id: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RpcError {
     pub code: i64,
     pub message: String,
@@ -93,11 +92,11 @@ pub struct RpcError {
 
 /// eth_sendRawTransaction: ["0x<rlp_encoded_signed_tx>"]
 #[derive(Debug, Deserialize)]
-pub struct SendRawTransactionParams(pub Bytes);
+pub struct SendRawTransactionParams(pub Vec<Bytes>);
 
 /// eth_getTransactionReceipt: ["0x<tx_hash>"]
 #[derive(Debug, Deserialize)]
-pub struct GetTransactionReceiptParams(pub TxHash);
+pub struct GetTransactionReceiptParams(pub Vec<TxHash>);
 
 impl RpcResponse {
     pub fn success(id: Option<Value>, result: RpcResult) -> Self {
@@ -129,16 +128,6 @@ impl RpcResponse {
 }
 
 // ============================================================
-// RpcAppState.
-
-/// Primary AppState for mock rpc servers.
-///
-/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
-pub struct RpcAppState {
-    registry: Arc<ChainRegistry>,
-}
-
-// ============================================================
 // router contexct
 
 /// `chain` scoped router context for the axum server.
@@ -158,7 +147,14 @@ impl ChainContext {
 }
 
 // ============================================================
-// server implimentation for `RpcAppState`
+// RpcAppState. and server implimentation
+
+/// Primary AppState for mock rpc servers.
+///
+/// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
+pub struct RpcAppState {
+    registry: Arc<ChainRegistry>,
+}
 
 impl RpcAppState {
     pub fn new(chain_ids: Vec<u64>, addresses: Vec<Address>) -> Self {
@@ -173,6 +169,7 @@ impl RpcAppState {
     }
 
     /// Spawns isolated Axum servers per chain_id.
+    ///
     /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
     pub async fn spawn_mockrpc_servers(&self) -> anyhow::Result<(PortMap, CancellationToken)> {
         let mut port_map = PortMap::with_capacity(self.registry.len());
@@ -187,6 +184,8 @@ impl RpcAppState {
             let port = listner.local_addr()?.port();
             port_map.insert(chain_id, port);
 
+            info!(chain_id, port, "Mockrpc server online");
+
             let token = cancellation_token.clone();
             tokio::spawn(async move {
                 axum::serve(listner, app)
@@ -194,13 +193,13 @@ impl RpcAppState {
                         token.cancelled().await;
                     })
                     .await
-                    .unwrap_or(warn!(chain_id, port, "Failed to spawn server"));
+                    .unwrap_or_else(|e| warn!(chain_id, port, "Failed to spawn server: {}", e));
 
-                info!(chain_id, port, "Mockrpc server online");
+                info!(chain_id, port, "Mockrpc server shut down");
             });
         }
 
-        anyhow::Ok((port_map, cancellation_token))
+        Ok((port_map, cancellation_token))
     }
 }
 
@@ -227,19 +226,26 @@ async fn handle_send_raw_transaction(
     params: Option<Value>,
     id: Option<Value>,
 ) -> RpcResponse {
-    let payload: SendRawTransactionParams = match serde_json::from_value(params.unwrap_or_default())
-    {
-        Ok(payload) => payload,
-        Err(_) => return RpcResponse::invalid_params(id, "Invalid sendRawTransaction params."),
-    };
+    let payload =
+        match serde_json::from_value::<SendRawTransactionParams>(params.unwrap_or(Value::Null)) {
+            Ok(payload) if !payload.0.is_empty() => payload,
+            _ => return RpcResponse::invalid_params(id, "Invalid sendRawTransaction params."),
+        };
+    let raw_bytes = &payload.0[0];
+
+    // // DEBUG: Log the first few bytes as hex to verify content
+    // println!(
+    //     "Received raw transaction bytes (hex): 0x{}",
+    //     hex::encode(&raw_bytes[..std::cmp::min(10, raw_bytes.len())])
+    // );
 
     // decode RLP-encoded signed transaction envelope.
-    let envelope = match TxEnvelope::decode(&mut payload.0.as_ref()) {
+    let envelope = match TxEnvelope::decode_2718(&mut raw_bytes.as_ref()) {
         Ok(env) => env,
         Err(_) => {
             return RpcResponse::invalid_params(
                 id,
-                "Invalid RLP encoding to eth_sendRawTransaction params",
+                "Invalid RLP encoding for eth_sendRawTransaction params",
             );
         }
     };
@@ -274,20 +280,21 @@ async fn handle_get_transaction_receipt(
     params: Option<Value>,
     id: Option<Value>,
 ) -> RpcResponse {
-    let payload: GetTransactionReceiptParams =
-        match serde_json::from_value(params.unwrap_or_default()) {
-            Ok(payload) => payload,
-            Err(_) => {
+    let payload =
+        match serde_json::from_value::<GetTransactionReceiptParams>(params.unwrap_or_default()) {
+            Ok(payload) if !payload.0.is_empty() => payload,
+            _ => {
                 return RpcResponse::invalid_params(id, "Invalid GetTransactionReceipt params.");
             }
         };
+    let tx_hash = payload.0[0];
 
-    match ctx.chain_state.fetch_receipt(&payload.0) {
+    match ctx.chain_state.fetch_receipt(&tx_hash) {
         // receipt found, returns boxed RawValue
-        Some(receipt) => RpcResponse::success(id, RpcResult::RecieptFound(receipt)),
+        Some(receipt) => RpcResponse::success(id, RpcResult::ReceiptFound(receipt)),
 
         // Standard: null for unmined/unknown txs
-        None => RpcResponse::success(id, RpcResult::RecieptNotFound(Value::Null)),
+        None => RpcResponse::success(id, RpcResult::ReceiptNotFound(Value::Null)),
     }
 }
 
@@ -298,6 +305,150 @@ fn build_router(ctx: ChainContext) -> Router {
     Router::new()
         .route("/", post(handle_jsonrpc))
         .layer(Extension(ctx))
+}
+
+// ============================================================
+// unit tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        consensus::{SignableTransaction, TxEip1559, TxEnvelope},
+        eips::eip2718::Encodable2718,
+        network::TxSignerSync,
+        primitives::{Address, Bytes, U256},
+        signers::local::PrivateKeySigner,
+    };
+    use reqwest::Client;
+    use serde_json::json;
+
+    /// Helper to spin up 3 mock servers for testing
+    async fn setup_servers() -> (PortMap, CancellationToken) {
+        // Simulating 3 chains: Ethereum (1), Polygon (137), Hoodi (560048)
+        let chain_ids = vec![1, 137, 560048];
+        let addresses = vec![Address::ZERO]; // Mock custody addresses
+        let state = RpcAppState::new(chain_ids, addresses);
+        state.spawn_mockrpc_servers().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_mockrpc_servers_lifecycle_and_routing() {
+        let (port_map, token) = setup_servers().await;
+        let client = Client::new();
+
+        // 1. Verify all 3 servers are listening and routing invalid methods correctly
+        for chain_id in [1, 137, 560048] {
+            let port = port_map.inner.get(&chain_id).unwrap();
+            let url = format!("http://127.0.0.1:{}", port);
+
+            let req = json!({
+                "jsonrpc": "2.0",
+                "method": "eth_invalidMethod",
+                "params": [],
+                "id": 1
+            });
+
+            let res: RpcResponse = client
+                .post(&url)
+                .json(&req)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(
+                res.error.unwrap().code,
+                -32601,
+                "Chain {} should return Method Not Found",
+                chain_id
+            );
+        }
+
+        // 2. Test eth_getTransactionReceipt for an unknown hash (should return null)
+        let port = port_map.inner.get(&1).unwrap();
+        let url = format!("http://127.0.0.1:{}", port);
+        let req = json!({
+            "jsonrpc": "2.0",
+            "method": "eth_getTransactionReceipt",
+            "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+            "id": 2
+        });
+        let res: RpcResponse = client
+            .post(&url)
+            .json(&req)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(res.error.is_none());
+        assert!(
+            res.result.is_none(),
+            "Expected result to be None (JSON null), but got: {:?}",
+            res.result
+        );
+
+        // 3. Test eth_sendRawTransaction with a valid, dynamically signed EIP-1559 transaction
+        // Using Hardhat/Anvil default private key for deterministic testing
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+
+        let mut tx = TxEip1559 {
+            chain_id: 1,
+            nonce: 0,
+            gas_limit: 21000,
+            max_fee_per_gas: 1_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            to: alloy::primitives::TxKind::Call(Address::ZERO),
+            value: U256::ZERO,
+            input: Bytes::new(),
+            access_list: Default::default(),
+        };
+
+        // Sign the transaction synchronously for the test
+        let sig = signer.sign_transaction_sync(&mut tx).unwrap();
+        let signed_tx = tx.into_signed(sig);
+        let envelope = TxEnvelope::from(signed_tx);
+        let raw_bytes = envelope.encoded_2718();
+        let hex_bytes = format!("0x{}", hex::encode(raw_bytes));
+
+        let req = json!({
+            "jsonrpc": "2.0",
+            "method": "eth_sendRawTransaction",
+            "params": [hex_bytes],
+            "id": 3
+        });
+
+        let res: RpcResponse = client
+            .post(&url)
+            .json(&req)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(
+            res.error.is_none(),
+            "Expected success, got error: {:?}",
+            res.error
+        );
+        assert!(
+            matches!(res.result, Some(RpcResult::TxHash(_))),
+            "Expected TxHash result"
+        );
+
+        // 4. Cleanup: Gracefully shut down all 3 servers
+        token.cancel();
+
+        // Give tokio a moment to process the shutdown signals
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 // ============================================================

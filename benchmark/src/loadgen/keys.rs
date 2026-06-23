@@ -1,3 +1,4 @@
+use alloy::primitives::Address;
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use hex::encode;
@@ -6,6 +7,7 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha3::{Digest, Keccak256};
+use std::str::FromStr;
 use std::{collections::HashMap, fs, path::Path};
 use uuid::Uuid;
 
@@ -150,18 +152,19 @@ pub fn build_apistack(filepath: &Path) -> Result<ApiStack> {
     Ok(api_stack)
 }
 
-pub fn get_addresses(api_stack: &ApiStack) -> Vec<String> {
-    let addresses: Vec<String> = api_stack
+pub fn get_addresses(api_stack: &ApiStack) -> Result<Vec<Address>> {
+    let addresses: Vec<Address> = api_stack
         .into_iter()
         .map(|element| {
             let api_key = element.value();
             let api_key_elements: Vec<&str> = api_key.split(':').collect();
-            let address = api_key_elements[2].to_string();
-            address
+            let address_str = api_key_elements[2];
+            let evm_address = Address::from_str(address_str).unwrap();
+            evm_address
         })
         .collect();
 
-    addresses
+    Ok(addresses)
 }
 
 // ============================================================
