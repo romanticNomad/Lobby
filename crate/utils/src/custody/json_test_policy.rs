@@ -30,11 +30,12 @@ pub struct JsonPolicyEngine {
 
 impl JsonPolicyEngine {
     pub fn load_file(path: &str) -> Self {
-        let file = File::open(path).unwrap_or_else(|e| panic!("Unable to open file {}. {}", path, e));
+        let file =
+            File::open(path).unwrap_or_else(|e| panic!("Unable to open file {}. {}", path, e));
         let reader = BufReader::new(file);
 
-        let raw: HashMap<String, PolicyAccount> =
-            serde_json::from_reader(reader).unwrap_or_else(|e| panic!("Unable to read file {}. {}", path, e));
+        let raw: HashMap<String, PolicyAccount> = serde_json::from_reader(reader)
+            .unwrap_or_else(|e| panic!("Unable to read file {}. {}", path, e));
         let keys = DashMap::new();
 
         for account in raw.values() {
@@ -81,8 +82,15 @@ impl PolicyEngine for JsonPolicyEngine {
 
 /// return the number of keys / evm accounts in custody of lobby
 pub fn export_custody_key_count() -> usize {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json");
+    let path = match std::env::var("LOBBY_TEST_KEYS") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => {
+            tracing::warn!("test-keys path variable not found, switching to MANIFEST path");
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json")
+        }
+    };
     let file = JsonPolicyEngine::load_file(path.to_str().unwrap());
+
     file.keys.len()
 }
 
