@@ -30,11 +30,11 @@ pub struct JsonPolicyEngine {
 
 impl JsonPolicyEngine {
     pub fn load_file(path: &str) -> Self {
-        let file = File::open(path).expect("policy file path invalid");
+        let file = File::open(path).unwrap_or_else(|e| panic!("Unable to open file {}. {}", path, e));
         let reader = BufReader::new(file);
 
         let raw: HashMap<String, PolicyAccount> =
-            serde_json::from_reader(reader).expect("Policy file invalid");
+            serde_json::from_reader(reader).unwrap_or_else(|e| panic!("Unable to read file {}. {}", path, e));
         let keys = DashMap::new();
 
         for account in raw.values() {

@@ -22,7 +22,10 @@ impl SignEngine {
     pub fn new(db: PgPool, rx: mpsc::Receiver<SignCommand>) -> Self {
         let keys_path = match std::env::var("LOBBY_TEST_KEYS") {
             Ok(path) => PathBuf::from(path),
-            Err(_) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json"),
+            Err(_) => {
+                tracing::warn!("test-keys path variable not found, switching to MANIFEST path");
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_keys.json")
+            }
         };
 
         match keys_path.try_exists() {
