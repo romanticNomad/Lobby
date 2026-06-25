@@ -8,15 +8,13 @@ mod metrics;
 mod mockrpc;
 
 use crate::infra::InfraStack;
-use crate::loadgen::{
-    DynamicRateController, Payloads, TxTrigger, build_apistack, get_addresses, write_test_keys_json,
-};
+use crate::loadgen::{DynamicRateController, Payloads, TxTrigger, build_apistack, get_addresses, write_test_keys_json, run_load_generator};
 use crate::mockrpc::RpcAppState;
 use anyhow::{Ok, Result};
 use reqwest::Client;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 // =============================================================================
@@ -73,6 +71,8 @@ async fn main() -> Result<()> {
     let client = Client::new();
     let base_url = String::from(BASE_URL);
     let tx_trigger = TxTrigger::new(BENCH_DURATION, payloads, client, base_url, rate_controller);
+
+    run_load_generator(tx_trigger, WORKER_THREADS, cancelation_token.clone()).await;
 
     // 6. Initiate telemetry_stream_reader task
 

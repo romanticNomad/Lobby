@@ -1,7 +1,6 @@
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 use reqwest::Client;
 use std::{
     sync::{Arc, Mutex},
@@ -134,6 +133,7 @@ pub struct DynamicRateController {
     ramp_duration_us: f64,
     min_inter_arrival_us: f64,
     max_inter_arrival_us: f64,
+    
     /// Shared virtual clock tracking the next allowed dispatch time in microseconds.
     /// Uses `std::sync::Mutex` as the critical section is non-blocking (nanoseconds).
     next_virtual_time_us: Mutex<f64>,
