@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 use thiserror::Error;
-use tokio::sync::mpsc;
 
 // =============================================================================
 // Constants
@@ -126,39 +125,6 @@ impl Payloads {
 }
 
 // =============================================================================
-// Dispatch Record
-
-/// Structured output from a successful dispatch, consumed by `metrics.rs`.
-#[derive(Debug, Clone)]
-pub struct DispatchRecord {
-    /// `execution_id` for status retrieval
-    execution_id: String,
-    /// Timestamp immediately before HTTP POST.
-    pub t_send: Instant,
-    /// Timestamp on HTTP 202 Accepted.
-    pub t_accept: Instant,
-    /// Index of the API key/account used (useful for shard-distribution validation).
-    pub api_key_index: usize,
-}
-
-impl DispatchRecord {
-    #[inline]
-    pub fn execution_id(&self) -> &str {
-        &self.execution_id
-    }
-
-    #[inline]
-    pub fn round_trip_latency_us(&self) -> u64 {
-        self.t_accept.duration_since(self.t_send).as_micros() as u64
-    }
-
-    #[inline]
-    pub fn api_key_index(&self) -> usize {
-        self.api_key_index
-    }
-}
-
-// =============================================================================
 // Rate Controller (Virtual Clock Pacer)
 
 /// Deterministic inter-arrival scheduler using a Virtual Clock Pacer.
@@ -228,6 +194,7 @@ impl DynamicRateController {
 /// and heap allocations during the hot dispatch path.
 #[derive(Clone)]
 pub struct TxTrigger {
+    bench_duration: Duration,
     payloads: Arc<Vec<PayloadEntry>>,
     client: Client,
     base_url: Arc<str>,
@@ -236,12 +203,14 @@ pub struct TxTrigger {
 
 impl TxTrigger {
     pub fn new(
+        bench_duration: Duration,
         payloads: Payloads,
         client: Client,
         base_url: String,
         rate_controller: Arc<DynamicRateController>,
     ) -> Self {
         Self {
+            bench_duration,
             payloads: payloads.entries,
             client,
             base_url: Arc::from(base_url.as_str()),
@@ -253,12 +222,8 @@ impl TxTrigger {
     /// and metric emission in a single call.
     ///
     /// * `start_instant` - Wall-clock benchmark start time (shared across workers).
-    /// * `metrics_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
-    pub async fn ramp_dispatch(
-        &self,
-        start_instant: Instant,
-        metrics_tx: &mpsc::Sender<DispatchRecord>,
-    ) -> Result<(), TriggerError> {
+    /// * `dispatch_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
+    pub async fn ramp_dispatch(&self, start_instant: Instant) -> Result<(), TriggerError> {
         // 1. Wait for exact inter-arrival slot (ramp or steady handled automatically)
         self.rate_controller.wait_for_next_slot(start_instant).await;
 
@@ -269,15 +234,13 @@ impl TxTrigger {
             .choose(&mut rng)
             .expect("Payloads collection is empty");
 
-        let t_send = Instant::now();
-
         // 3. Fire request (reqwest streams Bytes directly to kernel socket)
         let response = self
             .client
             .post(&*self.base_url)
             .header("Authorization", format!("Bearer {}", entry.api_key))
             .header("Content-Type", "application/json")
-            .body(entry.payload.clone()) // Arc-bump, zero allocation
+            .body(entry.payload.clone()) // Arc-backed, zero allocation
             .send()
             .await?;
 
@@ -286,27 +249,6 @@ impl TxTrigger {
             return Err(TriggerError::UnexpectedStatus(status));
         }
 
-        let t_accept = Instant::now();
-
-        // 4. Extract execution_id for server-side pipeline correlation
-        let body: serde_json::Value = response.json().await?;
-        let execution_id = body
-            .get("result")
-            .and_then(|r| r.get("execution_id"))
-            .and_then(|id| id.as_str())
-            .ok_or(TriggerError::MissingExecutionId)?
-            .to_string();
-
-        // 5. Emit metric record (non-blocking, drop if backpressured)
-        let record = DispatchRecord {
-            execution_id,
-            t_send,
-            t_accept,
-            api_key_index: entry.index,
-        };
-
-        // Use try_send to avoid blocking the hot path if the metrics aggregator lags
-        let _ = metrics_tx.try_send(record);
         Ok(())
     }
 }

@@ -13,13 +13,25 @@ use crate::loadgen::{
 };
 use crate::mockrpc::RpcAppState;
 use anyhow::{Ok, Result};
+use reqwest::Client;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 
 // =============================================================================
 // constants
 const RAMP_SECS: f64 = 5.0;
-const TARGET_TPS: f64 = 1000.0;
+const TARGET_TPS: f64 = 1_000.0;
 const INITIAL_DELAY_US: f64 = 10_000.0;
+const BASE_URL: &str = "http://localhost:3000/v1/transactions";
+const BENCH_DURATION: Duration = Duration::from_secs(60);
+
+/// `Little's Law`: L = k * λ * W, where
+/// * `λ` = throughput (transaction per second) => eg: 1_000
+/// * `W` = expected latency => eg: 1 ms
+/// * `k` = correction term
+const WORKER_THREADS: usize = 3;
 
 // =============================================================================
 // bench boot sequence
@@ -39,18 +51,28 @@ async fn main() -> Result<()> {
 
     // 3. Spawn mockrpc_servers
 
+    let cancelation_token = CancellationToken::new();
     let chain_ids = vec![1, 137, 560048];
     let addresses = get_addresses(&api_stack)?;
     let app_state = RpcAppState::new(chain_ids.clone(), addresses);
-    app_state.spawn_mockrpc_servers().await?;
+    app_state
+        .spawn_mockrpc_servers(cancelation_token.clone())
+        .await?;
 
     // 4. Inititate tokio::process for lobby
-    // 4.1 Inject env variables
+    // 4.1 Build env variables
     // 4.2 Launch lobby binary with "benchmark-telemetry" feature flag
 
     // 5. Start benchark with loadgen::TxTrigger
-    let _rate_controller = DynamicRateController::new(RAMP_SECS, TARGET_TPS, INITIAL_DELAY_US);
-    let _payloads = Payloads::build_payloads(&api_stack, &chain_ids);
+    let rate_controller = Arc::new(DynamicRateController::new(
+        RAMP_SECS,
+        TARGET_TPS,
+        INITIAL_DELAY_US,
+    ));
+    let payloads = Payloads::build_payloads(&api_stack, &chain_ids);
+    let client = Client::new();
+    let base_url = String::from(BASE_URL);
+    let tx_trigger = TxTrigger::new(BENCH_DURATION, payloads, client, base_url, rate_controller);
 
     // 6. Initiate telemetry_stream_reader task
 
