@@ -171,9 +171,11 @@ impl RpcAppState {
     /// Spawns isolated Axum servers per chain_id.
     ///
     /// Returns `(port_map, shutdown_token)` for `main.rs` orchestration.
-    pub async fn spawn_mockrpc_servers(&self) -> anyhow::Result<(PortMap, CancellationToken)> {
+    pub async fn spawn_mockrpc_servers(
+        &self,
+        cancellation_token: CancellationToken,
+    ) -> anyhow::Result<PortMap> {
         let mut port_map = PortMap::with_capacity(self.registry.len());
-        let cancellation_token = CancellationToken::new();
 
         for map_ref in self.registry.iter() {
             let (chain_id, chain_state) = (map_ref.key().clone(), map_ref.value().clone());
@@ -185,7 +187,6 @@ impl RpcAppState {
             port_map.insert(chain_id, port);
 
             info!(chain_id, port, "Mockrpc server online");
-
             let token = cancellation_token.clone();
             tokio::spawn(async move {
                 axum::serve(listner, app)
@@ -199,7 +200,7 @@ impl RpcAppState {
             });
         }
 
-        Ok((port_map, cancellation_token))
+        Ok(port_map)
     }
 }
 
@@ -329,7 +330,12 @@ mod tests {
         let chain_ids = vec![1, 137, 560048];
         let addresses = vec![Address::ZERO]; // Mock custody addresses
         let state = RpcAppState::new(chain_ids, addresses);
-        state.spawn_mockrpc_servers().await.unwrap()
+        let cancellation_token = CancellationToken::new();
+        let port_map = state
+            .spawn_mockrpc_servers(cancellation_token.clone())
+            .await
+            .unwrap();
+        (port_map, cancellation_token)
     }
 
     #[tokio::test]
@@ -341,7 +347,6 @@ mod tests {
         for chain_id in [1, 137, 560048] {
             let port = port_map.inner.get(&chain_id).unwrap();
             let url = format!("http://127.0.0.1:{}", port);
-
             let req = json!({
                 "jsonrpc": "2.0",
                 "method": "eth_invalidMethod",
