@@ -1,6 +1,7 @@
 use crate::loadgen::keys::ApiStack;
 use bytes::Bytes;
 use rand::seq::SliceRandom;
+use rand::thread_rng;
 use reqwest::Client;
 use std::{
     sync::{Arc, Mutex},
@@ -85,7 +86,6 @@ impl Payloads {
                     elements.value().split(':').nth(2).expect(
                         "Invalid API key format: expected <token>:<client_id>:<from_address>",
                     );
-
                 let rpc_payload = serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "eth_sendRawTransaction",
@@ -100,7 +100,6 @@ impl Payloads {
                     }],
                     "id": 1
                 });
-
                 let payload: Bytes = serde_json::to_vec(&rpc_payload)
                     .expect("Pre-serialization failed")
                     .into();
@@ -194,7 +193,7 @@ impl DynamicRateController {
 /// and heap allocations during the hot dispatch path.
 #[derive(Clone)]
 pub struct TxTrigger {
-    bench_duration: Duration,
+    pub bench_duration: Duration,
     payloads: Arc<Vec<PayloadEntry>>,
     client: Client,
     base_url: Arc<str>,
@@ -218,6 +217,11 @@ impl TxTrigger {
         }
     }
 
+    #[inline]
+    pub fn duration(&self) -> Duration {
+        self.bench_duration
+    }
+
     /// Unified dispatch function. Handles timing, payload selection, HTTP POST,
     /// and metric emission in a single call.
     ///
@@ -227,12 +231,11 @@ impl TxTrigger {
         // 1. Wait for exact inter-arrival slot (ramp or steady handled automatically)
         self.rate_controller.wait_for_next_slot(start_instant).await;
 
-        // 2. Zero-copy payload selection (O(1), lock-free)
-        let mut rng = rand::thread_rng();
-        let entry = self
-            .payloads
-            .choose(&mut rng)
-            .expect("Payloads collection is empty");
+        // 2. Zero-copy payload selection (O(1), lock-free), scoped in order to drop `ThreadRng` which is `!Send`.
+        let entry = {
+            let mut rng = rand::thread_rng();
+            self.payloads.choose(&mut rng).unwrap().clone()
+        };
 
         // 3. Fire request (reqwest streams Bytes directly to kernel socket)
         let response = self
