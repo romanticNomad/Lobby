@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 use thiserror::Error;
-use tokio::sync::mpsc;
 
 // =============================================================================
 // Constants
@@ -29,9 +28,6 @@ pub enum TriggerError {
     #[error("Unexpected status code received: {0}")]
     UnexpectedStatus(reqwest::StatusCode),
 
-    #[error("Missing execution_id in response")]
-    MissingExecutionId,
-
     #[error("Json deserialization failed: {0}")]
     SerDe(#[from] serde_json::Error),
 }
@@ -44,7 +40,6 @@ pub enum TriggerError {
 /// Designed for O(1) random selection and zero-copy cloning via `Bytes`.
 #[derive(Debug, Clone)]
 pub struct PayloadEntry {
-    pub index: usize,
     pub api_key: String,
     pub payload: Bytes,
 }
@@ -67,7 +62,7 @@ impl Payloads {
     ///
     /// **Note:** JSON-RPC body values are fixed for benchmarking determinism.
     /// Actual gas/nonce/state will be handled by `mockrpc.rs` or live RPC.
-    pub fn build_payloads(api_stack: &ApiStack, chain_ids: &[u64]) -> Self {
+    pub fn build_payloads(api_stack: ApiStack, chain_ids: Vec<u64>) -> Self {
         assert!(!chain_ids.is_empty(), "chain_ids cannot be empty");
 
         let entries: Vec<PayloadEntry> = api_stack
@@ -86,7 +81,6 @@ impl Payloads {
                     elements.value().split(':').nth(2).expect(
                         "Invalid API key format: expected <token>:<client_id>:<from_address>",
                     );
-
                 let rpc_payload = serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "eth_sendRawTransaction",
@@ -101,16 +95,11 @@ impl Payloads {
                     }],
                     "id": 1
                 });
-
                 let payload: Bytes = serde_json::to_vec(&rpc_payload)
                     .expect("Pre-serialization failed")
                     .into();
 
-                PayloadEntry {
-                    index,
-                    api_key,
-                    payload,
-                }
+                PayloadEntry { api_key, payload }
             })
             .collect();
 
@@ -122,39 +111,6 @@ impl Payloads {
     /// Helper function to extract the `Arc`-backed entries for `TxTrigger`.
     pub fn entries(&self) -> Arc<Vec<PayloadEntry>> {
         self.entries.clone()
-    }
-}
-
-// =============================================================================
-// Dispatch Record
-
-/// Structured output from a successful dispatch, consumed by `metrics.rs`.
-#[derive(Debug, Clone)]
-pub struct DispatchRecord {
-    /// `execution_id` for status retrieval
-    execution_id: String,
-    /// Timestamp immediately before HTTP POST.
-    pub t_send: Instant,
-    /// Timestamp on HTTP 202 Accepted.
-    pub t_accept: Instant,
-    /// Index of the API key/account used (useful for shard-distribution validation).
-    pub api_key_index: usize,
-}
-
-impl DispatchRecord {
-    #[inline]
-    pub fn execution_id(&self) -> &str {
-        &self.execution_id
-    }
-
-    #[inline]
-    pub fn round_trip_latency_us(&self) -> u64 {
-        self.t_accept.duration_since(self.t_send).as_micros() as u64
-    }
-
-    #[inline]
-    pub fn api_key_index(&self) -> usize {
-        self.api_key_index
     }
 }
 
@@ -195,7 +151,6 @@ impl DynamicRateController {
         let target_virtual_time = {
             let mut next_time = self.next_virtual_time_us.lock().unwrap();
             let current_virtual = *next_time;
-
             let current_delay = if current_virtual < self.ramp_duration_us {
                 let progress = current_virtual / self.ramp_duration_us;
                 self.max_inter_arrival_us
@@ -228,6 +183,7 @@ impl DynamicRateController {
 /// and heap allocations during the hot dispatch path.
 #[derive(Clone)]
 pub struct TxTrigger {
+    pub bench_duration: Duration,
     payloads: Arc<Vec<PayloadEntry>>,
     client: Client,
     base_url: Arc<str>,
@@ -236,40 +192,40 @@ pub struct TxTrigger {
 
 impl TxTrigger {
     pub fn new(
+        bench_duration: Duration,
         payloads: Payloads,
         client: Client,
         base_url: String,
         rate_controller: Arc<DynamicRateController>,
     ) -> Self {
         Self {
-            payloads: payloads.entries,
+            bench_duration,
+            payloads: payloads.entries(),
             client,
             base_url: Arc::from(base_url.as_str()),
             rate_controller,
         }
     }
 
+    #[inline]
+    pub fn duration(&self) -> Duration {
+        self.bench_duration
+    }
+
     /// Unified dispatch function. Handles timing, payload selection, HTTP POST,
     /// and metric emission in a single call.
     ///
     /// * `start_instant` - Wall-clock benchmark start time (shared across workers).
-    /// * `metrics_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
-    pub async fn ramp_dispatch(
-        &self,
-        start_instant: Instant,
-        metrics_tx: &mpsc::Sender<DispatchRecord>,
-    ) -> Result<(), TriggerError> {
+    /// * `dispatch_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
+    pub async fn ramp_dispatch(&self, start_instant: Instant) -> Result<(), TriggerError> {
         // 1. Wait for exact inter-arrival slot (ramp or steady handled automatically)
         self.rate_controller.wait_for_next_slot(start_instant).await;
 
-        // 2. Zero-copy payload selection (O(1), lock-free)
-        let mut rng = rand::thread_rng();
-        let entry = self
-            .payloads
-            .choose(&mut rng)
-            .expect("Payloads collection is empty");
-
-        let t_send = Instant::now();
+        // 2. Zero-copy payload selection (O(1), lock-free), scoped in order to drop `ThreadRng` which is `!Send`.
+        let entry = {
+            let mut rng = rand::thread_rng();
+            self.payloads.choose(&mut rng).unwrap().clone()
+        };
 
         // 3. Fire request (reqwest streams Bytes directly to kernel socket)
         let response = self
@@ -277,7 +233,7 @@ impl TxTrigger {
             .post(&*self.base_url)
             .header("Authorization", format!("Bearer {}", entry.api_key))
             .header("Content-Type", "application/json")
-            .body(entry.payload.clone()) // Arc-bump, zero allocation
+            .body(entry.payload.clone()) // Arc-backed, zero allocation
             .send()
             .await?;
 
@@ -286,27 +242,6 @@ impl TxTrigger {
             return Err(TriggerError::UnexpectedStatus(status));
         }
 
-        let t_accept = Instant::now();
-
-        // 4. Extract execution_id for server-side pipeline correlation
-        let body: serde_json::Value = response.json().await?;
-        let execution_id = body
-            .get("result")
-            .and_then(|r| r.get("execution_id"))
-            .and_then(|id| id.as_str())
-            .ok_or(TriggerError::MissingExecutionId)?
-            .to_string();
-
-        // 5. Emit metric record (non-blocking, drop if backpressured)
-        let record = DispatchRecord {
-            execution_id,
-            t_send,
-            t_accept,
-            api_key_index: entry.index,
-        };
-
-        // Use try_send to avoid blocking the hot path if the metrics aggregator lags
-        let _ = metrics_tx.try_send(record);
         Ok(())
     }
 }
