@@ -28,9 +28,6 @@ pub enum TriggerError {
     #[error("Unexpected status code received: {0}")]
     UnexpectedStatus(reqwest::StatusCode),
 
-    #[error("Missing execution_id in response")]
-    MissingExecutionId,
-
     #[error("Json deserialization failed: {0}")]
     SerDe(#[from] serde_json::Error),
 }
@@ -43,7 +40,6 @@ pub enum TriggerError {
 /// Designed for O(1) random selection and zero-copy cloning via `Bytes`.
 #[derive(Debug, Clone)]
 pub struct PayloadEntry {
-    pub index: usize,
     pub api_key: String,
     pub payload: Bytes,
 }
@@ -66,7 +62,7 @@ impl Payloads {
     ///
     /// **Note:** JSON-RPC body values are fixed for benchmarking determinism.
     /// Actual gas/nonce/state will be handled by `mockrpc.rs` or live RPC.
-    pub fn build_payloads(api_stack: &ApiStack, chain_ids: &[u64]) -> Self {
+    pub fn build_payloads(api_stack: ApiStack, chain_ids: Vec<u64>) -> Self {
         assert!(!chain_ids.is_empty(), "chain_ids cannot be empty");
 
         let entries: Vec<PayloadEntry> = api_stack
@@ -103,11 +99,7 @@ impl Payloads {
                     .expect("Pre-serialization failed")
                     .into();
 
-                PayloadEntry {
-                    index,
-                    api_key,
-                    payload,
-                }
+                PayloadEntry { api_key, payload }
             })
             .collect();
 
@@ -133,7 +125,6 @@ pub struct DynamicRateController {
     ramp_duration_us: f64,
     min_inter_arrival_us: f64,
     max_inter_arrival_us: f64,
-    
     /// Shared virtual clock tracking the next allowed dispatch time in microseconds.
     /// Uses `std::sync::Mutex` as the critical section is non-blocking (nanoseconds).
     next_virtual_time_us: Mutex<f64>,
@@ -160,7 +151,6 @@ impl DynamicRateController {
         let target_virtual_time = {
             let mut next_time = self.next_virtual_time_us.lock().unwrap();
             let current_virtual = *next_time;
-
             let current_delay = if current_virtual < self.ramp_duration_us {
                 let progress = current_virtual / self.ramp_duration_us;
                 self.max_inter_arrival_us
@@ -210,7 +200,7 @@ impl TxTrigger {
     ) -> Self {
         Self {
             bench_duration,
-            payloads: payloads.entries,
+            payloads: payloads.entries(),
             client,
             base_url: Arc::from(base_url.as_str()),
             rate_controller,
