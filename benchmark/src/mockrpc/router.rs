@@ -54,6 +54,7 @@ impl PortMap {
 /// Standard JSON-RPC 2.0 envelope
 #[derive(Debug, Deserialize)]
 pub struct RpcRequest {
+    #[allow(dead_code)]
     pub jsonrpc: String,
     pub method: String,
     #[serde(default)]
@@ -131,8 +132,10 @@ impl RpcResponse {
 // router contexct
 
 /// `chain` scoped router context for the axum server.
+/// mapped by `port`, does not require `chain_id` indexing.
 #[derive(Clone)]
 pub struct ChainContext {
+    #[allow(dead_code)]
     chain_id: u64,
     chain_state: Arc<ChainState>,
 }
@@ -152,6 +155,7 @@ impl ChainContext {
 /// Primary AppState for mock rpc servers.
 ///
 /// used to build `ChainContext` for individual `chain_id(s)` and spawn respective servers.
+#[derive(Clone)]
 pub struct RpcAppState {
     registry: Arc<ChainRegistry>,
 }
@@ -335,6 +339,7 @@ mod tests {
             .spawn_mockrpc_servers(cancellation_token.clone())
             .await
             .unwrap();
+
         (port_map, cancellation_token)
     }
 
