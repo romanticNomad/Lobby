@@ -4,7 +4,7 @@ mod trigger;
 // ============================================================
 // re-exports
 
-pub use keys::{ApiStack, build_apistack, get_addresses, write_test_keys_json};
+pub use keys::{build_apistack, get_addresses, write_test_keys_json};
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 pub use trigger::{DynamicRateController, Payloads, RECIPIENT_ADDRESS, TxTrigger};
@@ -18,6 +18,7 @@ pub use trigger::{DynamicRateController, Payloads, RECIPIENT_ADDRESS, TxTrigger}
 /// Use Little's Law to determine the optimal concurrency level, preventing head-of-line
 /// blocking while the shared `DynamicRateController` enforces strict aggregate throughput.
 pub async fn run_load_generator(
+    start_instant: Instant,
     tx_trigger: TxTrigger,
     worker_threads: usize,
     cancellation_token: CancellationToken,
@@ -26,7 +27,7 @@ pub async fn run_load_generator(
 
     // spawn worker handles
     for worker_id in 0..worker_threads {
-        let start = Instant::now();
+        let start = start_instant.clone();
         let duration = tx_trigger.duration();
         let trigger = tx_trigger.clone();
         let token = cancellation_token.clone();
@@ -55,7 +56,6 @@ pub async fn run_load_generator(
                 worker_id
             );
         });
-
         handles.push(handle);
     }
 

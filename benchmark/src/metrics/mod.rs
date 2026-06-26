@@ -16,8 +16,8 @@ pub use deserialize::MetricsCollector;
 /// Connects to Lobby's telemetry UDS, consumes the NDJSON stream,
 /// and aggregates metrics until the stream closes or shutdown is triggered.
 pub async fn telemetry_stream_reader(
-    socket_path: &str,
     test_start: Instant,
+    socket_path: &str,
     warmup: Duration,
     steady_state: Duration,
     shutdown_token: CancellationToken,
