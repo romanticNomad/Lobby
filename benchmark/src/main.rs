@@ -2,23 +2,26 @@ mod infra;
 mod loadgen;
 mod metrics;
 mod mockrpc;
-#[cfg(test)]
-mod testbench;
 
-use crate::infra::InfraStack;
-use crate::loadgen::{
-    DynamicRateController, Payloads, TxTrigger, build_apistack, get_addresses, run_load_generator,
-    write_test_keys_json,
+use crate::{
+    infra::InfraStack,
+    loadgen::{
+        DynamicRateController, Payloads, TxTrigger, build_apistack, get_addresses,
+        run_load_generator, write_test_keys_json,
+    },
+    metrics::telemetry_stream_reader,
+    mockrpc::RpcAppState,
 };
-use crate::metrics::telemetry_stream_reader;
-use crate::mockrpc::RpcAppState;
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use reqwest::Client;
-use std::path::Path;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio_util::sync::CancellationToken;
-
+use tracing::{error, info};
 // ===========================================================
 // constants
 
@@ -48,7 +51,6 @@ async fn main() -> Result<()> {
     // 1. Set up Postgres and Redis
 
     let infra_stack = InfraStack::build().await?;
-    let _pg_pool = infra_stack.get_pool();
 
     // 2. Build test-keys and api-keys
 
@@ -61,11 +63,37 @@ async fn main() -> Result<()> {
     let chain_ids = vec![1, 137, 560048];
     let addresses = get_addresses(&api_stack)?;
     let app_state = RpcAppState::new(chain_ids.clone(), addresses);
-    app_state
+    let port_map = app_state
         .spawn_mockrpc_servers(cancelation_token.clone())
         .await?;
 
-    // 4. Inititate tokio::process for lobby
+    // 4.1 Build environment variables
+
+    let mut env_vars = parse_env_file("bench.env");
+    for (chain_id, port) in port_map.inner().iter() {
+        env_vars.insert(
+            format!("RPC_ENDPOINT_{}", chain_id),
+            format!("http://localhost:{}", port),
+        );
+    }
+    for entry in api_stack.iter() {
+        env_vars.insert(
+            format!("LOBBY_API_KEY_{}", entry.key()),
+            format!("{}", entry.value()),
+        );
+    }
+
+    // 4.2 Start Lobby process and check health
+
+    let mut child = tokio::process::Command::new("cargo")
+        .args(["run", "--release", "--bin", "lobby"])
+        .envs(env_vars)
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn lobby");
+
+    poll_till_timeout(3000, Duration::from_secs(30)).await;
 
     // 5. Initiate load generator and UDS stream reader.
     let rate_controller = Arc::new(DynamicRateController::new(
@@ -99,21 +127,68 @@ async fn main() -> Result<()> {
 
     let collected_metrics = metrics_collector_result?;
 
-    // 7. gracefull shutdowm
+    // 7. gracefull shutdown
 
-    loop {
-        let now = Instant::now();
-        if now.elapsed() > BENCH_DURATION {
-            cancelation_token.cancel();
-            break;
-        }
+    info!(
+        "benchmark compelete in {:?}: initiating teardown",
+        start_instant
+    );
+    if let Err(e) = child.kill().await {
+        eprintln!("⚠️ Failed to gracefully terminate lobby process: {}", e);
     }
+    cancelation_token.cancel();
+    infra_stack.teardown().await;
 
     // 8. report latancies
 
     collected_metrics.report();
 
     Ok(())
+}
+
+// ===========================================================
+// helper function
+
+/// Parses a `.env` file into a HashMap, handling `export ` prefixes and quotes.
+/// This allows us to merge static and dynamic variables in memory without disk I/O.
+fn parse_env_file(path_str: &str) -> HashMap<String, String> {
+    let mut env_variables = HashMap::new();
+    if let Ok(env_file) = std::fs::read_to_string(&path_str) {
+        for line in env_file.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let line = line.strip_prefix("export ").unwrap_or(line);
+            if let Some((k, v)) = line.split_once('=') {
+                let k = k.trim().to_string();
+                let v = v.trim().trim_matches('"').trim_matches('\'').to_string();
+                env_variables.insert(k, v);
+            }
+        }
+    }
+
+    env_variables
+}
+
+/// Polls a TCP port until it accepts connections or times out.
+/// Ensures the Axum server is fully bound before the load generator fires requests.
+async fn poll_till_timeout(port: u16, timeout: Duration) -> bool {
+    let start = Instant::now();
+    let url = format!("http://localhost:{}", port);
+    while start.elapsed() < timeout {
+        if tokio::net::TcpStream::connect(&url).await.is_ok() {
+            info!("Connected to lobby server at port: {}", port);
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    error!(
+        "faile to connect to lobby sever at port: {}, in {:?}",
+        port, timeout
+    );
+
+    false
 }
 
 // ===========================================================
