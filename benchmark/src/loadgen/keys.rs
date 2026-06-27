@@ -57,7 +57,7 @@ pub fn write_test_keys_json(sample_size: u64) -> Result<()> {
         test_keys_map.insert(entry, account);
     }
 
-    let path = "test_keys.json";
+    let path = "benchmark/test_keys.json";
     let test_keys_json = serde_json::to_string_pretty(&test_keys_map)?;
 
     fs::write(path, test_keys_json)?;

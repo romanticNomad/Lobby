@@ -11,6 +11,7 @@ use tracing::{info, warn};
 /// Central infrastructure context for the benchmark harness.
 ///
 /// Manages container lifecycles, health check probes, migrations, and dynamic port resolution.
+#[allow(dead_code)]
 pub struct InfraStack {
     pub pg_url: String,
     pub redis_url: String,
@@ -122,7 +123,7 @@ impl InfraStack {
     }
 
     /// Returns a reference to the internal `PgPool`.
-    #[inline]
+    #[allow(dead_code)]
     pub fn get_pool(&self) -> PgPool {
         self.pool.clone() // cheap Arc<> clone
     }

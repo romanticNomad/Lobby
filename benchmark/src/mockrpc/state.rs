@@ -11,7 +11,6 @@ use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
-use thiserror::Error;
 
 // ============================================================
 //constants
@@ -21,16 +20,12 @@ pub const BLOCK_NUMBER: u64 = 18_000_000;
 
 // ============================================================
 // State structs
+
 pub enum NonceUpdateOutcome {
     NonceAdvanced(u64),
     NonceTooLow,
 }
 
-#[derive(Clone, Debug, Error)]
-pub enum StateError {
-    #[error("ChainState update failed: {0}")]
-    UpdateError(String),
-}
 // ============================================================
 
 /// Receipt holder struct designed for minimum heap-allocation
