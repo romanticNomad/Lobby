@@ -17,6 +17,7 @@ const HISTOGRAM_SIGFIGS: u8 = 3;
 /// Mirrors the `LatencyRecord` streamed by Lobby's `telemetry` exporter via UDS.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LatencyRecord {
+    #[allow(dead_code)]
     pub execution_id: String,
     pub relayhost_duration_us: u64,
     pub nonce_duration_us: u64,
@@ -53,7 +54,7 @@ impl StageMetrics {
     }
 
     /// merger function in case multiple workers read UDS stream.
-    #[inline]
+    #[allow(dead_code)]
     fn merge(&mut self, other: &StageMetrics) {
         self.histogram.add(&other.histogram).ok();
         self.dropped_count += other.dropped_count;
