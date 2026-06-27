@@ -46,6 +46,11 @@ impl PortMap {
     pub fn insert(&mut self, chain_id: u64, port: u16) {
         self.inner.insert(chain_id, port);
     }
+
+    #[inline]
+    pub fn inner(&self) -> &HashMap<u64, u16> {
+        &self.inner
+    }
 }
 
 // ============================================================
