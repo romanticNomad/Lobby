@@ -29,10 +29,8 @@ pub(crate) struct PipelineContext {
     pub client_config: ClientConfig,
     pub txn: Eip1559Transaction,
 
-    // actor handles
-    pub relayhost_handle: Arc<dyn IntentRelay>,
-
     // actor pools
+    pub relayhost_pool: Arc<ShardPool<dyn IntentRelay>>,
     pub nonce_pool: Arc<ShardPool<dyn NonceManager>>,
     pub sign_pool: Arc<ShardPool<dyn Signer>>,
     pub broadcast_pool: Arc<ShardPool<dyn Broadcaster>>,
@@ -44,6 +42,8 @@ pub(crate) struct PipelineContext {
     // pipeline state artifacts and telemetry (feature flagged)
     pub status: StatusRegistry,
     pub rpc_client: Arc<RpcClient>,
+
+    // feature-gated for benchmarking pipeline
     #[cfg(feature = "benchmark-telemetry")]
     pub telemetry: crate::telemetry::TelemetryContext,
 }
@@ -105,8 +105,11 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // relay host
 
+        // get relayhot handle from the shards hashed by execution_id
+        let relayhost_handle = ctx.relayhost_pool.get(&ByExecutionId(&execution_id));
+
         let rh_result = retry_with_backoff(&ctx.retry_config, "relay_host", || {
-            let rh = Arc::clone(&ctx.relayhost_handle);
+            let rh = Arc::clone(&relayhost_handle);
             let txn = ctx.txn.clone();
             let cc = ctx.client_config.clone();
 
@@ -249,10 +252,10 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             };
 
         // ============================================================
-        // broadcast (with nonce mismatch retry)
+        // broadcast (with nonce mismatch retry) -> testing by indexing with execution_id.
 
-        // getting the broadcast handle from shard pool (sequenced by chain_id)
-        let broadcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
+        // let broadcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
+        let broadcast_handle = ctx.broadcast_pool.get(&ByExecutionId(&execution_id));
         let mut nonce_retry_attempted = false;
 
         let outcome = loop {

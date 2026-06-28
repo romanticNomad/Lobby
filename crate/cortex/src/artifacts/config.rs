@@ -41,6 +41,7 @@ impl Default for RetryConfig {
 /// variables so that production tuning never requires a recompile.
 #[derive(Debug, Clone)]
 pub struct CortexConfig {
+    pub relay_host_shards: usize,
     pub nonce_shards: usize,
     pub sign_shards: usize,
     pub broadcast_shards: usize,
@@ -56,6 +57,7 @@ impl CortexConfig {
     /// any variable that is absent.
     pub fn from_env() -> Result<Self, ConfigError> {
         Ok(Self {
+            relay_host_shards: parse_env("RELAYHOST_SHARDS", 17)?,
             nonce_shards: parse_env("NONCE_SHARDS", 17)?,
             sign_shards: parse_env("SIGN_SHARDS", 17)?,
             broadcast_shards: parse_env("BROADCAST_SHARDS", 17)?,

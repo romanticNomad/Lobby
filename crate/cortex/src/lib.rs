@@ -1,5 +1,4 @@
 //! # Orchestrator
-//!
 //! Wires together all Lobby actors into a single pipeline:
 //!
 //! ```text
@@ -58,7 +57,7 @@ struct Cortex {
     telemetry: telemetry::TelemetryContext,
 
     // actor handles
-    relayhost: Arc<dyn IntentRelay>,
+    relayhost: Arc<ShardPool<dyn IntentRelay>>,
     nonce: Arc<ShardPool<dyn NonceManager>>,
     sign: Arc<ShardPool<dyn Signer>>,
     broadcast: Arc<ShardPool<dyn Broadcaster>>,
@@ -127,7 +126,7 @@ impl CortextHandle {
             execution_id,
             client_config,
             txn,
-            relayhost_handle: Arc::clone(&orch.relayhost),
+            relayhost_pool: Arc::clone(&orch.relayhost),
             nonce_pool: Arc::clone(&orch.nonce),
             sign_pool: Arc::clone(&orch.sign),
             broadcast_pool: Arc::clone(&orch.broadcast),
@@ -146,7 +145,6 @@ impl CortextHandle {
             let _permit = permit;
             run_pipeline(ctx).await;
         });
-
         Ok(())
     }
 
@@ -171,6 +169,7 @@ pub async fn spawn_cortex(
     #[cfg(feature = "benchmark-telemetry")] teletmetry_context: telemetry::TelemetryContext,
 ) -> CortextHandle {
     tracing::debug!(
+        relat_host_shards = config.relay_host_shards,
         nonce_shards = config.nonce_shards,
         sign_shards = config.sign_shards,
         broadcast_shards = config.broadcast_shards,
@@ -179,13 +178,18 @@ pub async fn spawn_cortex(
         "spawning cortex actor pools: "
     );
     // ============================================================
-    // relayhost handle
+    // relayhost handle pool - keyed by execution_id
 
-    let relayhost_handle = {
-        let handle = spawn_relayhost_actor(db.clone(), config.actor_buffer);
-        tracing::debug!("relay_host actor spawned");
+    let relayhost_pool = {
+        let shards: Vec<Arc<dyn IntentRelay>> = (0..config.relay_host_shards)
+            .map(|i| {
+                let handle = spawn_relayhost_actor(db.clone(), config.actor_buffer);
+                tracing::debug!(shard = i, "relayhost actor spawned");
+                Arc::new(handle) as Arc<dyn IntentRelay>
+            })
+            .collect();
 
-        Arc::new(handle) as Arc<dyn IntentRelay>
+        Arc::new(ShardPool::new(shards))
     };
 
     // ============================================================
@@ -281,7 +285,7 @@ pub async fn spawn_cortex(
         telemetry: teletmetry_context,
         rpc_client: provider_client,
         semaphore: pipeline_semaphore,
-        relayhost: relayhost_handle,
+        relayhost: relayhost_pool,
         nonce: nonce_pool,
         sign: sign_pool,
         broadcast: broadcast_pool,
