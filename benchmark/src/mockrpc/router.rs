@@ -232,7 +232,7 @@ async fn handle_jsonrpc(
 
             // spawn a blocking-thread -> for ecdsa recovery from rlp_payload
             let result = tokio::task::spawn_blocking(move || {
-                handle_send_raw_transaction(&ctx_clone, id, params)
+                handle_send_raw_transaction(&ctx_clone, params, id)
             })
             .await;
 
