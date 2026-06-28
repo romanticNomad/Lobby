@@ -11,10 +11,9 @@ use tracing::{info, warn};
 /// Central infrastructure context for the benchmark harness.
 ///
 /// Manages container lifecycles, health check probes, migrations, and dynamic port resolution.
-#[allow(dead_code)]
 pub struct InfraStack {
-    pub pg_url: String,
-    pub redis_url: String,
+    pg_url: String,
+    redis_url: String,
     pool: PgPool,
     pg_container: ContainerAsync<GenericImage>,
     redis_container: ContainerAsync<GenericImage>,
@@ -97,6 +96,12 @@ impl InfraStack {
             pg_container,
             redis_container,
         })
+    }
+
+    /// Return a tuple containing `Postgres` and `Redis` urls.
+    #[inline]
+    pub fn get_urls(&self) -> (String, String) {
+        (self.pg_url.clone(), self.redis_url.clone())
     }
 
     /// Explicit async teardown. Preferred over relying solely on `Drop` for benchmarks
