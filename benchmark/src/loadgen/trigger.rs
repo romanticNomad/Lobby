@@ -238,7 +238,7 @@ impl TxTrigger {
             .await?;
 
         let status = response.status();
-        if status != reqwest::StatusCode::ACCEPTED {
+        if status != reqwest::StatusCode::OK {
             return Err(TriggerError::UnexpectedStatus(status));
         }
 
