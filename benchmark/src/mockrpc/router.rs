@@ -2,7 +2,7 @@ use crate::mockrpc::{
     MockRpcState,
     state::{ChainState, NonceUpdateOutcome},
 };
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U64};
 use alloy::{
     consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable},
     eips::eip2718::Decodable2718, // eip2718::Decodable2718 is used instead of rlp::Decodable trait, to respect EIP-2719 type-flag prefix.
@@ -17,10 +17,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
+use anyhow::Chain;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-
+use crate::mockrpc::state::BLOCK_NUMBER;
 // ============================================================
 // type alias
 
@@ -78,6 +79,7 @@ pub enum RpcResult {
     TxHash(TxHash),
     ReceiptFound(Arc<Box<RawValue>>),
     ReceiptNotFound(Value),
+    BlockNumber(U64)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,13 +98,15 @@ pub struct RpcError {
     pub message: String,
 }
 
-/// eth_sendRawTransaction: ["0x<rlp_encoded_signed_tx>"]
+/// `eth_sendRawTransaction`: ["0x<rlp_encoded_signed_tx>"]
 #[derive(Debug, Deserialize)]
 pub struct SendRawTransactionParams(pub Vec<Bytes>);
 
-/// eth_getTransactionReceipt: ["0x<tx_hash>"]
+/// `eth_getTransactionReceipt`: ["0x<tx_hash>"]
 #[derive(Debug, Deserialize)]
 pub struct GetTransactionReceiptParams(pub Vec<TxHash>);
+
+// Note:  `eth_blockNumber`: [] -> no params payload are required for this request
 
 impl RpcResponse {
     pub fn success(id: Option<Value>, result: RpcResult) -> Self {
@@ -221,17 +225,21 @@ async fn handle_jsonrpc(
     Json(req): Json<RpcRequest>,
 ) -> Json<RpcResponse> {
     let responce = match req.method.as_str() {
-        "eth_sendRawTransaction" => handle_send_raw_transaction(&ctx, req.params, req.id).await,
-        "eth_getTransactionReceipt" => {
-            handle_get_transaction_receipt(&ctx, req.params, req.id).await
-        }
+        "eth_sendRawTransaction" => { handle_send_raw_transaction(&ctx, req.params, req.id) }
+        "eth_getTransactionReceipt" => handle_get_transaction_receipt(&ctx, req.params, req.id),
+        "eth_blockNumber" => handle_get_block_number(req.id),
         _ => RpcResponse::method_not_found(req.id),
     };
 
     Json(responce)
 }
 
-async fn handle_send_raw_transaction(
+fn handle_get_block_number (id: Option<Value>) -> RpcResponse {
+    let block_number = U64::from(BLOCK_NUMBER);
+    RpcResponse::success(id, RpcResult::BlockNumber(block_number))
+}
+
+fn handle_send_raw_transaction (
     ctx: &ChainContext,
     params: Option<Value>,
     id: Option<Value>,
@@ -285,7 +293,7 @@ async fn handle_send_raw_transaction(
     }
 }
 
-async fn handle_get_transaction_receipt(
+fn handle_get_transaction_receipt(
     ctx: &ChainContext,
     params: Option<Value>,
     id: Option<Value>,
