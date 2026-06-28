@@ -128,7 +128,7 @@ impl ValidatorEngine {
                     let tx_block = receipt.block_number.unwrap_or(0);
                     let confirmations = current_block.saturating_sub(tx_block);
 
-                    if confirmations > self.validator_config.required_confirmations {
+                    if confirmations >= self.validator_config.required_confirmations {
                         tracing::debug!(
                             block_number = tx_block,
                             confirmations,
