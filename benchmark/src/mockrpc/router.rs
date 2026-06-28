@@ -1,3 +1,4 @@
+use crate::mockrpc::state::BLOCK_NUMBER;
 use crate::mockrpc::{
     MockRpcState,
     state::{ChainState, NonceUpdateOutcome},
@@ -17,11 +18,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
-use anyhow::Chain;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use crate::mockrpc::state::BLOCK_NUMBER;
 // ============================================================
 // type alias
 
@@ -79,7 +78,7 @@ pub enum RpcResult {
     TxHash(TxHash),
     ReceiptFound(Arc<Box<RawValue>>),
     ReceiptNotFound(Value),
-    BlockNumber(U64)
+    BlockNumber(U64),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -225,7 +224,26 @@ async fn handle_jsonrpc(
     Json(req): Json<RpcRequest>,
 ) -> Json<RpcResponse> {
     let responce = match req.method.as_str() {
-        "eth_sendRawTransaction" => { handle_send_raw_transaction(&ctx, req.params, req.id) }
+        "eth_sendRawTransaction" => {
+            let ctx_clone = ctx.clone();
+            let id = req.id;
+            let id_for_error = id.clone();
+            let params = req.params;
+
+            // spawn a blocking-thread -> for ecdsa recovery from rlp_payload
+            let result = tokio::task::spawn_blocking(move || {
+                handle_send_raw_transaction(&ctx_clone, id, params)
+            })
+            .await;
+
+            match result {
+                Ok(rpc_responce) => rpc_responce,
+                Err(join_error) => {
+                    tracing::error!("blocking task paniked: {}", join_error);
+                    RpcResponse::error(id_for_error, -32603, "Internal Server Error")
+                }
+            }
+        }
         "eth_getTransactionReceipt" => handle_get_transaction_receipt(&ctx, req.params, req.id),
         "eth_blockNumber" => handle_get_block_number(req.id),
         _ => RpcResponse::method_not_found(req.id),
@@ -234,12 +252,12 @@ async fn handle_jsonrpc(
     Json(responce)
 }
 
-fn handle_get_block_number (id: Option<Value>) -> RpcResponse {
+fn handle_get_block_number(id: Option<Value>) -> RpcResponse {
     let block_number = U64::from(BLOCK_NUMBER);
     RpcResponse::success(id, RpcResult::BlockNumber(block_number))
 }
 
-fn handle_send_raw_transaction (
+fn handle_send_raw_transaction(
     ctx: &ChainContext,
     params: Option<Value>,
     id: Option<Value>,
