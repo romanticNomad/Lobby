@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
 
     // 2. Build test-keys and api-keys
     info!("Phase 2: Generating EVM test keys and API stack");
-    write_test_keys_json(100)?;
+    write_test_keys_json(1000)?;
     let path_test_keys = Path::new("benchmark/test_keys.json");
     let api_stack = build_apistack(path_test_keys)?;
     info!(
@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
         .spawn()
         .expect("failed to spawn lobby");
 
-    info!("Polling Lobby server health on port 3000 (timeout: 90s)");
+    info!("Polling Lobby server health on port 3000 (timeout: 180s)");
     let is_healthy = poll_till_timeout(3000, Duration::from_secs(90)).await;
     if !is_healthy {
         error!("Lobby server failed to become healthy within timeout.");
