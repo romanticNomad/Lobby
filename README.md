@@ -239,7 +239,7 @@ curl -X POST http://localhost:3000/v1/transactions \
 ```
 
 * On successful acceptance, lobby sends an immidiate message to the client:
-Success Response (202 Accepted):
+Success Response (200 OK):
 
 ```json
 {
