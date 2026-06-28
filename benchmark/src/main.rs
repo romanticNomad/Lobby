@@ -27,9 +27,10 @@ use tracing::{Level, error, info};
 // constants
 
 const RAMP_SECS: f64 = 5.0;
+const STEADY_SEC: f64 = 50.0;
+const TRIGGER_DURATION_SEC: Duration = Duration::from_secs(55);
 const TARGET_TPS: f64 = 1_000.0;
 const INITIAL_DELAY_US: f64 = 10_000.0;
-const STEADY_SEC: f64 = 55.0;
 const BENCH_DURATION: Duration = Duration::from_secs(60);
 const BASE_URL: &str = "http://localhost:3000/v1/transactions";
 const UDS_SOCKET: &str = "/tmp/lobby_benchmark_telemetry.sock";
@@ -38,7 +39,7 @@ const UDS_SOCKET: &str = "/tmp/lobby_benchmark_telemetry.sock";
 /// * `λ` = throughput (transaction per second) => eg: 1_000
 /// * `W` = expected latency => eg: 1 ms
 /// * `k` = correction term
-const WORKER_THREADS: usize = 4;
+const WORKER_THREADS: usize = 10;
 
 // ===========================================================
 // bench-harness boot sequence
@@ -50,7 +51,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing Lobby Benchmark Harness");
     let total_start = Instant::now();
-    let cancelation_token = CancellationToken::new();
+    let cancellation_token = CancellationToken::new();
 
     // 1. Set up Postgres and Redis
     info!("Phase 1: Bootstrapping infrastructure stack (PostgreSQL & Redis via Testcontainers)");
@@ -77,7 +78,7 @@ async fn main() -> Result<()> {
     let addresses = get_addresses(&api_stack)?;
     let app_state = RpcAppState::new(chain_ids.clone(), addresses);
     let port_map = app_state
-        .spawn_mockrpc_servers(cancelation_token.clone())
+        .spawn_mockrpc_servers(cancellation_token.clone())
         .await?;
     info!(
         ports = ?port_map.inner(),
@@ -145,13 +146,18 @@ async fn main() -> Result<()> {
     let payloads = Payloads::build_payloads(api_stack.clone(), chain_ids);
     let client = Client::new();
     let base_url = String::from(BASE_URL);
-    let tx_trigger = TxTrigger::new(BENCH_DURATION, payloads, client, base_url, rate_controller);
+    let tx_trigger = TxTrigger::new(
+        TRIGGER_DURATION_SEC,
+        payloads,
+        client,
+        base_url,
+        rate_controller,
+    );
     let warmup = Duration::from_secs_f64(RAMP_SECS);
     let steady_state = Duration::from_secs_f64(STEADY_SEC);
     let start_instant = Instant::now();
 
     info!(
-        duration_secs = BENCH_DURATION.as_secs(),
         ramp_secs = RAMP_SECS,
         steady_secs = STEADY_SEC,
         target_tps = TARGET_TPS,
@@ -159,43 +165,47 @@ async fn main() -> Result<()> {
         "Executing benchmark load test"
     );
 
-    let (_, metrics_collector_result) = tokio::join!(
-        run_load_generator(
-            start_instant.clone(),
-            tx_trigger.clone(),
-            WORKER_THREADS,
-            cancelation_token.clone()
-        ),
-        telemetry_stream_reader(
-            start_instant.clone(),
-            UDS_SOCKET,
-            warmup,
-            steady_state,
-            cancelation_token.clone()
-        )
-    );
-    let collected_metrics = metrics_collector_result?;
+    let loadgen_handle = tokio::spawn(run_load_generator(
+        start_instant.clone(),
+        tx_trigger.clone(),
+        WORKER_THREADS,
+    ));
 
-    // 7. Graceful shutdown
+    let uds_stream_handle = tokio::spawn(telemetry_stream_reader(
+        start_instant.clone(),
+        UDS_SOCKET,
+        warmup,
+        steady_state,
+        cancellation_token.clone(),
+    ));
+
+    // wait for loadgen task to complete
+    let _ = loadgen_handle.await?;
+
+    // 6. Graceful shutdown
+
+    // wait fo buffer time to elapse
+    tokio::time::sleep(BENCH_DURATION.saturating_sub(total_start.elapsed())).await;
     info!(
         elapsed = ?start_instant.elapsed(),
-        "Phase 7: Benchmark phases complete. Initiating teardown"
+        "Phase 6: Benchmark phases complete. Initiating teardown"
     );
 
     info!("Terminating Lobby server process");
     if let Err(e) = child.kill().await {
         error!("Failed to gracefully terminate lobby process: {}", e);
     } else {
-        info!("Lobby server process terminated.");
+        info!("Lobby server process terminated");
     }
 
     info!("Tearing down infrastructure stack and cancelling tokens");
-    cancelation_token.cancel();
+    cancellation_token.cancel();
     infra_stack.teardown().await;
     info!("Infrastructure stack torn down.");
 
-    // 8. Report latencies
-    info!("Phase 8: Generating latency and throughput report");
+    // 7. Report latencies
+    info!("Phase 7: Generating latency and throughput report");
+    let collected_metrics = uds_stream_handle.await??;
     collected_metrics.report();
 
     info!(
