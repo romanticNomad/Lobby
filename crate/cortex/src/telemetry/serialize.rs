@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use primitives::types::ExecutionId;
-use quanta::{Clock, Instant};
+use quanta::Instant;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -33,20 +33,12 @@ pub type TelemetryRegistry = Arc<DashMap<ExecutionId, PipelineTelemetry>>;
 /// Events sent from actors to the background exporter.
 #[derive(Debug, Clone)]
 pub enum TelemetryEvent {
-    StateComplete {
-        execution_id: ExecutionId,
-        stage: TelemetryStage,
-        timestamp: Option<Instant>,
-    },
-    PipelineComplete {
-        execution_id: ExecutionId,
-    },
+    PipelineComplete { execution_id: ExecutionId },
 }
 
 /// Lobby `telemetry-context` holder.
 pub struct TelemetryContext {
     registry: TelemetryRegistry,
-    clock: Clock,
     tx: mpsc::UnboundedSender<TelemetryEvent>,
 }
 
@@ -55,7 +47,6 @@ impl Clone for TelemetryContext {
         let tx2 = self.tx.clone();
         Self {
             registry: Arc::clone(&self.registry),
-            clock: self.clock.clone(),
             tx: tx2,
         }
     }
@@ -79,7 +70,6 @@ impl TelemetryContext {
     pub fn new(tx: mpsc::UnboundedSender<TelemetryEvent>) -> Self {
         TelemetryContext {
             registry: Arc::new(DashMap::new()),
-            clock: Clock::new(),
             tx,
         }
     }
@@ -87,7 +77,7 @@ impl TelemetryContext {
     /// record the starting instant, to use as a reference.
     #[inline(always)]
     pub fn record_start(&self, execution_id: ExecutionId) {
-        let now = self.clock.recent();
+        let now = Instant::now();
         let mut entry = self
             .registry
             .entry(execution_id)
@@ -98,7 +88,7 @@ impl TelemetryContext {
     /// Called by pipeline, upon successful stage completion. O(1) lock-free operation, non-blocking.
     #[inline(always)]
     pub fn record_stage(&self, stage: TelemetryStage, execution_id: ExecutionId) {
-        let now = self.clock.recent();
+        let now = Instant::now();
         let mut entry = self
             .registry
             .entry(execution_id)
@@ -110,12 +100,6 @@ impl TelemetryContext {
             TelemetryStage::Sign => entry.sign = Some(now),
             TelemetryStage::Broadcast => entry.broadcast = Some(now),
         }
-
-        let _ = self.tx.send(TelemetryEvent::StateComplete {
-            execution_id,
-            stage,
-            timestamp: Some(now),
-        });
     }
 
     /// Called at the end of the pipeline (success or terminal failure) to prevent memory leaks.
