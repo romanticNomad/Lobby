@@ -6,17 +6,12 @@ mod trigger;
 
 pub use keys::{build_apistack, get_addresses, write_test_keys_json};
 use std::time::Instant;
-use tokio_util::sync::CancellationToken;
 pub use trigger::{DynamicRateController, Payloads, RECIPIENT_ADDRESS, TxTrigger};
 
 // ============================================================
 // orchestrator
 
-/// Orchestrates the concurrent dispatch of transactions across a calculated Tokio worker pool.
-///
-/// ## note:
-/// Use Little's Law to determine the optimal concurrency level, preventing head-of-line
-/// blocking while the shared `DynamicRateController` enforces strict aggregate throughput.
+/// Orchestrates the concurrent dispatch of transactions across a dispatch workers
 pub async fn run_load_generator(
     start_instant: Instant,
     tx_trigger: TxTrigger,
@@ -32,27 +27,27 @@ pub async fn run_load_generator(
 
         let handle = tokio::spawn(async move {
             let mut local_dispatches = 0u64;
-            let mut local_failures = 0u64;
             loop {
-                // check for benchmark timelimit
+                // Check for benchmark timelimit
                 if start.elapsed() >= duration {
                     break;
                 }
-                // send request to lobby
-                match trigger.ramp_dispatch(start).await {
-                    Ok(()) => local_dispatches += 1,
-                    Err(e) => {
-                        local_failures += 1;
-                        tracing::warn!("Failed to ramp_dispatch: {}", e);
+
+                // Synchronously wait for the exact inter-arrival slot.
+                trigger.wait_for_next_slot(start).await;
+
+                // Spawn the I/O task.
+                let trigger_clone = trigger.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = trigger_clone.execute_dispatch().await {
+                        tracing::warn!("Dispatch failed: {}", e);
                     }
-                }
+                });
+
+                local_dispatches += 1;
             }
-            tracing::info!(
-                local_dispatches,
-                local_failures,
-                "worker{} shut down",
-                worker_id
-            );
+
+            tracing::info!(local_dispatches, "worker{} shut down", worker_id);
         });
 
         handles.push(handle);

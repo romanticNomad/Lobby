@@ -146,7 +146,7 @@ impl DynamicRateController {
 
     /// Claims the next dispatch slot and blocks the async task until the exact deadline.
     /// Guarantees deterministic spacing even across 1000+ concurrent Tokio workers.
-    pub async fn wait_for_next_slot(&self, start_instant: Instant) {
+    async fn wait_for_next_slot(&self, start_instant: Instant) {
         // 1. Lock virtual clock, claim timestamp, calculate next delay, drop lock immediately
         let target_virtual_time = {
             let mut next_time = self.next_virtual_time_us.lock().unwrap();
@@ -212,22 +212,23 @@ impl TxTrigger {
         self.trigger_duration
     }
 
-    /// Unified dispatch function. Handles timing, payload selection, HTTP POST,
-    /// and metric emission in a single call.
-    ///
-    /// * `start_instant` - Wall-clock benchmark start time (shared across workers).
-    /// * `dispatch_tx` - Non-blocking channel to `metrics.rs` histogram aggregator.
-    pub async fn ramp_dispatch(&self, start_instant: Instant) -> Result<(), TriggerError> {
-        // 1. Wait for exact inter-arrival slot (ramp or steady handled automatically)
+    /// Envelopes the `wait_for_next_slot` function of the inner `rate_controller`
+    pub async fn wait_for_next_slot(&self, start_instant: Instant) {
         self.rate_controller.wait_for_next_slot(start_instant).await;
+    }
 
-        // 2. Zero-copy payload selection (O(1), lock-free), scoped in order to drop `ThreadRng` which is `!Send`.
+    /// Executes the HTTP request without pacing.
+    ///
+    /// Pacing is handled synchronously by the worker loop.
+    pub async fn execute_dispatch(&self) -> Result<(), TriggerError> {
+        // 1. Zero-copy payload selection (O(1), lock-free),
+        // scoped in order to drop `ThreadRng` which is `!Send`.
         let entry = {
             let mut rng = rand::thread_rng();
             self.payloads.choose(&mut rng).unwrap().clone()
         };
 
-        // 3. Fire request (reqwest streams Bytes directly to kernel socket)
+        // 2. Fire request (reqwest streams Bytes directly to kernel socket)
         let response = self
             .client
             .post(&*self.base_url)
@@ -241,7 +242,6 @@ impl TxTrigger {
         if status != reqwest::StatusCode::OK {
             return Err(TriggerError::UnexpectedStatus(status));
         }
-
         Ok(())
     }
 }

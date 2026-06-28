@@ -39,7 +39,7 @@ const UDS_SOCKET: &str = "/tmp/lobby_benchmark_telemetry.sock";
 /// * `λ` = throughput (transaction per second) => eg: 1_000
 /// * `W` = expected latency => eg: 1 ms
 /// * `k` = correction term
-const WORKER_THREADS: usize = 10;
+const WORKER_THREADS: usize = 5;
 
 // ===========================================================
 // bench-harness boot sequence
