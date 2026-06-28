@@ -132,7 +132,7 @@ pub async fn build_rpc_client() -> Result<RpcClient, LobbyRpcError> {
             let broadcast_provider = RpcClient::create_unary_provider(url)?;
             let validator_provider = RpcClient::create_unary_provider(url)?;
 
-            // Create separate metrics instances for each actor, `id = <actor>-<chain)id>-<index>`
+            // Create separate metrics instances for each actor, `id = <actor>-<chain_id>-<index>`
             let broadcast_endpoint_id = format!("broadcast-{}-{}", chain_id, index);
             let validator_endpoint_id = format!("validator-{}-{}", chain_id, index);
             let broadcast_metrics = EndpointMetrics::new(broadcast_endpoint_id, url.to_string());
