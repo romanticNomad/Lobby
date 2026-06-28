@@ -5,3 +5,4 @@ api_keys
 context
 .idea/
 transactions.log
+bench.log
