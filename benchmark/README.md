@@ -64,4 +64,4 @@ tokio-util = "0.7.18"
 * loadgen (done)
 * mockrpc (done)
 * metrics → (done, alongside telemetry module in lobby::cortex)
-* main → (pending) assembling the harness
+* main → (done)
