@@ -33,7 +33,7 @@ pub async fn telemetry_stream_reader(
     let mut framed_payload = FramedRead::new(stream, LinesCodec::new());
     let mut collector = MetricsCollector::new(test_start, warmup, steady_state);
 
-    info!("Telemetry collector online. Waiting for data...");
+    info!("Telemetry collector online. Waiting for data");
     loop {
         tokio::select! {
             biased;

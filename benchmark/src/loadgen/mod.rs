@@ -21,7 +21,6 @@ pub async fn run_load_generator(
     start_instant: Instant,
     tx_trigger: TxTrigger,
     worker_threads: usize,
-    cancellation_token: CancellationToken,
 ) {
     let mut handles = Vec::with_capacity(worker_threads);
 
@@ -30,14 +29,13 @@ pub async fn run_load_generator(
         let start = start_instant.clone();
         let duration = tx_trigger.duration();
         let trigger = tx_trigger.clone();
-        let token = cancellation_token.clone();
 
         let handle = tokio::spawn(async move {
             let mut local_dispatches = 0u64;
             let mut local_failures = 0u64;
             loop {
-                // check for gracefull shutdown
-                if token.is_cancelled() || start.elapsed() >= duration {
+                // check for benchmark timelimit
+                if start.elapsed() >= duration {
                     break;
                 }
                 // send request to lobby
@@ -56,6 +54,7 @@ pub async fn run_load_generator(
                 worker_id
             );
         });
+
         handles.push(handle);
     }
 
@@ -63,6 +62,7 @@ pub async fn run_load_generator(
     for handle in handles {
         let _ = handle.await;
     }
+
     tracing::info!("Load generation phase complete. All workers joined.");
 }
 

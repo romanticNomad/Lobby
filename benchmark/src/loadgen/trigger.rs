@@ -183,7 +183,7 @@ impl DynamicRateController {
 /// and heap allocations during the hot dispatch path.
 #[derive(Clone)]
 pub struct TxTrigger {
-    pub bench_duration: Duration,
+    trigger_duration: Duration,
     payloads: Arc<Vec<PayloadEntry>>,
     client: Client,
     base_url: Arc<str>,
@@ -192,14 +192,14 @@ pub struct TxTrigger {
 
 impl TxTrigger {
     pub fn new(
-        bench_duration: Duration,
+        trigger_duration: Duration,
         payloads: Payloads,
         client: Client,
         base_url: String,
         rate_controller: Arc<DynamicRateController>,
     ) -> Self {
         Self {
-            bench_duration,
+            trigger_duration,
             payloads: payloads.entries(),
             client,
             base_url: Arc::from(base_url.as_str()),
@@ -209,7 +209,7 @@ impl TxTrigger {
 
     #[inline]
     pub fn duration(&self) -> Duration {
-        self.bench_duration
+        self.trigger_duration
     }
 
     /// Unified dispatch function. Handles timing, payload selection, HTTP POST,
