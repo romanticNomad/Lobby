@@ -27,11 +27,11 @@ use tracing::{Level, error, info};
 // constants
 
 const RAMP_SECS: f64 = 5.0;
-const STEADY_SEC: f64 = 50.0;
-const TRIGGER_DURATION_SEC: Duration = Duration::from_secs(55);
+const STEADY_SEC: f64 = 30.0;
+const TRIGGER_DURATION_SEC: Duration = Duration::from_secs(35);
 const TARGET_TPS: f64 = 1_000.0;
 const INITIAL_DELAY_US: f64 = 10_000.0;
-const BENCH_DURATION: Duration = Duration::from_secs(60);
+const BENCH_DURATION: Duration = Duration::from_secs(45);
 const BASE_URL: &str = "http://localhost:3000/v1/transactions";
 const UDS_SOCKET: &str = "/tmp/lobby_benchmark_telemetry.sock";
 
@@ -39,7 +39,7 @@ const UDS_SOCKET: &str = "/tmp/lobby_benchmark_telemetry.sock";
 /// * `λ` = throughput (transaction per second) => eg: 1_000
 /// * `W` = expected latency => eg: 1 ms
 /// * `k` = correction term
-const WORKER_THREADS: usize = 5;
+const WORKER_THREADS: usize = 3;
 
 // ===========================================================
 // bench-harness boot sequence
@@ -185,7 +185,7 @@ async fn main() -> Result<()> {
     // 6. Graceful shutdown
 
     // wait fo buffer time to elapse
-    tokio::time::sleep(BENCH_DURATION.saturating_sub(total_start.elapsed())).await;
+    tokio::time::sleep(BENCH_DURATION.saturating_sub(TRIGGER_DURATION_SEC)).await;
     info!(
         elapsed = ?start_instant.elapsed(),
         "Phase 6: Benchmark phases complete. Initiating teardown"
