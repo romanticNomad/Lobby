@@ -1,0 +1,68 @@
+2026-06-28T22:54:20.762482Z  INFO benchmark: Initializing Lobby Benchmark Harness
+2026-06-28T22:54:20.762503Z  INFO benchmark: Phase 1: Bootstrapping infrastructure stack (PostgreSQL & Redis via Testcontainers)
+2026-06-28T22:54:20.762515Z  INFO benchmark::infra::containers: Booting ephemeral infrastructure for benchmark harness...
+2026-06-28T22:54:22.566602Z  INFO benchmark::infra::containers: Postgres and Redis containers are running and healthy.
+2026-06-28T22:54:23.570392Z  INFO benchmark::infra::containers: Resolved dynamic host ports. pg_port=32787 redis_port=32786
+2026-06-28T22:54:23.694415Z  INFO benchmark::infra::containers: Database migrations applied successfully. Infrastructure ready.
+2026-06-28T22:54:23.694437Z  INFO benchmark: Infrastructure stack online.
+2026-06-28T22:54:23.694444Z  INFO benchmark: Phase 2: Generating EVM test keys and API stack
+2026-06-28T22:54:23.746805Z  INFO benchmark::loadgen::keys: 1000 account created in test_keys.json
+2026-06-28T22:54:23.749528Z  INFO benchmark: API stack built successfully. account_count=1000
+2026-06-28T22:54:23.749538Z  INFO benchmark: Phase 3: Spawning MockRPC servers for target EVM chains chains=[1, 137, 560048]
+2026-06-28T22:54:23.749876Z  INFO benchmark::mockrpc::router: Mockrpc server online chain_id=1 port=38949
+2026-06-28T22:54:23.749907Z  INFO benchmark::mockrpc::router: Mockrpc server online chain_id=137 port=44533
+2026-06-28T22:54:23.749925Z  INFO benchmark::mockrpc::router: Mockrpc server online chain_id=560048 port=38767
+2026-06-28T22:54:23.749930Z  INFO benchmark: MockRPC servers listening and ready. ports={137: 44533, 560048: 38767, 1: 38949}
+2026-06-28T22:54:23.749936Z  INFO benchmark: Phase 4: Assembling environment variables for Lobby process
+2026-06-28T22:54:23.749939Z  INFO benchmark: Parsing static environment file path="benchmark/bench.env"
+2026-06-28T22:54:23.750136Z  INFO benchmark: Environment variables assembled
+2026-06-28T22:54:23.750141Z  INFO benchmark: Spawning Lobby server process
+2026-06-28T22:54:23.751355Z  INFO benchmark: Polling Lobby server health on port 3000 (timeout: 180s)
+2026-06-28T22:55:05.368673Z  INFO benchmark: Lobby server is healthy and bound to port 3000.
+2026-06-28T22:55:05.368694Z  INFO benchmark: Phase 5: Initiating load generator and UDS telemetry stream
+2026-06-28T22:55:05.375236Z  INFO benchmark: Executing benchmark load test ramp_secs=5.0 steady_secs=30.0 target_tps=1000.0 worker_threads=3
+2026-06-28T22:55:05.375587Z  INFO benchmark::metrics: Connecting to Lobby telemetry UDS at: /tmp/lobby_benchmark_telemetry.sock
+2026-06-28T22:55:05.376166Z  INFO benchmark::metrics: Telemetry collector online
+2026-06-28T22:55:12.738006Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:17.309707Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:20.400276Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:21.263420Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:24.743057Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:25.823171Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:25.939427Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:26.220841Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:27.148251Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:28.913501Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:29.722904Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:32.380111Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:38.327106Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:38.837374Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
+2026-06-28T22:55:40.375611Z  INFO benchmark::loadgen: worker0 shut down local_dispatches=10428
+2026-06-28T22:55:40.376305Z  INFO benchmark::loadgen: worker1 shut down local_dispatches=10424
+2026-06-28T22:55:40.377816Z  INFO benchmark::loadgen: worker2 shut down local_dispatches=10429
+2026-06-28T22:55:40.377848Z  INFO benchmark::loadgen: Load generation phase complete. All workers joined.
+2026-06-28T22:55:50.378995Z  INFO benchmark: Phase 6: Benchmark phases complete. Initiating teardown elapsed=45.003755882s
+2026-06-28T22:55:50.379014Z  INFO benchmark: Terminating Lobby server process
+2026-06-28T22:55:50.489593Z  INFO benchmark::metrics: Lobby telemetry UDS stream closed by server.
+2026-06-28T22:55:50.490611Z  INFO benchmark: Lobby server process terminated
+2026-06-28T22:55:50.490634Z  INFO benchmark: Tearing down infrastructure stack and cancelling tokens
+2026-06-28T22:55:50.490649Z  INFO benchmark::infra::containers: Initiating explicit teardown of infrastructure containers...
+2026-06-28T22:55:50.491639Z  INFO benchmark::mockrpc::router: Mockrpc server shut down chain_id=137 port=44533
+2026-06-28T22:55:50.491639Z  INFO benchmark::mockrpc::router: Mockrpc server shut down chain_id=560048 port=38767
+2026-06-28T22:55:50.491721Z  INFO benchmark::mockrpc::router: Mockrpc server shut down chain_id=1 port=38949
+2026-06-28T22:55:51.395011Z  INFO benchmark::infra::containers: Infrastructure teardown complete.
+2026-06-28T22:55:51.395279Z  INFO benchmark: Infrastructure stack torn down.
+2026-06-28T22:55:51.395288Z  INFO benchmark: Phase 7: Generating latency and throughput report
+2026-06-28T22:55:51.395297Z  INFO benchmark::metrics::deserialize: =======================================================
+2026-06-28T22:55:51.395305Z  INFO benchmark::metrics::deserialize:   LOBBY PIPELINE LATENCY REPORT (Steady-State Window)
+2026-06-28T22:55:51.395311Z  INFO benchmark::metrics::deserialize: =======================================================
+2026-06-28T22:55:51.395315Z  INFO benchmark::metrics::deserialize: Total Samples Received: 31267
+2026-06-28T22:55:51.395321Z  INFO benchmark::metrics::deserialize: Samples Filtered (Warmup/Drain): 1712
+2026-06-28T22:55:51.395327Z  INFO benchmark::metrics::deserialize: -------------------------------------------------------
+2026-06-28T22:55:51.395342Z  INFO benchmark::metrics::deserialize: RelayHost          | p50:   2153µs | p95:   2937µs | p99:   8271µs | p99.9:  24191µs | max:  45727µs | dropped: 0
+2026-06-28T22:55:51.395360Z  INFO benchmark::metrics::deserialize: Nonce Reserve   | p50:   2023µs | p95:   3157µs | p99:   5923µs | p99.9:  25215µs | max:  44543µs | dropped: 0
+2026-06-28T22:55:51.395376Z  INFO benchmark::metrics::deserialize: Sign (ECDSA)     | p50:   3979µs | p95:   5167µs | p99:   8263µs | p99.9:  27999µs | max:  56543µs | dropped: 0
+2026-06-28T22:55:51.395394Z  INFO benchmark::metrics::deserialize: Broadcast (RPC) | p50:   4017µs | p95:   5835µs | p99:   9159µs | p99.9:  29007µs | max:  54751µs | dropped: 0
+2026-06-28T22:55:51.395416Z  INFO benchmark::metrics::deserialize: Total Pipeline     | p50:  12455µs | p95:  16879µs | p99:  37151µs | p99.9:  61791µs | max: 116159µs | dropped: 0
+2026-06-28T22:55:51.395422Z  INFO benchmark::metrics::deserialize: =======================================================
+2026-06-28T22:55:51.395426Z  INFO benchmark: Benchmark harness finished successfully
