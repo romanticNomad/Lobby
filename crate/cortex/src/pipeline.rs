@@ -474,8 +474,13 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         // ============================================================
         // validator
 
-        // getting the validator handle from shard pool (sequenced by chain_id)
+        // getting the validator handle from shard pool (sequenced by chain_id, execution_id used for benchmarking.)
+
+        #[cfg(not(feature = "benchmark-telemetry"))]
         let validator_handle = ctx.validator_pool.get(&ByChainId(&chain_id));
+        #[cfg(feature = "benchmark-telemetry")]
+        let validator_handle = ctx.validator_pool.get(&ByExecutionId(&execution_id));
+
         let vh = Arc::clone(&validator_handle);
         let validation = match {
             async move {
