@@ -23,20 +23,6 @@
 2026-06-28T22:55:05.375236Z  INFO benchmark: Executing benchmark load test ramp_secs=5.0 steady_secs=30.0 target_tps=1000.0 worker_threads=3
 2026-06-28T22:55:05.375587Z  INFO benchmark::metrics: Connecting to Lobby telemetry UDS at: /tmp/lobby_benchmark_telemetry.sock
 2026-06-28T22:55:05.376166Z  INFO benchmark::metrics: Telemetry collector online
-2026-06-28T22:55:12.738006Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:17.309707Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:20.400276Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:21.263420Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:24.743057Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:25.823171Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:25.939427Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:26.220841Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:27.148251Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:28.913501Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:29.722904Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:32.380111Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:38.327106Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
-2026-06-28T22:55:38.837374Z  WARN benchmark::mockrpc::router: NonceTooLow rejected
 2026-06-28T22:55:40.375611Z  INFO benchmark::loadgen: worker0 shut down local_dispatches=10428
 2026-06-28T22:55:40.376305Z  INFO benchmark::loadgen: worker1 shut down local_dispatches=10424
 2026-06-28T22:55:40.377816Z  INFO benchmark::loadgen: worker2 shut down local_dispatches=10429
