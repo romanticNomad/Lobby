@@ -155,28 +155,24 @@ impl BroadcastEngine {
                 .await
                 .map_err(|e| BroadcastError::DatabaseError(e.to_string()))?;
 
-                match row.state.unwrap().as_str() {
+                return match row.state.unwrap().as_str() {
                     "submitted" => {
                         let txn_hash = TxHash::from_slice(row.tx_hash.as_ref().ok_or(
                             BroadcastError::Invariant(
                                 "Tx hash submitted with invalid format".to_string(),
                             ),
                         )?);
-                        return Ok(BroadcastOutcome { txn_hash });
+                        Ok(BroadcastOutcome { txn_hash })
                     }
-                    "rejected" => {
-                        return Err(BroadcastError::Rejected {
-                            reason: row.rejection_reason.unwrap_or_else(|| {
-                                "rejection reason unknown to database".to_string()
-                            }),
-                        });
-                    }
-                    _ => {
-                        return Err(BroadcastError::DatabaseError(
-                            "unknown database inclusion error".to_string(),
-                        ));
-                    }
-                }
+                    "rejected" => Err(BroadcastError::Rejected {
+                        reason: row
+                            .rejection_reason
+                            .unwrap_or_else(|| "rejection reason unknown to database".to_string()),
+                    }),
+                    _ => Err(BroadcastError::DatabaseError(
+                        "unknown database inclusion error".to_string(),
+                    )),
+                };
             }
         };
 

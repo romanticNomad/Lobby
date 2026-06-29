@@ -223,7 +223,7 @@ pub async fn spawn_cortex(
     };
 
     // ============================================================
-    // broadcast pool - keyed by chain_id.
+    // broadcast pool - keyed by execution_id.
 
     let broadcast_pool = {
         let shards: Vec<Arc<dyn Broadcaster>> = (0..config.broadcast_shards)

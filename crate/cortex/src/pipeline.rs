@@ -252,9 +252,8 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
             };
 
         // ============================================================
-        // broadcast (with nonce mismatch retry) -> testing by indexing with execution_id.
+        // broadcast (with nonce mismatch retry)
 
-        // let broadcast_handle = ctx.broadcast_pool.get(&ByChainId(&chain_id));
         let broadcast_handle = ctx.broadcast_pool.get(&ByExecutionId(&execution_id));
         let mut nonce_retry_attempted = false;
 
@@ -692,6 +691,7 @@ fn record_faliure(
         error = %err,
         "pipeline hard fail"
     );
+
     registry.set(
         execution_id,
         PipelineStatus::Failed {

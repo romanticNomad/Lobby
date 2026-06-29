@@ -7,7 +7,7 @@ use uuid::Uuid;
 /// state with expired lease.
 ///
 /// such states may accumulate due to:
-/// * mid transaction, system failiure
+/// * mid-transaction, system failiure
 /// * database malfunctions
 ///
 /// primary function of the sweeper bot is to
