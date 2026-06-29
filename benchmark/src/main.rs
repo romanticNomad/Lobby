@@ -14,6 +14,7 @@ use crate::{
 };
 use anyhow::Result;
 use reqwest::Client;
+use std::fs::OpenOptions;
 use std::{
     collections::HashMap,
     path::Path,
@@ -21,7 +22,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Level, error, info};
+use tracing::level_filters::LevelFilter;
+use tracing::{error, info};
+use tracing_subscriber::{fmt, prelude::*};
 
 // ===========================================================
 // constants
@@ -46,11 +49,10 @@ const WORKER_THREADS: usize = 3;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<()> {
-    // 0. Global variables and tracing config.
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    // 0. Cancellation token and Tracing setup.
+    let _log_with_gaurd = init_logging();
 
     info!("Initializing Lobby Benchmark Harness");
-    let total_start = Instant::now();
     let cancellation_token = CancellationToken::new();
 
     // 1. Set up Postgres and Redis
@@ -208,10 +210,7 @@ async fn main() -> Result<()> {
     let collected_metrics = uds_stream_handle.await??;
     collected_metrics.report();
 
-    info!(
-        total_harness_time = ?total_start.elapsed(),
-        "Benchmark harness finished successfully."
-    );
+    info!("Benchmark harness finished successfully.");
 
     Ok(())
 }
@@ -256,7 +255,6 @@ async fn poll_till_timeout(port: u16, timeout: Duration) -> bool {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-
     error!(
         port = port,
         timeout = ?timeout,
@@ -264,6 +262,28 @@ async fn poll_till_timeout(port: u16, timeout: Duration) -> bool {
     );
 
     false
+}
+
+/// ## benchmark tracing config
+///
+/// ## features
+/// * Simultanously writes to terminal and bench.log during benchmark.
+fn init_logging() {
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("benchmark/bench.log")
+        .expect("Failed to open bench.log");
+
+    // Wrap the file in a non-blocking writer, and return the gaurd
+    let terminal_layer = fmt::layer().with_target(false);
+    let file_layer = fmt::layer().with_writer(log_file).with_ansi(false);
+
+    tracing_subscriber::registry()
+        .with(LevelFilter::INFO)
+        .with(terminal_layer)
+        .with(file_layer)
+        .init();
 }
 
 // ===========================================================
