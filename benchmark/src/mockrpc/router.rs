@@ -17,6 +17,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
+use std::str::FromStr;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -79,6 +80,7 @@ pub enum RpcResult {
     ReceiptFound(Arc<Box<RawValue>>),
     ReceiptNotFound(Value),
     BlockNumber(U64),
+    PendingNonce(U64),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -104,6 +106,10 @@ pub struct SendRawTransactionParams(pub Vec<Bytes>);
 /// `eth_getTransactionReceipt`: ["0x<tx_hash>"]
 #[derive(Debug, Deserialize)]
 pub struct GetTransactionReceiptParams(pub Vec<TxHash>);
+
+/// `eth_getTransactionCount` : ["evm_address", "block_token"]
+#[derive(Debug, Deserialize)]
+pub struct GetTransactionCount(pub [String; 2]);
 
 // Note:  `eth_blockNumber`: [] -> no params payload are required for this request
 
@@ -246,15 +252,11 @@ async fn handle_jsonrpc(
         }
         "eth_getTransactionReceipt" => handle_get_transaction_receipt(&ctx, req.params, req.id),
         "eth_blockNumber" => handle_get_block_number(req.id),
+        "eth_getTransactionCount" => handle_get_transaction_count(&ctx, req.params, req.id),
         _ => RpcResponse::method_not_found(req.id),
     };
 
     Json(responce)
-}
-
-fn handle_get_block_number(id: Option<Value>) -> RpcResponse {
-    let block_number = U64::from(BLOCK_NUMBER);
-    RpcResponse::success(id, RpcResult::BlockNumber(block_number))
 }
 
 fn handle_send_raw_transaction(
@@ -332,6 +334,32 @@ fn handle_get_transaction_receipt(
         // Standard: null for unmined/unknown txs
         None => RpcResponse::success(id, RpcResult::ReceiptNotFound(Value::Null)),
     }
+}
+
+fn handle_get_block_number(id: Option<Value>) -> RpcResponse {
+    let block_number = U64::from(BLOCK_NUMBER);
+    RpcResponse::success(id, RpcResult::BlockNumber(block_number))
+}
+
+fn handle_get_transaction_count(
+    context: &ChainContext,
+    params: Option<Value>,
+    id: Option<Value>,
+) -> RpcResponse {
+    let payload = match serde_json::from_value::<GetTransactionCount>(params.unwrap_or_default()) {
+        Ok(payload) if !payload.0.is_empty() => payload,
+        _ => {
+            return RpcResponse::invalid_params(id, "Invalid GetTransactionCount params.");
+        }
+    };
+
+    let from_address = match Address::from_str(&payload.0[0]) {
+        Ok(address) => address,
+        Err(e) => return RpcResponse::invalid_params(id, format!("Invalid from Address: {}", e)),
+    };
+
+    let pending_nonce = context.chain_state.get_pending_nonce(from_address);
+    RpcResponse::success(id, RpcResult::PendingNonce(pending_nonce))
 }
 
 // ============================================================
@@ -474,6 +502,7 @@ mod tests {
             .json()
             .await
             .unwrap();
+        
         assert!(
             res.error.is_none(),
             "Expected success, got error: {:?}",

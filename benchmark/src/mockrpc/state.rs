@@ -1,5 +1,6 @@
 use crate::loadgen::RECIPIENT_ADDRESS;
 use crate::mockrpc::MockRpcState;
+use alloy::primitives::U64;
 use alloy::{
     consensus::{Eip658Value, Receipt, ReceiptEnvelope, ReceiptWithBloom},
     primitives::{Address, B256, Bloom, TxHash},
@@ -11,7 +12,6 @@ use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
-
 // ============================================================
 //constants
 
@@ -144,6 +144,17 @@ impl ChainState {
         self.receipt_collection
             .insert(tx_hash, Arc::new(receipt_collection));
     }
+
+    /// return transaction count (pending none)
+    pub fn get_pending_nonce(&self, address: Address) -> U64 {
+        let nonce = self
+            .nonce_collection
+            .entry(address)
+            .or_insert_with(|| AtomicU64::new(0))
+            .load(Ordering::Relaxed)
+            + 1;
+        U64::from(nonce)
+    }
 }
 
 impl MockRpcState for ChainState {
@@ -177,7 +188,6 @@ impl MockRpcState for ChainState {
             if nonce_rlp < current_nonce {
                 return NonceUpdateOutcome::NonceTooLow;
             }
-
             // Target state: The next expected nonce is always `nonce_rlp + 1`.
             let next_expected = current_nonce + 1;
 
