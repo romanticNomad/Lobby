@@ -25,7 +25,7 @@ pub enum CortexError {
     #[error("No healthy RPC provider available: {0}")]
     NoHealthyRpcProvider(LobbyRpcError),
 
-    /// error statement is self explainatory of the purpose
+    /// error statement is self-explanatory of the purpose
     #[error("relay-host rejected or failed to record the transaction after retries: {0}")]
     RelayHost(#[from] RelayHostError),
 
@@ -59,9 +59,9 @@ pub enum CortexError {
     Broadcast(#[from] BroadcastError),
 
     /// The validator confirmed that the transaction was not included on-chain
-    /// (chain reorg or persistent underpricing).  The nonce is released.
-    #[error("transaction not included on-chain: {0}")]
-    NotIncluded(#[from] ValidatorError),
+    /// or faced some internal problem. The nonce is released.
+    #[error("Validator failed after retries: {0}")]
+    Validator(#[from] ValidatorError),
 
     /// internal system error
     #[error("internal orchestrator error: {0}")]
@@ -91,7 +91,7 @@ impl CortexError {
             Self::Sign(_) => "sign",
             Self::ReSign(_) => "sign_post_nonce_sync",
             Self::Broadcast(_) => "broadcast",
-            Self::NotIncluded(_) => "validator",
+            Self::Validator(_) => "validator",
             Self::Internal(_) => "internal",
         }
     }
