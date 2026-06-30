@@ -30,16 +30,16 @@ pub struct PipelineTelemetry {
 /// Lock-free registry mapping ExecutionId to its telemetry state.
 pub type TelemetryRegistry = Arc<DashMap<ExecutionId, PipelineTelemetry>>;
 
-/// Events sent from actors to the background exporter.
+/// Stores execution_id for the pipeline event on completion, later sent to be UDS exporter function.
 #[derive(Debug, Clone)]
-pub enum TelemetryEvent {
-    PipelineComplete { execution_id: ExecutionId },
+pub struct TelemetryExport {
+    pub execution_id: ExecutionId,
 }
 
 /// Lobby `telemetry-context` holder.
 pub struct TelemetryContext {
     registry: TelemetryRegistry,
-    tx: mpsc::UnboundedSender<TelemetryEvent>,
+    tx: mpsc::UnboundedSender<TelemetryExport>,
 }
 
 impl Clone for TelemetryContext {
@@ -67,7 +67,7 @@ pub struct LatencyRecord {
 // method implimentations on TelemetryContext
 
 impl TelemetryContext {
-    pub fn new(tx: mpsc::UnboundedSender<TelemetryEvent>) -> Self {
+    pub fn new(tx: mpsc::UnboundedSender<TelemetryExport>) -> Self {
         TelemetryContext {
             registry: Arc::new(DashMap::new()),
             tx,
@@ -105,9 +105,8 @@ impl TelemetryContext {
     /// Called at the end of the pipeline (success or terminal failure) to prevent memory leaks.
     #[inline(always)]
     pub fn finalize(&self, execution_id: ExecutionId) {
-        let _ = self
-            .tx
-            .send(TelemetryEvent::PipelineComplete { execution_id });
+        let telemetry_event = TelemetryExport { execution_id };
+        let _ = self.tx.send(telemetry_event);
     }
 
     /// get a registry clone for realtime metric export.

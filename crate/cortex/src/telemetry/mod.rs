@@ -14,7 +14,7 @@ use tokio_util::codec::{FramedWrite, LinesCodec};
 
 /// Background task that calculates deltas and streams NDJSON to the benchmark harness via UDS.
 pub async fn run_telemetry_exporter(
-    mut rx: mpsc::UnboundedReceiver<TelemetryEvent>,
+    mut rx: mpsc::UnboundedReceiver<TelemetryExport>,
     socket_path: &str,
     registry: TelemetryRegistry,
 ) {
@@ -31,34 +31,34 @@ pub async fn run_telemetry_exporter(
         Ok(s) => s,
         Err(e) => {
             tracing::error!(%e, "Failed to accept UDS connection from benchmark harness.");
+
             return;
         }
     };
 
     let mut framed = FramedWrite::new(socket, LinesCodec::new());
     while let Some(event) = rx.recv().await {
-        if let TelemetryEvent::PipelineComplete { execution_id } = event {
-            if let Some((_, telemetry)) = registry.remove(&execution_id) {
-                let record = LatencyRecord {
-                    execution_id: execution_id.0.to_string(),
-                    relayhost_duration_us: get_duration_us(telemetry.start, telemetry.relayhost),
-                    nonce_duration_us: get_duration_us(telemetry.relayhost, telemetry.nonce),
-                    sign_duration_us: get_duration_us(telemetry.nonce, telemetry.sign),
-                    broadcast_duration_us: get_duration_us(telemetry.sign, telemetry.broadcast),
-                    total_pipeline_us: get_duration_us(telemetry.start, telemetry.broadcast),
-                };
+        let execution_id = event.execution_id;
+        if let Some((_, telemetry)) = registry.remove(&execution_id) {
+            let record = LatencyRecord {
+                execution_id: execution_id.0.to_string(),
+                relayhost_duration_us: get_duration_us(telemetry.start, telemetry.relayhost),
+                nonce_duration_us: get_duration_us(telemetry.relayhost, telemetry.nonce),
+                sign_duration_us: get_duration_us(telemetry.nonce, telemetry.sign),
+                broadcast_duration_us: get_duration_us(telemetry.sign, telemetry.broadcast),
+                total_pipeline_us: get_duration_us(telemetry.start, telemetry.broadcast),
+            };
 
-                match serde_json::to_string(&record) {
-                    Ok(json_payload) => {
-                        if let Err(err) = framed.send(json_payload).await {
-                            tracing::error!(%execution_id, %err, "Failed to send telemetry data to socket.");
-                            break;
-                        }
+            match serde_json::to_string(&record) {
+                Ok(json_payload) => {
+                    if let Err(err) = framed.send(json_payload).await {
+                        tracing::error!(%execution_id, %err, "Failed to send telemetry data to socket.");
+                        break;
                     }
+                }
 
-                    Err(err) => {
-                        tracing::error!(%execution_id, %err, "Failed to serialize telemetry data.");
-                    }
+                Err(err) => {
+                    tracing::error!(%execution_id, %err, "Failed to serialize telemetry data.");
                 }
             }
         }
