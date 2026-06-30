@@ -66,7 +66,7 @@ impl CortexConfig {
             pipeline_concurrency: parse_env("PIPELINE_CONCURRENCY", 200)?,
             pipeline_semaphore_timeout: Duration::from_millis(parse_env(
                 "PIPELINE_SEMAPHORE_TIMEOUT_MS",
-                15_000u64,
+                5_000u64,
             )?),
             retry: RetryConfig::default(),
         })
