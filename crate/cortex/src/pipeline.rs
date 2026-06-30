@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use crate::{
     artifacts::config::RetryConfig,
     artifacts::error::CortexError,
@@ -5,6 +7,7 @@ use crate::{
     artifacts::retry::{RetryDecision, retry_with_backoff},
     state::StatusRegistry,
 };
+use primitives::types::ValidatorError;
 use primitives::{
     traits::{Broadcaster, IntentRelay, NonceManager, Signer, StateStore, Validator},
     types::{
@@ -442,9 +445,23 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 // ============================================================
                 // Other broadcast errors -> Hard fail
                 Err(e) => {
-                    release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
-                    let err = CortexError::Broadcast(e);
-                    record_faliure(&ctx.status, execution_id, &err, &start);
+                    match e {
+                        // internal and database errros should not release the nonce (effects on-chain state consistency)
+                        BroadcastError::Internal(_)
+                        | BroadcastError::DatabaseError(_)
+                        | BroadcastError::Invariant(_) => {
+                            let err = CortexError::Broadcast(e);
+                            record_faliure(&ctx.status, execution_id, &err, &start);
+                        }
+                        _ => {
+                            // the remaining RPC error should lead to nonce release
+                            release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start)
+                                .await;
+                            let err = CortexError::Broadcast(e);
+                            record_faliure(&ctx.status, execution_id, &err, &start);
+                        }
+                    }
+
                     return;
                 }
             }
@@ -480,7 +497,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         let validator_handle = ctx.validator_pool.get(&ByChainId(&chain_id));
         #[cfg(feature = "benchmark-telemetry")]
         let validator_handle = ctx.validator_pool.get(&ByExecutionId(&execution_id));
-
         let vh = Arc::clone(&validator_handle);
         let validation = match {
             async move {
@@ -492,9 +508,20 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
         {
             Ok(outcome) => outcome,
             Err(e) => {
-                release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
-                let err = CortexError::NotIncluded(e);
-                record_faliure(&ctx.status, execution_id, &err, &start);
+                match e {
+                    ValidatorError::Database(_) | ValidatorError::Internal(_) => {
+                        let err = CortexError::Validator(e);
+                        // don't release nonce in case of database error or internal errors
+                        record_faliure(&ctx.status, execution_id, &err, &start);
+                    }
+                    _ => {
+                        // all these cases represent RPC error, safe to release nonce
+                        release_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
+                        let err = CortexError::Validator(e);
+                        record_faliure(&ctx.status, execution_id, &err, &start);
+                    }
+                }
+
                 return;
             }
         };
@@ -505,7 +532,6 @@ pub(crate) async fn run_pipeline(ctx: PipelineContext) {
                 confirmations,
             } => {
                 finalise_nonce(&nonce_handle, execution_id, &ctx.retry_config, &start).await;
-
                 ctx.status.set(
                     execution_id,
                     PipelineStatus::ConfirmedOnChain {
@@ -696,7 +722,6 @@ fn record_faliure(
         error = %err,
         "pipeline hard fail"
     );
-
     registry.set(
         execution_id,
         PipelineStatus::Failed {
