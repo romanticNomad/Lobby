@@ -21,7 +21,7 @@ use std::str::FromStr;
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 // ============================================================
 // type alias
 
@@ -307,7 +307,7 @@ fn handle_send_raw_transaction(
             RpcResponse::success(id, RpcResult::TxHash(tx_hash))
         }
         NonceUpdateOutcome::NonceTooLow => {
-            warn!("NonceTooLow rejected");
+            debug!("NonceTooLow");
             RpcResponse::error(id, -32000, "nonce too low")
         }
     }
@@ -502,7 +502,7 @@ mod tests {
             .json()
             .await
             .unwrap();
-        
+
         assert!(
             res.error.is_none(),
             "Expected success, got error: {:?}",

@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use cortex::{artifacts::error::CortexError, artifacts::state::StatusRegistry};
+use cortex::artifacts::{CortexError, StatusRegistry};
 use primitives::{
     traits::StateStore,
     types::{
