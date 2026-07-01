@@ -31,6 +31,13 @@ impl InfraStack {
                 .with_env_var("POSTGRES_USER", "lobby")
                 .with_env_var("POSTGRES_PASSWORD", "lobby_dev_password")
                 .with_env_var("POSTGRES_DB", "lobby-db")
+                .with_cmd([
+                    "postgres",
+                    "-c",
+                    "max_connections=300",
+                    "-c",
+                    "shared_buffers=256MB",
+                ])
                 .with_ready_conditions(vec![WaitFor::message_on_stdout(
                     "database system is ready to accept connections",
                 )]);
