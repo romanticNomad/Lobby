@@ -86,8 +86,6 @@ impl NonceEngine {
                     AND from_address = $3
                     AND state = 'released'
                     ORDER BY nonce, execution_id, revision DESC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
                 )
                 RETURNING nonce
             ),
