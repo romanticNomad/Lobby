@@ -1,10 +1,8 @@
 # Lobby
-
-> **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.
->
-> **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.
->
-> **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text to ensure that the instructions and contents remain clear.
+> * **REFER TO: `logs/bech.log` for latest benchmark logs: (Jul 2 2026), or run using `cargo run --release --bin benchmark`**    
+> * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.   
+> * **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.    
+> * **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text to ensure that the instructions and contents remain clear.
 
 ---
 
@@ -184,13 +182,20 @@ export LOBBY_API_KEY_1="<api-key-generated-by-the-generate_api_key-binary>"
 export RPC_ENDPOINT_1="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://mainnet.infura.io/v3/YOUR_KEY"
 export RPC_ENDPOINT_560048="https://eth-hoodi.g.alchemy.com/v2/YOUR_KEY,https://hoodi.infura.io/v3/YOUR_KEY"
 
-# shards and semaphore settings (can be customized according to requirements)
-export NONCE_SHARDS=100
-export SIGN_SHARDS=10000
-export BROADCAST_SHARDS=100
-export VALIDATOR_SHARDS=400
-export PIPELINE_CONCURRENCY=10000
-export ACTOR_BUFFER_SIZE=10000
+# shards and semaphore settings
+
+## sharded by execution_id
+export RELAYHOST_SHARDS=50
+export SIGN_SHARDS=50
+export BROADCAST_SHARDS=50
+export VALIDATOR_SHARDS=50
+
+## sharded by from_address
+export NONCE_SHARDS=50
+
+## channel_buffer and semaphore limits
+export PIPELINE_CONCURRENCY=1000
+export ACTOR_BUFFER_SIZE=500
 ```
 
 ### 4. Build and Run
