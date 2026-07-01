@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // database
 
     let db_pool = PgPoolOptions::new()
-        .max_connections(100)
+        .max_connections(80)
         .min_connections(50)
         .connect(&database_url)
         .await?;
