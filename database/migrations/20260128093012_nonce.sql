@@ -30,18 +30,6 @@ CREATE INDEX idx_nonce_released_gap_fill
 ON nonce.nonce_assignments (chain_id, from_address, nonce ASC, revision DESC)
 WHERE state = 'released';
 
--- Index for efficient revision lookups
-CREATE INDEX idx_nonce_latest_revision 
-ON nonce.nonce_assignments (execution_id, revision DESC);
-
--- Lookup scoped by chain_id, from_address
-CREATE INDEX idx_nonce_by_sender
-ON nonce.nonce_assignments (chain_id, from_address, revision DESC);
-
--- In case of admin lookup
-CREATE INDEX idx_nonce_by_state
-ON nonce.nonce_assignments (state);
-
 -- Ensure updated_at is always called on state change
 CREATE OR REPLACE FUNCTION nonce.touch_updated_at()
 RETURNS TRIGGER AS $$

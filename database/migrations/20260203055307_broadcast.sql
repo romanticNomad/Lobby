@@ -29,13 +29,6 @@ WHERE state IN ('received', 'submitted');
 CREATE INDEX idx_broadcast_latest_revision
 ON broadcast.broadcast_requests (execution_id, revision DESC);
 
--- for admin lookup
-CREATE INDEX idx_broadcast_by_state
-ON broadcast.broadcast_requests (state);
-
-CREATE INDEX idx_broadcast_by_chain
-ON broadcast.broadcast_requests (chain_id);
-
 -- Ensure updated_at is always called on state change
 CREATE OR REPLACE FUNCTION broadcast.touch_updated_at()
 RETURNS TRIGGER AS $$

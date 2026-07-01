@@ -28,13 +28,6 @@ WHERE state IN ('reserved', 'signed');
 CREATE INDEX idx_sign_latest_revision
 ON sign.sign_requests (execution_id, revision DESC);
 
--- In case of admin lookups
-CREATE INDEX idx_sign_by_state
-ON sign.sign_requests (state);
-
-CREATE INDEX idx_broadcast_by_chain
-ON sign.sign_requests (chain_id);
-
 -- Ensure updated_at is always called on state change
 CREATE OR REPLACE FUNCTION sign.touch_updated_at()
 RETURNS TRIGGER AS $$

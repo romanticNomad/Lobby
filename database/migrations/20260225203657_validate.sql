@@ -25,11 +25,6 @@ WHERE state = 'pending';
 CREATE INDEX idx_validation_outcome
 ON validator.validation_requests (execution_id, state);
 
--- Audit queries: find all validations for a given transaction hash outcome
-CREATE INDEX idx_validation_by_tx_hash
-ON validator.validation_requests (tx_hash, chain_id);
-
-
 -- Partial unique index: prevent concurrent pending validations for the same execution_id
 CREATE UNIQUE INDEX idx_validation_no_concurrent
 ON validator.validation_requests (execution_id)
@@ -49,14 +44,3 @@ CREATE TRIGGER trg_validation_updated_at
 BEFORE UPDATE ON validator.validation_requests
 FOR EACH ROW
 EXECUTE FUNCTION validator.update_updated_at();
-
-
--- Comments
-COMMENT ON TABLE validator.validation_requests IS
-'Tracks the validation status of broadcast transactions. Each execution_id can have multiple revisions as the validation progresses through states: pending → included/not_included.';
-
-COMMENT ON COLUMN validator.validation_requests.state IS
-'Current state: pending (polling RPC), included (confirmed on-chain), not_included (timeout/reorg/reverted).';
-
-COMMENT ON COLUMN validator.validation_requests.updated_at IS
-'Timestamp of the last state change. Used for 5-minute lease-based idempotency.';
