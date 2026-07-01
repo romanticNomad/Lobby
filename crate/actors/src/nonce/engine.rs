@@ -76,17 +76,20 @@ impl NonceEngine {
 
         let candidate = sqlx::query!(
             r#"
-            WITH consumed_nonce AS (
+            WITH target_release AS (
+                SELECT execution_id, revision, nonce
+                FROM nonce.nonce_assignments
+                WHERE chain_id = $2
+                AND from_address = $3
+                AND state = 'released'
+                ORDER BY nonce ASC, revision DESC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            ),
+            consumed AS (
                 UPDATE nonce.nonce_assignments
                 SET state = 'consumed'
-                WHERE (execution_id, revision) = (
-                    SELECT execution_id, revision
-                    FROM nonce.nonce_assignments
-                    WHERE chain_id = $2
-                    AND from_address = $3
-                    AND state = 'released'
-                    ORDER BY nonce, execution_id, revision DESC
-                )
+                WHERE (execution_id, revision) IN (SELECT execution_id, revision FROM target_release)
                 RETURNING nonce
             ),
             max_nonce AS (
@@ -107,25 +110,15 @@ impl NonceEngine {
                 $2,
                 $3,
                 COALESCE(
-                -- Priority 1: 'released' nonce
-                    (
-                    SELECT nonce
-                    FROM consumed_nonce
-                    ),
-                -- Priority 2: next sequential nonce
-                    (
-                    SELECT nonce
-                    FROM max_nonce
-                    ) + 1,
-                -- Priority 3: first nonce assignment
-                    0
+                    (SELECT nonce FROM consumed),             -- Priority 1: gap fill
+                    (SELECT nonce FROM max_nonce) + 1       -- Priority 2: sequential
                 ),
                 'reserved'
-            WHERE NOT EXISTS (
+                WHERE NOT EXISTS (
                 SELECT 1
                 FROM nonce.nonce_assignments
                 WHERE execution_id = $1
-                AND (state = 'finalized' 
+                AND (state = 'finalized'
                     OR (state = 'reserved' AND updated_at > now() - interval '2 minutes')
                 )
             )

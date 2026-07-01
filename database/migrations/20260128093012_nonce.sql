@@ -26,8 +26,9 @@ ON nonce.nonce_assignments (chain_id, from_address, nonce)
 WHERE state IN ('reserved', 'finalized');
 
 -- special index for selecting 'released' nonce
-CREATE INDEX idx_nonce_released ON nonce.nonce_assignments 
-(chain_id, from_address, nonce) WHERE state = 'released';
+CREATE INDEX idx_nonce_released_gap_fill
+ON nonce.nonce_assignments (chain_id, from_address, nonce ASC, revision DESC)
+WHERE state = 'released';
 
 -- Index for efficient revision lookups
 CREATE INDEX idx_nonce_latest_revision 

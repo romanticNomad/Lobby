@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH target_release AS (\n                SELECT execution_id, revision, nonce\n                FROM nonce.nonce_assignments\n                WHERE chain_id = $2\n                AND from_address = $3\n                AND state = 'released'\n                ORDER BY nonce ASC, revision DESC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            ),\n            consumed AS (\n                UPDATE nonce.nonce_assignments\n                SET state = 'consumed'\n                WHERE (execution_id, revision) IN (SELECT execution_id, revision FROM target_release)\n                RETURNING nonce\n            ),\n            max_nonce AS (\n                SELECT COALESCE(MAX(nonce), -1) as nonce\n                FROM nonce.nonce_assignments\n                WHERE chain_id = $2\n                AND from_address = $3\n                AND state IN ('reserved', 'finalized')\n            )\n            INSERT INTO nonce.nonce_assignments\n                (execution_id, revision, chain_id, from_address, nonce, state)\n            SELECT\n                $1,\n                COALESCE(\n                    (SELECT MAX(revision) FROM nonce.nonce_assignments WHERE execution_id = $1),\n                    0\n                ) + 1,\n                $2,\n                $3,\n                COALESCE(\n                    (SELECT nonce FROM consumed),             -- Priority 1: gap fill\n                    (SELECT nonce FROM max_nonce) + 1       -- Priority 2: sequential\n                ),\n                'reserved'\n                WHERE NOT EXISTS (\n                SELECT 1\n                FROM nonce.nonce_assignments\n                WHERE execution_id = $1\n                AND (state = 'finalized'\n                    OR (state = 'reserved' AND updated_at > now() - interval '2 minutes')\n                )\n            )\n            RETURNING nonce, revision\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "revision",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c3bb755fc943844c377b3a254edaa9d6216714d340ceb5caf456e6d0e38a402a"
+}
