@@ -339,12 +339,12 @@ A `tokio::sync::Semaphore` bounds concurrent pipeline executions (default: 17). 
 
 Rather than single-actor bottlenecks or fully concurrent access, Lobby runs N sharded actor instances with deterministic routing:
 
-| Actor     | Sharding Key                                            | Purpose                                                               |
-|-----------|---------------------------------------------------------|-----------------------------------------------------------------------|
-| Nonce     | `ByAddress(&from_address)`                              | Sequential nonce assignment per address                               |
-| Sign      | `ByExecutionId(&execution_id)`                          | Stateless load balancing for ECDSA operations                         |
-| Broadcast | `ByChainId(&execution_id)`                              | Stateless RPC roperations                                             |
-| Validator | `ByChainId(&chain_id)` / `ByExecutionId(&execution_id)` | Per-chain validation isolation / stateless operation for benchmarking |
+| Actor     | Sharding Key                                                               | Purpose                                                               |
+|-----------|----------------------------------------------------------------------------|-----------------------------------------------------------------------|
+| Nonce     | `ByAddress(&from_address)`                                                 | Sequential nonce assignment per address                               |
+| Sign      | `ByExecutionId(&execution_id)`                                             | Stateless load balancing for ECDSA operations                         |
+| Broadcast | `ByChainId(&execution_id)`                                                 | Stateless RPC roperations                                             |
+| Validator | `ByChainId(&chain_id)` / `ByExecutionId(&execution_id)` (during benchmark) | Per-chain validation isolation / stateless operation for benchmarking |
 
 Routing uses `DefaultHasher`: `shard_index = hash(key) % N`. Same key maps to same actor ensuring sequential ordering; different keys run in true parallel.
 
