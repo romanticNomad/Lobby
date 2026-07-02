@@ -1,14 +1,15 @@
-# Lobby
-> * **REFER TO: [logs/bech.log](logs/bench.log) for latest benchmark logs: (Jul 2 2026), or run using `cargo run --release --bin benchmark`**    
-> * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.   
+# Lobby : EVM Transaction Service
+
+> * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases.   
 > * **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.    
 > * **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text to ensure that the instructions and contents remain clear.
 
 ---
 
-**Version:** 0.1.0 (Prototype)  
-**Last Updated:** April 21, 2026  
-**Target Audience:** Contributors, Devs intrested in learning EVM transaction mechanics and LLMs.
+**Version:** v0.1.0 (Prototype)  
+**Last Updated:** July 2, 2026.  
+**Target Audience:** Contributors, Devs intrested in learning EVM transaction mechanics and LLMs.   
+**REFER TO: [logs/bech.log](logs/bench.log) for latest benchmark logs: (Jul 2 2026), or run using `cargo run --release --bin benchmark`**
 
 ---
 
