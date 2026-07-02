@@ -1,13 +1,13 @@
 # Lobby-Benchmark
 
-> **Disclaimer**: This documentation was generated with the assistance of a Large Language Model (LLM) and has been thoroughly reviewed, corrected, and verified by the author to ensure technical accuracy and alignment with institutional infrastructure requirements.
+> **Disclaimer**: This documentation was generated with the assistance of a Large Language Model (LLM) and has been thoroughly reviewed, and verified by the author to ensure technical accuracy.  
 >
-> **Last Update**: July 1, 2026  
+> **Last Update**: July 2, 2026  
 > **Target Audience**: Quantitative Researchers, High-Frequency Trading (HFT) Engineers, EVM Infrastructure Architects, and DevOps/SRE teams.
 
 ---
 
-## 1. Executive Summary
+## 1. Overview
 
 `Lobby-Benchmark` is a deterministic load-generation and telemetry harness designed specifically to stress-test the `Lobby` EVM transaction service. Unlike ad-hoc load testing scripts that introduce uncontrolled variance (e.g., fluctuating public RPC latencies, network jitter, or database contention from shared environments), `Lobby-Benchmark` provides a hermetically sealed, fully deterministic testing environment.
 
@@ -27,7 +27,7 @@ It orchestrates a complete local infrastructure stack using `testcontainers`, sp
 
 ## 2. Table of Contents
 
-1. [Executive Summary](#1-executive-summary)
+1. [Executive Summary](#1-overview)
 2. [Table of Contents](#2-table-of-contents)
 3. [`main.rs` — The Primary Orchestrator](#3-mainrs--the-primary-orchestrator)
     - [3.1 Phase Coordination & Deterministic Environment Injection](#31-phase-coordination--deterministic-environment-injection)
@@ -49,7 +49,6 @@ It orchestrates a complete local infrastructure stack using `testcontainers`, sp
     - [7.1 `mod.rs` — Facade & Coordination](#71-modrs--facade--coordination)
     - [7.2 `keys.rs` — EVM Keypair Generation & API Key Derivation](#72-keysrs--evm-keypair-generation--api-key-derivation)
     - [7.3 `trigger.rs` — Transaction Sequencing & `DynamicRateController`](#73-triggerrs--transaction-sequencing--dynamicratecontroller)
-8. [Author Note](#author-note)
 
 ---
 
@@ -238,7 +237,5 @@ Lobby uses an actor-based sharding model where the `Nonce` actor is sharded `ByA
 Naive load generators use `tokio::spawn` in a tight loop, saturating the local CPU and network buffers, which causes local backpressure that skews latency metrics. The `DynamicRateController` calculates the exact microsecond interval required between payload emissions to maintain the target TPS. It uses `tokio::time::sleep` to pace the requests and dynamically adjusts noise, and all observed latency is strictly a product of `Lobby`'s internal processing.
 
 ---
-## Author Note
-The `Lobby-Benchmark` crate represents a paradigm shift in how EVM infrastructure is validated. By treating the test environment as a deterministic, hermetically sealed software artifact rather than a collection of mocked scripts, we ensure that the performance characteristics observed in CI/CD pipelines accurately predict mainnet behavior under extreme institutional load.
 
 *Designed and engineered for the modern EVM stack. Built with Rust, Tokio, Axum, and Alloy.*
