@@ -43,7 +43,7 @@ It orchestrates a complete local infrastructure stack using `testcontainers`, sp
     - [5.3 `router.rs` — JSON-RPC Dispatch & Axum Handlers](#53-routerrs--json-rpc-dispatch--axum-handlers)
 6. [`metrics.rs` — HDRHistogram Telemetry & Aggregation](#6-metricsrs--hdrhistogram-telemetry--aggregation)
     - [6.1 Lock-Free Per-Worker Aggregation](#61-lock-free-per-worker-aggregation)
-    - [6.2 The `[5.0s, 55.0s]` Window Filtering Strategy](#62-the-50s-350s-window-filtering-strategy)
+    - [6.2 The `[5.0s, 35.0s]` Window Filtering Strategy](#62-the-50s-350s-window-filtering-strategy)
     - [6.3 Final Merge & Institutional Percentile Standards](#63-final-merge--institutional-percentile-standards)
 7. [`loadgen` — Load Generation & Key Management](#7-loadgen--load-generation--key-management)
     - [7.1 `mod.rs` — Facade & Coordination](#71-modrs--facade--coordination)
@@ -233,9 +233,7 @@ Lobby uses an actor-based sharding model where the `Nonce` actor is sharded `ByA
 `trigger.rs` utilizes a pseudo-random distribution algorithm to route requests across the `N` generated accounts. This ensures that traffic is evenly distributed across Lobby's `NONCE_SHARDS`, fully saturating the actor pool and accurately reflecting Lobby's horizontal scaling capabilities.
 
 #### Precise Throughput Enforcement
-
 Naive load generators use `tokio::spawn` in a tight loop, saturating the local CPU and network buffers, which causes local backpressure that skews latency metrics. The `DynamicRateController` calculates the exact microsecond interval required between payload emissions to maintain the target TPS. It uses `tokio::time::sleep` to pace the requests and dynamically adjusts noise, and all observed latency is strictly a product of `Lobby`'s internal processing.
 
 ---
-
 *Designed and engineered for the modern EVM stack. Built with Rust, Tokio, Axum, and Alloy.*

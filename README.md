@@ -1,5 +1,5 @@
 # Lobby
-> * **REFER TO: `logs/bech.log` for latest benchmark logs: (Jul 2 2026), or run using `cargo run --release --bin benchmark`**    
+> * **REFER TO: [logs/bech.log](logs/bench.log) for latest benchmark logs: (Jul 2 2026), or run using `cargo run --release --bin benchmark`**    
 > * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases. Please refer to the [GitHub repository](https://github.com/romanticNomad/Lobby) for the latest updates.   
 > * **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.    
 > * **Author Note**: This `README.md` is written with the help of an `LLM`, I have corrected any possible loose text to ensure that the instructions and contents remain clear.
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. Introduction to Lobby
+## Introduction to Lobby
 
 Lobby is a high-performance, low-latency blockchain transaction service written in `rust` and designed for developers who need reliable, concurrent transaction processing at scale on EVM-compatible networks.
 
@@ -30,7 +30,7 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 
 ---
 
-## 2. Quick Installation Guide
+## Quick Installation Guide
 
 ### Prerequisites
 
@@ -41,7 +41,7 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 ### Setting up test EVM keys
 >[`Locket`](https://github.com/romanticNomad/Locket) is a Rust app that I use to generate EVM-compatible keys for my testing environments. 
 
-1. Clone `Locket` for EVM compatible keys generation
+#### Clone `Locket` for EVM compatible keys generation
 ```bash
 # Clone and run Locket for test account generation
 git clone https://github.com/romanticNomad/Locket.git
@@ -50,14 +50,14 @@ cd Locket
 # using 5 as an example, you may use any (positive) number 
 # doing so generates the N keys and puts them in a `accounts.json` file.
 cargo run -- accounts 5
-
-# move out of the locket repo
-cd ..
 ```
 
 **Expected outcome**
 ```bash
 Generated 5 account(s) in accounts.json
+
+# move out of the locket repo
+cd ..
 ```
 
 ### 1. Automatic Lobby Setup
@@ -106,10 +106,10 @@ Generating API keys for the test-accounts
    Generated API keys appended to .env
 Lobby Setup complete.
 ```
-
-4. After running `make lobbyup`, you need to manually add your `RPC_ENDPOINT`(s) in the `.env` file created during setup to run any kind of transaction. 
-
-**Boilerplate for the endpoint-format is present in the `.env.example` file.**
+---
+> After running `make lobbyup`, you need to manually add your `RPC_ENDPOINT`(s) in the `.env` file created during setup to run any kind of transaction.     
+> Boilerplate for the endpoint-format is present in the `.env.example` file.**
+---
 
 ### 2. Custom Lobby Setup
 **Skip this step if you have used the automatic setup.**
@@ -120,7 +120,7 @@ git clone https://github.com/romanticNomad/Lobby.git
 cd Lobby
 ```
 
-2. Move the `accounts.json` keys to `test_keys.json`
+2. Move the `accounts.json` from `Locket` directory to `test_keys.json`
 ```bash
 mv ../Locket/accounts.json test_keys.json
 ```
@@ -209,7 +209,7 @@ Expected startup output:
 
 ```bash
 INFOｉ [info]: "relation \"_sqlx_migrations\" already exists, skipping"
-INFOｉ [info]: api_keys loaded: 5
+INFOｉ [info]: api_keys loaded: 1
 INFOｉ [info]: custody accounts loaded: 5
 INFOｉ [info]: rpc_endpoints loaded: {ChainId(560048): 2, ChainId(1): 2}
 INFOｉ [info]: StatusRegistry loaded | artifacts_count: 0
@@ -271,17 +271,18 @@ curl -X GET http://localhost:3000/status/{execution_id} \
 
 ## Architectural Overview
 
-## 3. Table of Contents
+## Table of Contents
 
-- [3.1 Concurrency Management in Lobby](#31-concurrency-management-in-lobby)
-- [3.2 Pipeline Workflow](#32-pipeline-workflow)
-- [3.3 RPC Controls and Load Balancing](#33-rpc-controls-and-load-balancing)
-- [3.4 Error Handling](#34-error-handling)
-- [3.5 Private Key Security](#35-private-key-security)
+- [1. Concurrency Management in Lobby](#1-concurrency-management-in-lobby)
+- [2. Pipeline Workflow](#2-pipeline-workflow)
+- [3. RPC Controls and Load Balancing](#3-rpc-controls-and-load-balancing)
+- [4. Error Handling](#4-error-handling)
+- [5. Private Key Security](#5-private-key-security)
+- [6. Benchmark Harness for Lobby](#6-benchmark-harness-for-lobby)
 
 ---
 
-## 3.1 Concurrency Management in Lobby
+## 1. Concurrency Management in Lobby
 
 Lobby employs a multi-layered concurrency model combining the actor pattern, sharding, and database-level atomicity.
 
@@ -371,7 +372,7 @@ Lease-based idempotency provides 2-5 minute windows for operation completion. Re
 
 ---
 
-## 3.2 Pipeline Workflow
+## 2. Pipeline Workflow
 
 Every transaction flows through a five-stage pipeline orchestrated by the Cortex:
 
@@ -445,7 +446,7 @@ The HTTP handler responds immediately with `execution_id` and `status: "accepted
 
 ---
 
-### 3.3 RPC Controls and Load Balancing
+### 3. RPC Controls and Load Balancing
 
 The `utils::rpc` module provides high-throughput RPC operations with intelligent load balancing and endpoint health management.
 
@@ -541,7 +542,7 @@ pub async fn acquire_healthy_endpoint(
 
 ---
 
-## 3.4 Error Handling
+## 4. Error Handling
 
 Lobby categorizes errors as terminating (fatal, abort immediately) or non-terminating (transient, eligible for retry).
 
@@ -612,7 +613,7 @@ Nonce cleanup rules by failure stage:
 
 ---
 
-## 3.5 Private Key Security
+## 5. Private Key Security
 
 ### Current Prototype Implementation
 
@@ -639,5 +640,15 @@ Future production versions will implement AWS KMS-backed envelope encryption:
 
 ---
 
+## 6. Benchmark Harness for Lobby
+
+ Lobby has a custom [Benchmark Harness](benchmark), the deatils for the benchmark architecture can be found in its [README.md](benchmark/README.md).
+
+```bash
+# The harness can be run automatically by running the cargo command
+cargo run --release --bin benchmark
+```
+
+--- 
 *Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
