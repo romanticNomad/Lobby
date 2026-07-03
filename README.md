@@ -1,4 +1,4 @@
-# Lobby : EVM Transaction Service
+# Lobby: EVM Transaction Service
 
 > * **Prototype Notice:** Lobby is currently in active development. APIs, features, and behaviors described in this document may change in future releases.   
 > * **Do Not** use **Lobby** for transferring real money on EVM accounts. This software is intended for testing and development purposes only.    
@@ -19,15 +19,13 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 
 ### What Makes Lobby Special
 
-**Sub-second internal processing** — Nonce assignment and signing are typically complete in under one second through optimized actor-based concurrency.
+**Sub-second internal processing** — Latest benchmark results reflect >1000 TPS throughput at <50ms p99 latency, achieved through actor based concurrency and carefull tokio::task sharding.
 
 **Concurrent pipeline architecture** — Process thousands of transactions simultaneously via actor-based sharding, with deterministic routing ensuring sequential nonce assignment per address while maintaining parallelism across different accounts.
 
 **Automatic recovery** — Built-in retry logic for transient failures, nonce mismatch detection with automatic sync and re-sign, and stale nonce cleanup via background processes.
 
-**Multichain support** — Single API for Ethereum mainnet, Polygon, Arbitrum, Hoodi testnet, and other EVM-compatible networks.
-
-**Real-time status tracking** — Poll transaction progress from submission through on-chain confirmation with detailed status at every pipeline stage.
+**Real-time status tracking** — supports `redis-insight` to poll transaction progress from submission through on-chain confirmation.
 
 ---
 
@@ -36,13 +34,13 @@ Lobby is a high-performance, low-latency blockchain transaction service written 
 ### Prerequisites
 
 - Rust 1.70+ with Cargo
-- Docker and Docker Compose
+- Docker and Docker CLI
 - Access to EVM RPC endpoints (Alchemy, Infura, or self-hosted nodes)
 
 ### Setting up test EVM keys
 >[`Locket`](https://github.com/romanticNomad/Locket) is a Rust app that I use to generate EVM-compatible keys for my testing environments. 
 
-#### Clone `Locket` for EVM compatible keys generation
+#### Clone `Locket` for EVM-compatible keys generation
 ```bash
 # Clone and run Locket for test account generation
 git clone https://github.com/romanticNomad/Locket.git
@@ -258,11 +256,11 @@ Success Response (200 OK):
 }
 ```
 
-> for live status update, you may use the terminal of redis-insights    
+> For a live status update, you may use the terminal of redis-insights    
 > **note**: Port for redis-insights is `5540`.
 
 ### 6. Get Transaction Status
-* You would need a valid `API-Key` and `ExecutionId` to recieve transaction status
+* You would need a valid `API-Key` and `ExecutionId` to receive transaction status
 
 ``` bash
 curl -X GET http://localhost:3000/status/{execution_id} \
@@ -283,7 +281,7 @@ curl -X GET http://localhost:3000/status/{execution_id} \
 
 ---
 
-## 1. Concurrency Management in Lobby
+## 1. Concurrency Management in the Lobby
 
 Lobby employs a multi-layered concurrency model combining the actor pattern, sharding, and database-level atomicity.
 
@@ -353,7 +351,7 @@ Rather than single-actor bottlenecks or fully concurrent access, Lobby runs N sh
 | Broadcast | `ByChainId(&execution_id)`                                                 | Stateless RPC roperations                                             |
 | Validator | `ByChainId(&chain_id)` / `ByExecutionId(&execution_id)` (during benchmark) | Per-chain validation isolation / stateless operation for benchmarking |
 
-Routing uses `DefaultHasher`: `shard_index = hash(key) % N`. Same key maps to same actor ensuring sequential ordering; different keys run in true parallel.
+Routing uses `DefaultHasher`: `shard_index = hash(key) % N`. Same key maps to the same actor, ensuring sequential ordering; different keys run in true parallel.
 
 ### Database-Level Concurrency Safety
 
@@ -488,7 +486,7 @@ Three health states tracked per endpoint:
 
 Circuit breaker activates on consecutive failures with exponential backoff: 10s → 30s → 60s. Auto-resets on successful request after expiry.
 
-Metrics use lock-free atomic operations with 128-sample rolling windows for response times. Health calculations require minimum 10 requests to prevent volatile early readings.
+Metrics use lock-free atomic operations with 128-sample rolling windows for response times. Health calculations require a minimum of 10 requests to prevent volatile early readings.
 
 ### Generic RPC Execution Functions
 
@@ -521,7 +519,7 @@ pub async fn acquire_unary_context(
 
 Returns a `UnaryContext` with methods: `record_success()`, `record_failure()`, `provider()`, `metrics()`.
 
-**`acquire_healthy_endpoint`:** Fetches best endpoint index for sticky session initialization. Uses the Validator pool (highest traffic = most accurate health data):
+**`acquire_healthy_endpoint`:** Fetches the best endpoint index for sticky session initialization. Uses the Validator pool (highest traffic = most accurate health data):
 
 ```rust
 pub async fn acquire_healthy_endpoint(
@@ -533,13 +531,13 @@ pub async fn acquire_healthy_endpoint(
 
 ### High-Level Helper Functions
 
-**`send_raw_transaction`:** Broadcasts signed transactions with configurable load balancing strategy.
+**`send_raw_transaction`:** Broadcasts signed transactions with a configurable load-balancing strategy.
 
 **`get_transaction_count`:** Retrieves pending nonce. Sticky session recommended for consistency.
 
 **`get_transaction_receipt`:** Queries transaction receipt for validation.
 
-**`get_block_number`:** Retrieves current block number for confirmation counting.
+**`get_block_number`:** Retrieves the current block number for confirmation counting.
 
 ---
 
@@ -643,7 +641,7 @@ Future production versions will implement AWS KMS-backed envelope encryption:
 
 ## 6. Benchmark Harness for Lobby
 
- Lobby has a custom [Benchmark Harness](benchmark), the deatils for the benchmark architecture can be found in its [README.md](benchmark/README.md).
+ Lobby has a custom [Benchmark Harness](benchmark), the details for the benchmark architecture can be found in its [README.md](benchmark/README.md).
 
 ```bash
 # The harness can be run automatically by running the cargo command
@@ -651,5 +649,6 @@ cargo run --release --bin benchmark
 ```
 
 --- 
+
 *Built with Rust, Tokio, Axum, PostgreSQL, and Redis.*  
 *Designed for developers who need reliable, low-latency blockchain transaction infrastructure.*
